@@ -75,3 +75,5 @@ export const DECAY_RATES: Record<MemoryType, number> = {
   self_model: 0.01,
   introspective: 0.02,
 };
+
+export type ViewMode = "hebbian" | "retrieved";

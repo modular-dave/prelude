@@ -5,11 +5,13 @@ import { IntrospectionPanel } from "@/components/brain/introspection-panel";
 
 export default function StatsPage() {
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <h1 className="text-xl font-semibold text-white">Statistics</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        Aggregate metrics across all memory types
-      </p>
+    <div className="h-full overflow-y-auto bg-[#04040a] p-6">
+      <div className="animate-fade-slide-up">
+        <h1 className="text-lg font-semibold tracking-wide text-white/90">Telemetry</h1>
+        <p className="mt-0.5 text-[11px] uppercase tracking-[0.15em] text-indigo-400/40">
+          aggregate metrics across all memory types
+        </p>
+      </div>
 
       <div className="mt-6">
         <StatsGrid />
@@ -17,7 +19,7 @@ export default function StatsPage() {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-2">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-400">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
             Type Distribution
           </h2>
           <div className="mt-3">
@@ -25,7 +27,7 @@ export default function StatsPage() {
           </div>
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-neutral-400">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
             Tag Cloud
           </h2>
           <div className="mt-3">

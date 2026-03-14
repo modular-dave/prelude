@@ -10,7 +10,7 @@ export default function DashboardLayout({
 }) {
   return (
     <MemoryProvider>
-      <div className="flex h-screen">
+      <div className="flex h-screen bg-[#04040a]">
         <DashboardNav />
         <main className="flex-1 overflow-hidden">{children}</main>
       </div>

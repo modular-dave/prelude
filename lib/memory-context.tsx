@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import type { Memory, GraphData, GraphNode, GraphLink } from "./types";
@@ -64,6 +65,11 @@ function buildGraphData(memories: Memory[]): GraphData {
   return { nodes, links };
 }
 
+/** Build a fingerprint of memory IDs to detect actual data changes */
+function memoryFingerprint(mems: Memory[]): string {
+  return mems.map((m) => m.id).sort((a, b) => a - b).join(",");
+}
+
 export function MemoryProvider({ children }: { children: ReactNode }) {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [stats, setStats] = useState<Record<string, unknown>>({});
@@ -72,6 +78,7 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     links: [],
   });
   const [loading, setLoading] = useState(true);
+  const lastFingerprintRef = useRef("");
 
   const refresh = useCallback(async () => {
     try {
@@ -84,7 +91,13 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
       const mems = Array.isArray(memData) ? memData : [];
       setMemories(mems);
       setStats(statsData);
-      setGraphData(buildGraphData(mems));
+
+      // Only rebuild graph data if memories actually changed
+      const fp = memoryFingerprint(mems);
+      if (fp !== lastFingerprintRef.current) {
+        lastFingerprintRef.current = fp;
+        setGraphData(buildGraphData(mems));
+      }
     } catch {
       // ignore
     } finally {
