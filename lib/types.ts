@@ -49,6 +49,7 @@ export interface DreamPhase {
   description: string;
   status: "idle" | "running" | "complete";
   result?: string;
+  reasoning?: string;
   lastRun?: string;
 }
 

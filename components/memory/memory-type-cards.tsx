@@ -35,9 +35,10 @@ export function MemoryTypeCards() {
             className="rounded-[6px] p-4"
             style={{
               background: "var(--surface-dim)",
-              border: "1px solid var(--border)",
-              borderTopColor: TYPE_COLORS[type],
-              borderTopWidth: 2,
+              borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: TYPE_COLORS[type],
+              borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
+              borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
+              borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
             }}
           >
             <div

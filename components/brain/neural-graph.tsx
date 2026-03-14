@@ -48,6 +48,7 @@ interface NeuralGraphProps {
 export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian", width, height }: NeuralGraphProps) {
   const { graphData, memories } = useMemory();
   const graphRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const forcesRegistered = useRef(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<number | null>(null);
 
   const data = useMemo(() => {
@@ -221,6 +222,63 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
     [selectedNodeId, connectionMap, hoveredNodeId]
   );
 
+  // Bounding bubble: scale radius with node count
+  const bubbleRadius = useMemo(() => {
+    const count = data.nodes.length;
+    return Math.max(120, 60 + Math.cbrt(count) * 40);
+  }, [data.nodes.length]);
+
+  // Ref callback: register forces THE MOMENT the graph instance is available
+  // This ensures forces are active before warmupTicks run
+  const bubbleRadiusRef = useRef(bubbleRadius);
+  bubbleRadiusRef.current = bubbleRadius;
+
+  const graphRefCallback = useCallback((fg: any) => {
+    graphRef.current = fg;
+    if (!fg || forcesRegistered.current) return;
+    forcesRegistered.current = true;
+
+    const radius = bubbleRadiusRef.current;
+
+    // Gentle center-seeking gravity
+    let gravityNodes: any[] = [];
+    const gravity = Object.assign(
+      (alpha: number) => {
+        const k = alpha * 0.05;
+        for (const node of gravityNodes) {
+          node.vx = (node.vx || 0) - (node.x || 0) * k;
+          node.vy = (node.vy || 0) - (node.y || 0) * k;
+          node.vz = (node.vz || 0) - (node.z || 0) * k;
+        }
+      },
+      { initialize: (nodes: any[]) => { gravityNodes = nodes; } }
+    );
+    fg.d3Force("gravity", gravity);
+
+    // Hard boundary clamp
+    let boundaryNodes: any[] = [];
+    const boundary = Object.assign(
+      () => {
+        const r = bubbleRadiusRef.current;
+        for (const node of boundaryNodes) {
+          const x = node.x || 0, y = node.y || 0, z = node.z || 0;
+          const dist = Math.sqrt(x * x + y * y + z * z);
+          if (dist > r) {
+            const scale = r / dist;
+            node.x = x * scale;
+            node.y = y * scale;
+            node.z = z * scale;
+            node.vx = (node.vx || 0) * 0.1;
+            node.vy = (node.vy || 0) * 0.1;
+            node.vz = (node.vz || 0) * 0.1;
+          }
+        }
+      },
+      { initialize: (nodes: any[]) => { boundaryNodes = nodes; } }
+    );
+    fg.d3Force("boundary", boundary);
+  }, []);
+
   // Force node object refresh when selection/mode/hover changes
   useEffect(() => {
     if (graphRef.current) {
@@ -326,6 +384,24 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
     [onNodeSelect]
   );
 
+  // Focus camera on selected node when it changes (e.g. from card navigation)
+  useEffect(() => {
+    if (!selectedNodeId || !graphRef.current) return;
+    const node = data.nodes.find((n: any) => n.id === selectedNodeId); // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!node || !('x' in node)) return;
+    const distance = 100;
+    const distRatio = 1 + distance / Math.hypot(node.x || 0, node.y || 0, node.z || 0);
+    graphRef.current.cameraPosition(
+      {
+        x: (node.x || 0) * distRatio,
+        y: (node.y || 0) * distRatio,
+        z: (node.z || 0) * distRatio,
+      },
+      node,
+      1000
+    );
+  }, [selectedNodeId, data.nodes]);
+
   const handleNodeHover = useCallback(
     (node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       setHoveredNodeId(node ? node.id : null);
@@ -349,7 +425,7 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
 
   return (
     <ForceGraph3D
-      ref={graphRef}
+      ref={graphRefCallback}
       graphData={data}
       width={width}
       height={height}

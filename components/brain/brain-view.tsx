@@ -5,15 +5,24 @@ import { NeuralGraph } from "@/components/brain/neural-graph";
 import { RetrievalFormula } from "@/components/brain/retrieval-formula";
 import { HebbianPanel } from "@/components/brain/hebbian-panel";
 import { MemoryNodeDetail } from "@/components/brain/memory-node-detail";
+import { StatsGrid } from "@/components/stats/stats-grid";
+import { TypeDistribution } from "@/components/stats/type-distribution";
+import { TagCloud } from "@/components/stats/tag-cloud";
+import { IntrospectionPanel } from "@/components/brain/introspection-panel";
+import { MemoryTypeCards } from "@/components/memory/memory-type-cards";
+import { MemoryTimeline } from "@/components/memory/memory-timeline";
 import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { TYPE_COLORS, TYPE_LABELS, type MemoryType, type ViewMode } from "@/lib/types";
-import { GitBranch, Zap } from "lucide-react";
+import { GitBranch, Zap, BarChart3, Database } from "lucide-react";
+
+type BrainPanel = "stats" | "memory" | null;
 
 export function BrainView() {
   const { memories } = useMemory();
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("hebbian");
+  const [brainPanel, setBrainPanel] = useState<BrainPanel>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const graphSize = useContainerSize(graphContainerRef);
 
@@ -61,33 +70,60 @@ export function BrainView() {
         </div>
       </div>
 
-      {/* View mode toggle */}
-      {selectedMemoryId && (
-        <div className="pointer-events-auto absolute top-14 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-[8px] p-0.5 glass animate-fade-slide-up">
-          <button
-            onClick={() => setViewMode("hebbian")}
-            className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
-            style={{
-              color: viewMode === "hebbian" ? "var(--accent)" : "var(--text-faint)",
-              background: viewMode === "hebbian" ? "rgba(34, 68, 255, 0.08)" : "transparent",
-            }}
-          >
-            <GitBranch className="h-3 w-3" />
-            Hebbian
-          </button>
-          <button
-            onClick={() => setViewMode("retrieved")}
-            className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
-            style={{
-              color: viewMode === "retrieved" ? "var(--accent)" : "var(--text-faint)",
-              background: viewMode === "retrieved" ? "rgba(34, 68, 255, 0.08)" : "transparent",
-            }}
-          >
-            <Zap className="h-3 w-3" />
-            Retrieval
-          </button>
-        </div>
-      )}
+      {/* Top-right toggle: Stats/Memory when no selection, Hebbian/Retrieval when selected */}
+      <div className="pointer-events-auto absolute top-14 right-4 z-30 flex items-center gap-0.5 rounded-[8px] p-0.5 glass animate-fade-slide-up">
+        {selectedMemoryId ? (
+          <>
+            <button
+              onClick={() => setViewMode("hebbian")}
+              className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
+              style={{
+                color: viewMode === "hebbian" ? "var(--accent)" : "var(--text-faint)",
+                background: viewMode === "hebbian" ? "rgba(34, 68, 255, 0.08)" : "transparent",
+              }}
+            >
+              <GitBranch className="h-3 w-3" />
+              Hebbian
+            </button>
+            <button
+              onClick={() => setViewMode("retrieved")}
+              className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
+              style={{
+                color: viewMode === "retrieved" ? "var(--accent)" : "var(--text-faint)",
+                background: viewMode === "retrieved" ? "rgba(34, 68, 255, 0.08)" : "transparent",
+              }}
+            >
+              <Zap className="h-3 w-3" />
+              Retrieval
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setBrainPanel((v) => v === "stats" ? null : "stats")}
+              className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
+              style={{
+                color: brainPanel === "stats" ? "var(--accent)" : "var(--text-faint)",
+                background: brainPanel === "stats" ? "rgba(34, 68, 255, 0.08)" : "transparent",
+              }}
+            >
+              <BarChart3 className="h-3 w-3" />
+              Stats
+            </button>
+            <button
+              onClick={() => setBrainPanel((v) => v === "memory" ? null : "memory")}
+              className="flex items-center gap-1 rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition-all duration-200"
+              style={{
+                color: brainPanel === "memory" ? "var(--accent)" : "var(--text-faint)",
+                background: brainPanel === "memory" ? "rgba(34, 68, 255, 0.08)" : "transparent",
+              }}
+            >
+              <Database className="h-3 w-3" />
+              Memory
+            </button>
+          </>
+        )}
+      </div>
 
       {/* Graph area */}
       <div
@@ -114,15 +150,39 @@ export function BrainView() {
           <MemoryNodeDetail
             memory={selectedMemory}
             onClose={() => setSelectedMemoryId(null)}
+            onNavigate={setSelectedMemoryId}
           />
         </div>
       )}
 
-      {/* Default side panel — desktop only */}
-      {!selectedMemory && (
-        <div className="hidden lg:block lg:w-[320px] shrink-0 overflow-y-auto p-4 space-y-4 glass-panel transition-all duration-300">
-          <RetrievalFormula />
-          <HebbianPanel />
+      {/* Side panel: Stats or Memory Bank */}
+      {!selectedMemory && brainPanel && (
+        <div className="h-[55vh] lg:h-full lg:w-[360px] shrink-0 overflow-y-auto p-4 space-y-4 glass-panel transition-all duration-300 animate-fade-slide-up">
+          <div className="flex justify-center lg:hidden">
+            <div className="h-1 w-10 rounded-full" style={{ background: "var(--border)" }} />
+          </div>
+          {brainPanel === "stats" ? (
+            <>
+              <StatsGrid />
+              <div>
+                <h4 className="label mb-2">Type Distribution</h4>
+                <TypeDistribution />
+              </div>
+              <div>
+                <h4 className="label mb-2">Tag Cloud</h4>
+                <TagCloud />
+              </div>
+              <IntrospectionPanel />
+            </>
+          ) : (
+            <>
+              <MemoryTypeCards />
+              <div>
+                <h4 className="label mb-2">Timeline</h4>
+                <MemoryTimeline />
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

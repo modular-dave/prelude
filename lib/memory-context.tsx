@@ -11,6 +11,13 @@ import {
 } from "react";
 import type { Memory, GraphData, GraphNode, GraphLink } from "./types";
 import { TYPE_COLORS } from "./types";
+import {
+  type RetrievalSettings,
+  DEFAULT_RETRIEVAL_SETTINGS,
+  loadSettings,
+  saveSettings,
+  ALL_MEMORY_TYPES,
+} from "./retrieval-settings";
 
 interface MemoryContextValue {
   memories: Memory[];
@@ -18,6 +25,8 @@ interface MemoryContextValue {
   graphData: GraphData;
   loading: boolean;
   refresh: () => Promise<void>;
+  retrievalSettings: RetrievalSettings;
+  updateRetrievalSettings: (patch: Partial<RetrievalSettings>) => void;
 }
 
 const MemoryContext = createContext<MemoryContextValue>({
@@ -26,6 +35,8 @@ const MemoryContext = createContext<MemoryContextValue>({
   graphData: { nodes: [], links: [] },
   loading: true,
   refresh: async () => {},
+  retrievalSettings: DEFAULT_RETRIEVAL_SETTINGS,
+  updateRetrievalSettings: () => {},
 });
 
 export function useMemory() {
@@ -78,12 +89,40 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     links: [],
   });
   const [loading, setLoading] = useState(true);
+  const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
   const lastFingerprintRef = useRef("");
+  const settingsRef = useRef(retrievalSettings);
+  const initializedRef = useRef(false);
+
+  // Load settings from localStorage on mount (client-only)
+  useEffect(() => {
+    const stored = loadSettings();
+    setRetrievalSettings(stored);
+    settingsRef.current = stored;
+    initializedRef.current = true;
+  }, []);
+
+  const updateRetrievalSettings = useCallback((patch: Partial<RetrievalSettings>) => {
+    setRetrievalSettings((prev) => {
+      const next = { ...prev, ...patch };
+      saveSettings(next);
+      settingsRef.current = next;
+      return next;
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
+    const s = settingsRef.current;
+    const params = new URLSearchParams({ limit: "500" });
+    if (s.minImportance > 0) params.set("min_importance", String(s.minImportance));
+    if (s.minDecay > 0) params.set("min_decay", String(s.minDecay));
+    if (s.enabledTypes.length < ALL_MEMORY_TYPES.length) {
+      params.set("types", s.enabledTypes.join(","));
+    }
+
     try {
       const [memRes, statsRes] = await Promise.all([
-        fetch("/api/memories?limit=500"),
+        fetch(`/api/memories?${params}`),
         fetch("/api/memories?q=__stats__"),
       ]);
       const memData = await memRes.json();
@@ -105,6 +144,13 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Re-fetch when settings change (after initial load)
+  useEffect(() => {
+    if (initializedRef.current) {
+      refresh();
+    }
+  }, [retrievalSettings, refresh]);
+
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 5000);
@@ -112,7 +158,9 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   return (
-    <MemoryContext.Provider value={{ memories, stats, graphData, loading, refresh }}>
+    <MemoryContext.Provider
+      value={{ memories, stats, graphData, loading, refresh, retrievalSettings, updateRetrievalSettings }}
+    >
       {children}
     </MemoryContext.Provider>
   );

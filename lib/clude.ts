@@ -43,13 +43,14 @@ export function storeMemory(opts: {
 
 export function recallMemories(
   query: string,
-  opts?: { limit?: number; types?: MemoryType[]; minImportance?: number }
+  opts?: { limit?: number; types?: MemoryType[]; minImportance?: number; minDecay?: number }
 ): LocalMemory[] {
   return localRecall({
     query,
     limit: opts?.limit ?? 10,
     memory_types: opts?.types,
     min_importance: opts?.minImportance,
+    min_decay: opts?.minDecay,
   });
 }
 
@@ -57,9 +58,39 @@ export function getStats(): object {
   return localStats();
 }
 
+export function deleteMemoriesBySummaries(summaries: string[]): number {
+  const fs = require("fs");
+  const path = require("path");
+  const dir = path.join(process.env.HOME || process.env.USERPROFILE || ".", ".clude");
+  const file = path.join(dir, "memories.json");
+  try {
+    const raw = fs.readFileSync(file, "utf-8");
+    const store = JSON.parse(raw);
+    const before = store.memories.length;
+    const summarySet = new Set(summaries);
+    store.memories = store.memories.filter(
+      (m: { summary: string }) => !summarySet.has(m.summary)
+    );
+    const deleted = before - store.memories.length;
+    if (deleted > 0) {
+      const tmp = file + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
+      fs.renameSync(tmp, file);
+    }
+    return deleted;
+  } catch {
+    return 0;
+  }
+}
+
 export function findClinamen(
   context: string,
-  limit: number = 3
+  opts?: { limit?: number; minImportance?: number; maxRelevance?: number }
 ): LocalMemory[] {
-  return localClinamen({ context, limit });
+  return localClinamen({
+    context,
+    limit: opts?.limit ?? 3,
+    min_importance: opts?.minImportance,
+    max_relevance: opts?.maxRelevance,
+  });
 }
