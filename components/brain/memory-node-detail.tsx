@@ -48,9 +48,11 @@ function computeRetrievalBreakdown(memory: Memory) {
 export function MemoryNodeDetail({
   memory,
   onClose,
+  onNavigate,
 }: {
   memory: Memory;
   onClose: () => void;
+  onNavigate?: (memoryId: number) => void;
 }) {
   const { graphData, memories } = useMemory();
   const breakdown = computeRetrievalBreakdown(memory);
@@ -84,6 +86,30 @@ export function MemoryNodeDetail({
 
   const totalLinkStrength = connections.reduce((s, l) => s + l.value, 0);
   const graphBoost = connections.length > 0 ? 1 + connections.length * 0.02 : 1;
+
+  // Retrieval-scored related memories
+  const selectedTags = new Set([...(memory.tags || []), ...(memory.concepts || [])]);
+  const now = Date.now();
+  const retrievalScored = memories
+    .filter((m) => m.id !== memory.id)
+    .map((m) => {
+      const memTags = [...(m.tags || []), ...(m.concepts || [])];
+      let shared = 0;
+      for (const t of memTags) if (selectedTags.has(t)) shared++;
+      const relevance = selectedTags.size > 0 ? shared / selectedTags.size : 0;
+      const ageMs = now - new Date(m.created_at).getTime();
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+      const recency = Math.exp(-ageDays * 0.05);
+      const decayRate = DECAY_RATES[m.memory_type] || 0.03;
+      const decay = Math.max(0, 1 - decayRate * ageDays);
+      const typeBoost = 1 + (TYPE_BOOSTS[m.memory_type] || 0);
+      const score = ((recency * 1 + relevance * 2 + m.importance * 2) / 5) * decay * typeBoost;
+      return { memory: m, score };
+    })
+    .filter((r) => r.score > 0.01)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+  const maxRetrievalScore = retrievalScored[0]?.score || 1;
 
   return (
     <div className="flex h-full flex-col">
@@ -297,8 +323,9 @@ export function MemoryNodeDetail({
                     return (
                       <div
                         key={cm.id}
-                        className="rounded-[4px] px-2.5 py-2"
+                        className="rounded-[4px] px-2.5 py-2 transition-all duration-150 cursor-pointer hover:scale-[1.01]"
                         style={{ background: "var(--surface-dimmer)" }}
+                        onClick={() => onNavigate?.(cm.id)}
                       >
                         <div className="flex items-center gap-2">
                           <div
@@ -366,6 +393,51 @@ export function MemoryNodeDetail({
               </p>
             )}
           </div>
+
+          {/* Retrieval-linked memories */}
+          {retrievalScored.length > 0 && (
+            <div className="mt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>
+                Retrieval-Linked ({retrievalScored.length})
+              </p>
+              <div className="mt-2 space-y-1.5">
+                {retrievalScored.map(({ memory: m, score }) => (
+                  <div
+                    key={m.id}
+                    className="rounded-[4px] px-2.5 py-2 transition-all duration-150 cursor-pointer hover:scale-[1.01]"
+                    style={{ background: "var(--surface-dimmer)" }}
+                    onClick={() => onNavigate?.(m.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: TYPE_COLORS[m.memory_type] }}
+                      />
+                      <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
+                        #{m.id} {m.summary?.slice(0, 40)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="w-8 text-[9px]" style={{ color: "var(--text-faint)" }}>score</span>
+                      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full"
+                          style={{
+                            width: `${(score / maxRetrievalScore) * 100}%`,
+                            background: "var(--accent)",
+                            opacity: 0.6,
+                          }}
+                        />
+                      </div>
+                      <span className="w-8 text-right font-mono text-[9px]" style={{ color: "var(--accent)" }}>
+                        {score.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Raw Memory Data */}

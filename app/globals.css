@@ -66,6 +66,11 @@ body {
   to { transform: translateX(0); }
 }
 
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -83,6 +88,7 @@ body {
 
 .animate-fade-slide-up { animation: fadeSlideUp 0.4s ease-out both; }
 .animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in-left { animation: slideInLeft 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-fade-in { animation: fadeIn 0.2s ease-out both; }
 .animate-breathe { animation: breathe 4s ease-in-out infinite; }
 .animate-float { animation: float 3s ease-in-out infinite; }
@@ -141,6 +147,42 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.18); }
 .dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); }
 .dark ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* === Range slider === */
+.neuro-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  height: 100%;
+}
+.neuro-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-solid);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.neuro-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+.neuro-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-solid);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+.neuro-range::-moz-range-track {
+  background: transparent;
+  border: none;
+}
 
 /* === Selection === */
 ::selection { background: rgba(34, 68, 255, 0.15); }
