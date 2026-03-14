@@ -28,33 +28,34 @@ function MemoryItem({
   return (
     <div
       onClick={onToggle}
-      className="cursor-pointer rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 transition hover:border-neutral-700"
+      className="cursor-pointer rounded-[6px] p-4 transition"
+      style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <TypeBadge type={memory.memory_type} />
-            <span className="text-[10px] text-neutral-600">
+            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
               {timeAgo(memory.created_at)}
             </span>
           </div>
-          <p className="mt-2 text-sm text-neutral-200">{memory.summary}</p>
+          <p className="mt-2 text-sm" style={{ color: "var(--text)" }}>{memory.summary}</p>
           <div className="mt-2 w-32">
             <ImportanceBar value={memory.importance} />
           </div>
         </div>
-        <div className="text-right text-[10px] text-neutral-600 space-y-0.5">
+        <div className="text-right text-[10px] space-y-0.5" style={{ color: "var(--text-faint)" }}>
           <div>decay: {Math.round((memory.decay_factor || 1) * 100)}%</div>
           <div>recalls: {memory.access_count || 0}</div>
-          <div className="text-amber-400/60">
+          <div className="text-amber-500">
             +{Math.min((memory.access_count || 0) * 1, 100 - Math.round(memory.importance * 100))}% reinforced
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div className="mt-3 border-t border-neutral-800 pt-3">
-          <p className="text-xs leading-relaxed text-neutral-400">
+        <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {memory.content}
           </p>
           {memory.tags?.length > 0 && (
@@ -62,7 +63,8 @@ function MemoryItem({
               {memory.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400"
+                  className="rounded-[3px] px-1.5 py-0.5 text-[10px]"
+                  style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
                 >
                   {tag}
                 </span>
@@ -70,23 +72,23 @@ function MemoryItem({
             </div>
           )}
           {memory.emotional_valence !== undefined && (
-            <div className="mt-2 text-[10px] text-neutral-500">
+            <div className="mt-2 text-[10px]" style={{ color: "var(--text-faint)" }}>
               valence: {memory.emotional_valence > 0 ? "+" : ""}
               {memory.emotional_valence.toFixed(2)}
             </div>
           )}
           {/* Hebbian reinforcement info */}
-          <div className="mt-2 rounded bg-neutral-800/40 px-2 py-1.5 text-[10px]">
-            <span className="text-neutral-500">Hebbian: </span>
-            <span className="text-amber-400">
+          <div className="mt-2 rounded-[3px] px-2 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
+            <span style={{ color: "var(--text-faint)" }}>Hebbian: </span>
+            <span className="text-amber-500">
               {memory.access_count || 0} recalls
             </span>
-            <span className="text-neutral-600"> &middot; </span>
-            <span className="text-green-400">
+            <span style={{ color: "var(--text-faint)" }}> &middot; </span>
+            <span className="text-green-500">
               +{((memory.access_count || 0) * 0.01).toFixed(2)} imp growth
             </span>
-            <span className="text-neutral-600"> &middot; </span>
-            <span className="text-neutral-400">
+            <span style={{ color: "var(--text-faint)" }}> &middot; </span>
+            <span style={{ color: "var(--text-muted)" }}>
               score: {((memory.importance * 0.2) + ((memory.decay_factor || 1) * 0.1)).toFixed(2)} base
             </span>
           </div>
@@ -106,7 +108,7 @@ export function MemoryTimeline() {
 
   if (sorted.length === 0) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-neutral-600">
+      <div className="flex h-40 items-center justify-center text-sm" style={{ color: "var(--text-faint)" }}>
         No memories yet. Start chatting to create some.
       </div>
     );

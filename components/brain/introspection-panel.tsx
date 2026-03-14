@@ -9,14 +9,14 @@ export function IntrospectionPanel() {
 
   if (memories.length === 0) {
     return (
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
+      <div className="rounded-[6px] p-5" style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}>
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-rose-400" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+          <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
             Introspection
           </h3>
         </div>
-        <p className="mt-3 text-sm text-neutral-600">
+        <p className="mt-3 text-sm" style={{ color: "var(--text-faint)" }}>
           No memories to introspect on yet.
         </p>
       </div>
@@ -82,24 +82,24 @@ export function IntrospectionPanel() {
   ).length;
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
+    <div className="rounded-[6px] p-5" style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-rose-400" />
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+        <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
           Introspection &amp; Self-Model
         </h3>
       </div>
 
       {/* Self model stats */}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <div className="rounded-lg bg-neutral-800/50 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <div className="rounded-[4px] p-3" style={{ background: "var(--surface-dimmer)" }}>
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Self-Model Memories
           </p>
           <p className="mt-1 text-xl font-bold" style={{ color: TYPE_COLORS.self_model }}>
             {selfModelMems.length}
           </p>
-          <p className="text-[10px] text-neutral-500">
+          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
             {selfModelMems.length > 0
               ? `avg imp: ${Math.round(
                   (selfModelMems.reduce((s, m) => s + m.importance, 0) /
@@ -109,8 +109,8 @@ export function IntrospectionPanel() {
               : "none yet"}
           </p>
         </div>
-        <div className="rounded-lg bg-neutral-800/50 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <div className="rounded-[4px] p-3" style={{ background: "var(--surface-dimmer)" }}>
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Introspective
           </p>
           <p
@@ -119,7 +119,7 @@ export function IntrospectionPanel() {
           >
             {introspectiveMems.length}
           </p>
-          <p className="text-[10px] text-neutral-500">
+          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
             {introspectiveMems.length > 0
               ? `avg imp: ${Math.round(
                   (introspectiveMems.reduce((s, m) => s + m.importance, 0) /
@@ -133,28 +133,28 @@ export function IntrospectionPanel() {
 
       {/* Emotional landscape */}
       <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Emotional Landscape
         </p>
         <div className="mt-2 flex items-center gap-3">
           <div className="flex items-center gap-1">
-            <TrendingUp className="h-3 w-3 text-green-400" />
-            <span className="text-[11px] text-green-400">{positive}</span>
+            <TrendingUp className="h-3 w-3 text-green-500" />
+            <span className="text-[11px] text-green-500">{positive}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[11px] text-neutral-500">{neutral}</span>
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{neutral}</span>
           </div>
           <div className="flex items-center gap-1">
-            <TrendingDown className="h-3 w-3 text-red-400" />
-            <span className="text-[11px] text-red-400">{negative}</span>
+            <TrendingDown className="h-3 w-3 text-red-500" />
+            <span className="text-[11px] text-red-500">{negative}</span>
           </div>
-          <span className="text-[10px] text-neutral-600">
+          <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
             avg: {avgValence > 0 ? "+" : ""}
             {avgValence.toFixed(2)}
           </span>
         </div>
         {/* Valence bar */}
-        <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-neutral-800">
+        <div className="mt-2 flex h-2 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
           {positive > 0 && (
             <div
               className="bg-green-500"
@@ -165,9 +165,10 @@ export function IntrospectionPanel() {
           )}
           {neutral > 0 && (
             <div
-              className="bg-neutral-600"
               style={{
                 width: `${(neutral / Math.max(withValence.length, 1)) * 100}%`,
+                background: "var(--text-faint)",
+                opacity: 0.3,
               }}
             />
           )}
@@ -184,10 +185,10 @@ export function IntrospectionPanel() {
 
       {/* Cognitive fingerprint */}
       <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Cognitive Fingerprint
         </p>
-        <p className="mt-1 text-[11px] text-neutral-400">
+        <p className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
           Dominant:{" "}
           <span style={{ color: TYPE_COLORS[dominant[0]] }}>
             {TYPE_LABELS[dominant[0]]}
@@ -197,10 +198,10 @@ export function IntrospectionPanel() {
         <div className="mt-2 space-y-1">
           {(Object.keys(typeCounts) as MemoryType[]).map((type) => (
             <div key={type} className="flex items-center gap-2">
-              <span className="w-20 text-[10px] text-neutral-500">
+              <span className="w-20 text-[10px]" style={{ color: "var(--text-muted)" }}>
                 {TYPE_LABELS[type]}
               </span>
-              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
+              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
                 <div
                   className="absolute inset-y-0 left-0 rounded-full"
                   style={{
@@ -212,7 +213,7 @@ export function IntrospectionPanel() {
                   }}
                 />
               </div>
-              <span className="w-6 text-right text-[10px] text-neutral-600">
+              <span className="w-6 text-right text-[10px]" style={{ color: "var(--text-faint)" }}>
                 {typeCounts[type]}
               </span>
             </div>
@@ -222,21 +223,21 @@ export function IntrospectionPanel() {
 
       {/* Importance tiers */}
       <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Importance Distribution
         </p>
         <div className="mt-2 grid grid-cols-3 gap-2">
-          <div className="rounded-md bg-green-950/30 p-2 text-center">
-            <p className="text-sm font-bold text-green-400">{highImp}</p>
-            <p className="text-[9px] text-neutral-500">high &ge;70%</p>
+          <div className="rounded-[4px] p-2 text-center" style={{ background: "rgba(34, 197, 94, 0.08)" }}>
+            <p className="text-sm font-bold text-green-500">{highImp}</p>
+            <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>high &ge;70%</p>
           </div>
-          <div className="rounded-md bg-amber-950/30 p-2 text-center">
-            <p className="text-sm font-bold text-amber-400">{midImp}</p>
-            <p className="text-[9px] text-neutral-500">mid 30-70%</p>
+          <div className="rounded-[4px] p-2 text-center" style={{ background: "rgba(245, 158, 11, 0.08)" }}>
+            <p className="text-sm font-bold text-amber-500">{midImp}</p>
+            <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>mid 30-70%</p>
           </div>
-          <div className="rounded-md bg-red-950/30 p-2 text-center">
-            <p className="text-sm font-bold text-red-400">{lowImp}</p>
-            <p className="text-[9px] text-neutral-500">low &lt;30%</p>
+          <div className="rounded-[4px] p-2 text-center" style={{ background: "rgba(239, 68, 68, 0.08)" }}>
+            <p className="text-sm font-bold text-red-500">{lowImp}</p>
+            <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>low &lt;30%</p>
           </div>
         </div>
       </div>
@@ -244,20 +245,23 @@ export function IntrospectionPanel() {
       {/* Cognitive focus areas */}
       {topConcepts.length > 0 && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Cognitive Focus Areas
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {topConcepts.map(([concept, count]) => (
               <span
                 key={concept}
-                className="rounded-md bg-neutral-800/60 px-2 py-0.5 text-[10px] text-neutral-300"
+                className="rounded-[4px] px-2 py-0.5 text-[10px]"
                 style={{
+                  background: "var(--surface-dim)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
                   opacity: 0.5 + (count / Math.max(topConcepts[0][1] as number, 1)) * 0.5,
                 }}
               >
                 {concept}{" "}
-                <span className="text-neutral-500">&times;{count}</span>
+                <span style={{ color: "var(--text-faint)" }}>&times;{count}</span>
               </span>
             ))}
           </div>
@@ -266,13 +270,13 @@ export function IntrospectionPanel() {
 
       {/* Activity pulse */}
       <div className="mt-4 flex items-baseline gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           24h activity:
         </span>
-        <span className="text-[11px] font-bold text-white">
+        <span className="text-[11px] font-bold" style={{ color: "var(--text)" }}>
           {recentCount}
         </span>
-        <span className="text-[10px] text-neutral-500">
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
           new memories in last 24h
         </span>
       </div>

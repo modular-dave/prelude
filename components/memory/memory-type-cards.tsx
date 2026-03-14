@@ -32,8 +32,13 @@ export function MemoryTypeCards() {
         return (
           <div
             key={type}
-            className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"
-            style={{ borderTopColor: TYPE_COLORS[type], borderTopWidth: 2 }}
+            className="rounded-[6px] p-4"
+            style={{
+              background: "var(--surface-dim)",
+              border: "1px solid var(--border)",
+              borderTopColor: TYPE_COLORS[type],
+              borderTopWidth: 2,
+            }}
           >
             <div
               className="text-xs font-semibold uppercase tracking-wider"
@@ -41,11 +46,11 @@ export function MemoryTypeCards() {
             >
               {TYPE_LABELS[type]}
             </div>
-            <div className="mt-2 text-2xl font-bold text-white">{count}</div>
-            <div className="mt-1 text-[11px] text-neutral-500">
+            <div className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{count}</div>
+            <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
               {count > 0 ? `${Math.round(avgImportance * 100)}% avg importance` : "No memories"}
             </div>
-            <div className="mt-1 text-[10px] text-neutral-600">
+            <div className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
               {(DECAY_RATES[type] * 100).toFixed(0)}% daily decay
             </div>
           </div>

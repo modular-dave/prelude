@@ -70,16 +70,17 @@ export function StatsGrid() {
         return (
           <div
             key={card.label}
-            className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4"
+            className="rounded-[6px] p-4"
+            style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
           >
             <div className="flex items-center gap-2">
               <Icon
                 className="h-4 w-4"
                 style={{ color: card.color }}
               />
-              <span className="text-[11px] text-neutral-500">{card.label}</span>
+              <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{card.label}</span>
             </div>
-            <div className="mt-2 text-xl font-bold text-white">
+            <div className="mt-2 text-xl font-bold" style={{ color: "var(--text)" }}>
               {card.value}
             </div>
           </div>

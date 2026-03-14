@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useMemo, useEffect } from "react";
+import { useCallback, useRef, useMemo, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMemory } from "@/lib/memory-context";
 import { TYPE_COLORS, DECAY_RATES } from "@/lib/types";
@@ -41,11 +41,14 @@ interface NeuralGraphProps {
   onNodeSelect?: (memoryId: number) => void;
   selectedNodeId?: number | null;
   viewMode?: ViewMode;
+  width?: number;
+  height?: number;
 }
 
-export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian" }: NeuralGraphProps) {
+export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian", width, height }: NeuralGraphProps) {
   const { graphData, memories } = useMemory();
   const graphRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [hoveredNodeId, setHoveredNodeId] = useState<number | null>(null);
 
   const data = useMemo(() => {
     if (graphData.nodes.length === 0 && memories.length > 0) {
@@ -53,7 +56,7 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
         nodes: memories.map((m) => ({
           id: m.id,
           name: m.summary?.slice(0, 40) || "memory",
-          val: Math.max(2, (m.importance || 0.5) * 12),
+          val: Math.max(4, (m.importance || 0.5) * 20),
           color: TYPE_COLORS[m.memory_type] || "#666",
           type: m.memory_type,
           importance: m.importance,
@@ -61,7 +64,14 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
         links: [],
       };
     }
-    return graphData;
+    // Override val for bigger nodes
+    return {
+      ...graphData,
+      nodes: graphData.nodes.map((n) => ({
+        ...n,
+        val: Math.max(4, (n.importance || 0.5) * 20),
+      })),
+    };
   }, [graphData, memories]);
 
   // Max link value for normalization
@@ -137,28 +147,41 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
     return map;
   }, [selectedNodeId, viewMode, data.links, memories]);
 
-  // Custom Three.js node objects with per-node opacity
+  // Custom Three.js node objects with per-node opacity + hover glow
   const nodeThreeObject = useCallback(
     (node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-      const baseSize = Math.cbrt(node.val) * 1.8;
+      const baseSize = Math.cbrt(node.val) * 2.2;
       const typeColor = TYPE_COLORS[node.type as keyof typeof TYPE_COLORS] || "#666";
+      const isHovered = node.id === hoveredNodeId;
 
       if (!selectedNodeId || !connectionMap) {
-        // Default state: clean colored sphere
-        const geo = new THREE.SphereGeometry(baseSize, 16, 12);
+        // Default state: clean sphere with hover glow
+        const group = new THREE.Group();
+        const geo = new THREE.SphereGeometry(baseSize, 20, 14);
         const mat = new THREE.MeshLambertMaterial({
           color: typeColor,
           transparent: true,
-          opacity: 0.85,
+          opacity: isHovered ? 1.0 : 0.85,
+          emissive: new THREE.Color(typeColor),
+          emissiveIntensity: isHovered ? 0.4 : 0.05,
         });
-        return new THREE.Mesh(geo, mat);
+        group.add(new THREE.Mesh(geo, mat));
+
+        if (isHovered) {
+          const halo = new THREE.Mesh(
+            new THREE.SphereGeometry(baseSize * 2, 16, 12),
+            new THREE.MeshBasicMaterial({ color: typeColor, transparent: true, opacity: 0.08 })
+          );
+          group.add(halo);
+        }
+        return group;
       }
 
       if (node.id === selectedNodeId) {
-        // Selected: bright white core + type-colored glow halo
+        // Selected: bright core + type-colored glow halo
         const group = new THREE.Group();
         const core = new THREE.Mesh(
-          new THREE.SphereGeometry(baseSize * 1.4, 20, 14),
+          new THREE.SphereGeometry(baseSize * 1.3, 20, 14),
           new THREE.MeshLambertMaterial({ color: "#ffffff", transparent: true, opacity: 1.0 })
         );
         group.add(core);
@@ -173,7 +196,6 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
 
       const strength = connectionMap.get(node.id);
       if (strength !== undefined) {
-        // Connected: type color with opacity and emissive glow proportional to strength
         const opacity = 0.3 + strength * 0.7;
         const size = baseSize * (0.7 + strength * 0.6);
         const geo = new THREE.SphereGeometry(size, 16, 12);
@@ -187,26 +209,26 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
         return new THREE.Mesh(geo, mat);
       }
 
-      // Unrelated: tiny and very dim
-      const geo = new THREE.SphereGeometry(baseSize * 0.35, 8, 6);
+      // Unrelated: small and dim
+      const geo = new THREE.SphereGeometry(baseSize * 0.5, 8, 6);
       const mat = new THREE.MeshLambertMaterial({
-        color: "#222222",
+        color: "#bbbbbb",
         transparent: true,
-        opacity: 0.08,
+        opacity: 0.2,
       });
       return new THREE.Mesh(geo, mat);
     },
-    [selectedNodeId, connectionMap]
+    [selectedNodeId, connectionMap, hoveredNodeId]
   );
 
-  // Force node object refresh when selection/mode changes (without restarting physics)
+  // Force node object refresh when selection/mode/hover changes
   useEffect(() => {
     if (graphRef.current) {
       graphRef.current.refresh();
     }
-  }, [selectedNodeId, viewMode]);
+  }, [selectedNodeId, viewMode, hoveredNodeId]);
 
-  // --- Edge styling: always strength-aware ---
+  // --- Edge styling ---
 
   const getLinkColor = useCallback(
     (link: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -214,26 +236,22 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
       const tgt = typeof link.target === "object" ? link.target.id : link.target;
       const normalizedStrength = (link.value || 1) / maxLinkValue;
 
-      // Get type colors of both endpoints
       const srcType = nodeTypeMap.get(src);
       const tgtType = nodeTypeMap.get(tgt);
       const srcColor = TYPE_COLORS[srcType as keyof typeof TYPE_COLORS] || "#444";
       const tgtColor = TYPE_COLORS[tgtType as keyof typeof TYPE_COLORS] || "#444";
-      // Blend the two endpoint colors
       const blended = lerpHex(srcColor, tgtColor, 0.5);
 
       if (selectedNodeId && connectionMap) {
-        // Selection active: highlight connected edges, fade the rest
         if (src === selectedNodeId || tgt === selectedNodeId) {
           const otherId = src === selectedNodeId ? tgt : src;
           const connStrength = connectionMap.get(otherId) ?? 0;
           return dimHex(blended, 0.4 + connStrength * 0.6);
         }
-        return "#0a0a0a"; // nearly invisible
+        return "#e0e0e0";
       }
 
-      // Default: edge color = blended type colors, dimmed by strength
-      return dimHex(blended, 0.15 + normalizedStrength * 0.35);
+      return dimHex(blended, 0.25 + normalizedStrength * 0.45);
     },
     [selectedNodeId, connectionMap, maxLinkValue, nodeTypeMap]
   );
@@ -249,18 +267,16 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
         if (src === selectedNodeId || tgt === selectedNodeId) {
           const otherId = src === selectedNodeId ? tgt : src;
           const connStrength = connectionMap.get(otherId) ?? 0;
-          return 0.8 + connStrength * 4; // 0.8 to 4.8
+          return 0.8 + connStrength * 4;
         }
-        return 0.05; // near-invisible
+        return 0.05;
       }
 
-      // Default: width scales with shared tag count
-      return 0.2 + normalizedStrength * 1.5;
+      return 0.3 + normalizedStrength * 1.8;
     },
     [selectedNodeId, connectionMap, maxLinkValue]
   );
 
-  // Directional particles on strong links when selected
   const getLinkParticles = useCallback(
     (link: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       if (!selectedNodeId || !connectionMap) return 0;
@@ -292,7 +308,7 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
   const handleNodeClick = useCallback(
     (node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       if (graphRef.current) {
-        const distance = 80;
+        const distance = 100;
         const distRatio =
           1 + distance / Math.hypot(node.x || 0, node.y || 0, node.z || 0);
         graphRef.current.cameraPosition(
@@ -310,12 +326,22 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
     [onNodeSelect]
   );
 
+  const handleNodeHover = useCallback(
+    (node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      setHoveredNodeId(node ? node.id : null);
+      // Change cursor
+      const el = document.querySelector("canvas");
+      if (el) el.style.cursor = node ? "pointer" : "default";
+    },
+    []
+  );
+
   if (data.nodes.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center text-neutral-600">
+      <div className="flex h-full items-center justify-center" style={{ color: "var(--text-faint)" }}>
         <div className="text-center">
-          <p className="text-lg">No memories yet</p>
-          <p className="mt-1 text-sm">Chat to create your first memories</p>
+          <p className="heading">No memories yet</p>
+          <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>Chat to create your first memories</p>
         </div>
       </div>
     );
@@ -325,23 +351,26 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
     <ForceGraph3D
       ref={graphRef}
       graphData={data}
+      width={width}
+      height={height}
       nodeLabel={(node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         const mem = memories.find((m) => m.id === node.id);
         if (!mem) return node.name;
 
         const strength = connectionMap?.get(node.id);
         const strengthLabel = selectedNodeId && node.id !== selectedNodeId && strength !== undefined
-          ? `<div style="color:#aaa;font-size:10px;margin-top:4px">${viewMode} strength: ${Math.round(strength * 100)}%</div>`
+          ? `<div style="color:#666;font-size:9px;margin-top:4px">${viewMode} strength: ${Math.round(strength * 100)}%</div>`
           : "";
 
-        return `<div style="background:rgba(10,10,10,0.92);padding:8px 12px;border-radius:8px;border:1px solid ${TYPE_COLORS[mem.memory_type]}33;max-width:250px;backdrop-filter:blur(8px)">
-              <div style="color:${TYPE_COLORS[mem.memory_type]};font-size:10px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;font-weight:600">${mem.memory_type.replace("_", " ")}</div>
-              <div style="color:#e0e0e0;font-size:12px;line-height:1.4">${mem.summary}</div>
-              <div style="color:#666;font-size:10px;margin-top:4px">importance: ${Math.round(mem.importance * 100)}%</div>
+        return `<div style="font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,0.96);padding:10px 14px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);max-width:260px;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,0.08)">
+              <div style="color:${TYPE_COLORS[mem.memory_type]};font-size:9px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;font-weight:600">${mem.memory_type.replace("_", " ")}</div>
+              <div style="color:#111;font-size:11px;line-height:1.5">${mem.summary}</div>
+              <div style="color:#999;font-size:9px;margin-top:6px">importance ${Math.round(mem.importance * 100)}%</div>
               ${strengthLabel}
             </div>`;
       }}
       nodeThreeObject={nodeThreeObject}
+      onNodeHover={handleNodeHover}
       linkColor={getLinkColor}
       linkWidth={getLinkWidth}
       linkOpacity={0.9}
@@ -349,12 +378,14 @@ export function NeuralGraph({ onNodeSelect, selectedNodeId, viewMode = "hebbian"
       linkDirectionalParticleSpeed={0.006}
       linkDirectionalParticleWidth={1.5}
       linkDirectionalParticleColor={getLinkParticleColor}
-      backgroundColor="#050508"
+      backgroundColor="rgba(0,0,0,0)"
       onNodeClick={handleNodeClick}
       enableNodeDrag={true}
       warmupTicks={50}
       cooldownTicks={100}
       cooldownTime={3000}
+      d3AlphaDecay={0.01}
+      d3VelocityDecay={0.25}
     />
   );
 }

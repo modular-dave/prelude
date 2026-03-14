@@ -88,7 +88,7 @@ export function MemoryNodeDetail({
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-start justify-between border-b border-neutral-800 pb-3">
+      <div className="flex items-start justify-between pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="flex-1 pr-2">
           <div className="flex items-center gap-2">
             <div
@@ -101,13 +101,14 @@ export function MemoryNodeDetail({
             >
               {TYPE_LABELS[memory.memory_type]}
             </span>
-            <span className="text-[10px] text-neutral-600">#{memory.id}</span>
+            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>#{memory.id}</span>
           </div>
-          <p className="mt-1.5 text-sm text-neutral-200">{memory.summary}</p>
+          <p className="mt-1.5 text-sm" style={{ color: "var(--text)" }}>{memory.summary}</p>
         </div>
         <button
           onClick={onClose}
-          className="rounded-md p-1 text-neutral-500 hover:bg-neutral-800 hover:text-white"
+          className="rounded-[4px] p-1 transition"
+          style={{ color: "var(--text-muted)" }}
         >
           <X className="h-4 w-4" />
         </button>
@@ -116,7 +117,7 @@ export function MemoryNodeDetail({
       <div className="flex-1 overflow-y-auto space-y-4 pt-3">
         {/* Retrieval Score Breakdown */}
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500">
             Retrieval Score Breakdown
           </h4>
           <div className="mt-2 space-y-1.5">
@@ -156,9 +157,9 @@ export function MemoryNodeDetail({
               detail={`${connections.length} links → +${((graphBoost - 1) * 100).toFixed(0)}%`}
             />
           </div>
-          <div className="mt-2 rounded-md bg-neutral-800/50 px-2.5 py-1.5 text-[10px]">
-            <span className="text-neutral-500">Local _score: </span>
-            <span className="font-mono text-white">
+          <div className="mt-2 rounded-[4px] px-2.5 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
+            <span style={{ color: "var(--text-faint)" }}>Local _score: </span>
+            <span className="font-mono" style={{ color: "var(--text)" }}>
               {breakdown.localScore.toFixed(3)}
             </span>
           </div>
@@ -166,41 +167,41 @@ export function MemoryNodeDetail({
 
         {/* Hebbian Reinforcement — per-node detail */}
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-purple-500">
             Hebbian Reinforcement
           </h4>
 
           {/* Core stats row */}
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div className="rounded-md bg-neutral-800/50 p-2 text-center">
-              <p className="text-lg font-bold text-amber-400">
+            <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
+              <p className="text-lg font-bold text-amber-500">
                 {memory.access_count || 0}
               </p>
-              <p className="text-[9px] text-neutral-500">recalls</p>
+              <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>recalls</p>
             </div>
-            <div className="rounded-md bg-neutral-800/50 p-2 text-center">
-              <p className="text-lg font-bold text-green-400">
+            <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
+              <p className="text-lg font-bold text-green-500">
                 +{(hebbianGrowth * 100).toFixed(1)}%
               </p>
-              <p className="text-[9px] text-neutral-500">imp growth</p>
+              <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>imp growth</p>
             </div>
-            <div className="rounded-md bg-neutral-800/50 p-2 text-center">
-              <p className="text-lg font-bold text-purple-400">
+            <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
+              <p className="text-lg font-bold text-purple-500">
                 {connections.length}
               </p>
-              <p className="text-[9px] text-neutral-500">links</p>
+              <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>links</p>
             </div>
           </div>
 
           {/* Effective importance bar */}
           <div className="mt-3">
             <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neutral-500">Effective importance</span>
-              <span className="font-mono text-white">
+              <span style={{ color: "var(--text-muted)" }}>Effective importance</span>
+              <span className="font-mono" style={{ color: "var(--text)" }}>
                 {Math.round(effectiveImportance * 100)}%
               </span>
             </div>
-            <div className="mt-1 h-2 overflow-hidden rounded-full bg-neutral-800">
+            <div className="mt-1 h-2 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
               <div className="relative h-full">
                 <div
                   className="absolute inset-y-0 left-0 rounded-full bg-amber-500/40"
@@ -212,35 +213,35 @@ export function MemoryNodeDetail({
                 />
               </div>
             </div>
-            <div className="mt-0.5 flex justify-between text-[9px] text-neutral-600">
+            <div className="mt-0.5 flex justify-between text-[9px]" style={{ color: "var(--text-faint)" }}>
               <span>base: {Math.round(memory.importance * 100)}%</span>
               <span>+{(hebbianGrowth * 100).toFixed(1)}% from {memory.access_count || 0} recalls (&times;0.01)</span>
             </div>
           </div>
 
           {/* Reinforcement rules applied to this node */}
-          <div className="mt-3 rounded-md bg-neutral-800/30 p-2 text-[10px] space-y-1">
+          <div className="mt-3 rounded-[4px] p-2 text-[10px] space-y-1" style={{ background: "var(--surface-dim)" }}>
             <div className="flex justify-between">
-              <span className="text-neutral-500">Importance increment</span>
-              <span className="font-mono text-amber-400">
+              <span style={{ color: "var(--text-muted)" }}>Importance increment</span>
+              <span className="font-mono text-amber-500">
                 {memory.access_count || 0} &times; 0.01 = +{((memory.access_count || 0) * 0.01).toFixed(2)}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">Capped at</span>
-              <span className="font-mono text-neutral-400">
+              <span style={{ color: "var(--text-muted)" }}>Capped at</span>
+              <span className="font-mono" style={{ color: "var(--text-muted)" }}>
                 1.0 (current: {memory.importance.toFixed(2)})
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">Co-retrieval links</span>
-              <span className="font-mono text-purple-400">
+              <span style={{ color: "var(--text-muted)" }}>Co-retrieval links</span>
+              <span className="font-mono text-purple-500">
                 {connections.length} &times; +0.05 per co-retrieval
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">Graph boost</span>
-              <span className="font-mono text-orange-400">
+              <span style={{ color: "var(--text-muted)" }}>Graph boost</span>
+              <span className="font-mono text-orange-500">
                 {connections.length} links &rarr; &times;{graphBoost.toFixed(2)}
               </span>
             </div>
@@ -249,11 +250,11 @@ export function MemoryNodeDetail({
           {/* Association links with strength bars */}
           <div className="mt-3">
             <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-400">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500">
                 Association Links ({connections.length})
               </p>
               {connections.length > 0 && (
-                <span className="font-mono text-[9px] text-neutral-600">
+                <span className="font-mono text-[9px]" style={{ color: "var(--text-faint)" }}>
                   total str: {totalLinkStrength}
                 </span>
               )}
@@ -274,7 +275,6 @@ export function MemoryNodeDetail({
                       return src === cm.id || tgt === cm.id;
                     });
                     const strength = link?.value || 0;
-                    // Find shared tags/concepts between this memory and connected one
                     const sharedTags = (memory.tags || []).filter((t) =>
                       (cm.tags || []).includes(t)
                     );
@@ -297,7 +297,8 @@ export function MemoryNodeDetail({
                     return (
                       <div
                         key={cm.id}
-                        className="rounded-md bg-neutral-800/40 px-2.5 py-2"
+                        className="rounded-[4px] px-2.5 py-2"
+                        style={{ background: "var(--surface-dimmer)" }}
                       >
                         <div className="flex items-center gap-2">
                           <div
@@ -306,14 +307,14 @@ export function MemoryNodeDetail({
                               backgroundColor: TYPE_COLORS[cm.memory_type],
                             }}
                           />
-                          <span className="flex-1 truncate text-[10px] text-neutral-300">
+                          <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
                             #{cm.id} {cm.summary?.slice(0, 40)}
                           </span>
                         </div>
                         {/* Strength bar */}
                         <div className="mt-1.5 flex items-center gap-2">
-                          <span className="w-8 text-[9px] text-neutral-600">str</span>
-                          <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-700">
+                          <span className="w-8 text-[9px]" style={{ color: "var(--text-faint)" }}>str</span>
+                          <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
                             <div
                               className="absolute inset-y-0 left-0 rounded-full bg-purple-500"
                               style={{
@@ -322,7 +323,7 @@ export function MemoryNodeDetail({
                               }}
                             />
                           </div>
-                          <span className="w-6 text-right font-mono text-[9px] text-purple-400">
+                          <span className="w-6 text-right font-mono text-[9px] text-purple-500">
                             {strength}
                           </span>
                         </div>
@@ -331,7 +332,8 @@ export function MemoryNodeDetail({
                           {sharedTags.map((t) => (
                             <span
                               key={`t-${t}`}
-                              className="rounded bg-neutral-700/50 px-1 py-0.5 text-[8px] text-neutral-400"
+                              className="rounded-[3px] px-1 py-0.5 text-[8px]"
+                              style={{ background: "var(--surface-dim)", color: "var(--text-muted)" }}
                             >
                               {t}
                             </span>
@@ -339,12 +341,13 @@ export function MemoryNodeDetail({
                           {sharedConcepts.map((c) => (
                             <span
                               key={`c-${c}`}
-                              className="rounded bg-purple-950/40 px-1 py-0.5 text-[8px] text-purple-400"
+                              className="rounded-[3px] px-1 py-0.5 text-[8px]"
+                              style={{ background: "rgba(147, 51, 234, 0.1)", color: "rgb(147, 51, 234)" }}
                             >
                               {c}
                             </span>
                           ))}
-                          <span className="text-[8px] text-neutral-600">
+                          <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
                             ~{coRetrievalEst} co-retrievals
                           </span>
                         </div>
@@ -352,13 +355,13 @@ export function MemoryNodeDetail({
                     );
                   })}
                 {connectedMemories.length > 8 && (
-                  <p className="text-[9px] text-neutral-600">
+                  <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>
                     +{connectedMemories.length - 8} more connections
                   </p>
                 )}
               </div>
             ) : (
-              <p className="mt-2 text-[10px] text-neutral-600">
+              <p className="mt-2 text-[10px]" style={{ color: "var(--text-faint)" }}>
                 No associations yet &mdash; links form when memories share tags/concepts or have vector similarity &ge;0.6
               </p>
             )}
@@ -367,14 +370,14 @@ export function MemoryNodeDetail({
 
         {/* Raw Memory Data */}
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
             Memory Data
           </h4>
           <div className="mt-2 space-y-1 text-[10px]">
             <div className="flex justify-between">
-              <span className="text-neutral-500">Content</span>
+              <span style={{ color: "var(--text-muted)" }}>Content</span>
             </div>
-            <p className="rounded-md bg-neutral-800/30 p-2 text-[10px] leading-relaxed text-neutral-400">
+            <p className="rounded-[4px] p-2 text-[10px] leading-relaxed" style={{ background: "var(--surface-dim)", color: "var(--text-muted)" }}>
               {memory.content}
             </p>
             {memory.tags?.length > 0 && (
@@ -382,7 +385,8 @@ export function MemoryNodeDetail({
                 {memory.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded bg-neutral-800 px-1.5 py-0.5 text-[9px] text-neutral-400"
+                    className="rounded-[3px] px-1.5 py-0.5 text-[9px]"
+                    style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
                   >
                     {tag}
                   </span>
@@ -394,7 +398,8 @@ export function MemoryNodeDetail({
                 {memory.concepts.map((c) => (
                   <span
                     key={c}
-                    className="rounded bg-purple-950/30 px-1.5 py-0.5 text-[9px] text-purple-400"
+                    className="rounded-[3px] px-1.5 py-0.5 text-[9px]"
+                    style={{ background: "rgba(147, 51, 234, 0.1)", color: "rgb(147, 51, 234)" }}
                   >
                     {c}
                   </span>
@@ -403,25 +408,25 @@ export function MemoryNodeDetail({
             )}
             <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pt-1">
               <div className="flex justify-between">
-                <span className="text-neutral-600">valence</span>
-                <span className="text-neutral-300">
+                <span style={{ color: "var(--text-faint)" }}>valence</span>
+                <span style={{ color: "var(--text)" }}>
                   {(memory.emotional_valence || 0) > 0 ? "+" : ""}
                   {(memory.emotional_valence || 0).toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-600">source</span>
-                <span className="text-neutral-300">{memory.source}</span>
+                <span style={{ color: "var(--text-faint)" }}>source</span>
+                <span style={{ color: "var(--text)" }}>{memory.source}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-600">created</span>
-                <span className="text-neutral-300">
+                <span style={{ color: "var(--text-faint)" }}>created</span>
+                <span style={{ color: "var(--text)" }}>
                   {new Date(memory.created_at).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-neutral-600">accessed</span>
-                <span className="text-neutral-300">
+                <span style={{ color: "var(--text-faint)" }}>accessed</span>
+                <span style={{ color: "var(--text)" }}>
                   {new Date(memory.last_accessed).toLocaleString()}
                 </span>
               </div>
@@ -448,8 +453,8 @@ function ScoreRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-20 text-[10px] text-neutral-400">{label}</span>
-      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
+      <span className="w-20 text-[10px]" style={{ color: "var(--text-muted)" }}>{label}</span>
+      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
         <div
           className="absolute inset-y-0 left-0 rounded-full"
           style={{
@@ -463,11 +468,11 @@ function ScoreRow({
         {value.toFixed(3)}
       </span>
       {weight > 0 && (
-        <span className="w-5 text-right text-[9px] text-neutral-600">
+        <span className="w-5 text-right text-[9px]" style={{ color: "var(--text-faint)" }}>
           &times;{weight}
         </span>
       )}
-      <span className="w-16 text-right text-[9px] text-neutral-600">
+      <span className="w-16 text-right text-[9px]" style={{ color: "var(--text-faint)" }}>
         {detail}
       </span>
     </div>

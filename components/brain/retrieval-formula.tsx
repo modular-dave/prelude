@@ -37,42 +37,42 @@ export function RetrievalFormula() {
   const liveDecay = Math.pow(0.995, avgHoursOld);
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-5">
+    <div className="rounded-[6px] p-5" style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}>
       <div className="flex items-center gap-2">
-        <Activity className="h-4 w-4 text-cyan-400" />
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+        <Activity className="h-4 w-4 text-cyan-500" />
+        <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text)" }}>
           Retrieval Scoring Formula
         </h3>
       </div>
 
       {/* Formula display */}
-      <div className="mt-4 rounded-lg bg-black/40 p-4 font-mono text-[11px] leading-relaxed text-neutral-300">
-        <span className="text-neutral-500">score = </span>
-        <span className="text-cyan-400">(R&times;1</span>
-        <span className="text-neutral-500"> + </span>
-        <span className="text-blue-400">Rel&times;2</span>
-        <span className="text-neutral-500"> + </span>
-        <span className="text-amber-400">I&times;2</span>
-        <span className="text-neutral-500"> + </span>
-        <span className="text-purple-400">V&times;4</span>
-        <span className="text-cyan-400">)</span>
-        <span className="text-neutral-500"> / {totalWeight} &times; </span>
-        <span className="text-green-400">decay</span>
-        <span className="text-neutral-500"> &times; </span>
-        <span className="text-rose-400">type_boost</span>
-        <span className="text-neutral-500"> &times; </span>
-        <span className="text-orange-400">graph_boost</span>
+      <div className="mt-4 rounded-[4px] p-4 font-mono text-[11px] leading-relaxed" style={{ background: "var(--surface-dimmer)", color: "var(--text)" }}>
+        <span style={{ color: "var(--text-faint)" }}>score = </span>
+        <span className="text-cyan-500">(R&times;1</span>
+        <span style={{ color: "var(--text-faint)" }}> + </span>
+        <span className="text-blue-500">Rel&times;2</span>
+        <span style={{ color: "var(--text-faint)" }}> + </span>
+        <span className="text-amber-500">I&times;2</span>
+        <span style={{ color: "var(--text-faint)" }}> + </span>
+        <span className="text-purple-500">V&times;4</span>
+        <span className="text-cyan-500">)</span>
+        <span style={{ color: "var(--text-faint)" }}> / {totalWeight} &times; </span>
+        <span className="text-green-500">decay</span>
+        <span style={{ color: "var(--text-faint)" }}> &times; </span>
+        <span className="text-rose-500">type_boost</span>
+        <span style={{ color: "var(--text-faint)" }}> &times; </span>
+        <span className="text-orange-500">graph_boost</span>
       </div>
 
       {/* Weight bars */}
       <div className="mt-4 space-y-2">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Weight Distribution
         </p>
         {Object.entries(WEIGHTS).map(([key, w]) => (
           <div key={key} className="flex items-center gap-3">
-            <span className="w-20 text-[11px] text-neutral-400">{w.label}</span>
-            <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-neutral-800">
+            <span className="w-20 text-[11px]" style={{ color: "var(--text-muted)" }}>{w.label}</span>
+            <div className="relative h-2 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
               <div
                 className="absolute inset-y-0 left-0 rounded-full transition-all"
                 style={{
@@ -94,47 +94,48 @@ export function RetrievalFormula() {
 
       {/* Live decay */}
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-neutral-800/50 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <div className="rounded-[4px] p-3" style={{ background: "var(--surface-dimmer)" }}>
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Decay Function
           </p>
-          <p className="mt-1 font-mono text-xs text-green-400">
+          <p className="mt-1 font-mono text-xs text-green-500">
             0.995<sup>hours</sup>
           </p>
-          <p className="mt-1 text-[10px] text-neutral-500">
+          <p className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
             Live avg: {(liveDecay * 100).toFixed(1)}%
-            <span className="text-neutral-600">
+            <span style={{ color: "var(--text-faint)" }}>
               {" "}
               ({Math.round(avgHoursOld)}h avg age)
             </span>
           </p>
         </div>
-        <div className="rounded-lg bg-neutral-800/50 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <div className="rounded-[4px] p-3" style={{ background: "var(--surface-dimmer)" }}>
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Local Score
           </p>
-          <p className="mt-1 font-mono text-xs text-neutral-300">
-            <span className="text-cyan-400">term</span>&times;0.6 +{" "}
-            <span className="text-amber-400">imp</span>&times;0.2 +{" "}
-            <span className="text-green-400">dec</span>&times;0.1 +{" "}
-            <span className="text-purple-400">rec</span>&times;0.1
+          <p className="mt-1 font-mono text-xs" style={{ color: "var(--text)" }}>
+            <span className="text-cyan-500">term</span>&times;0.6 +{" "}
+            <span className="text-amber-500">imp</span>&times;0.2 +{" "}
+            <span className="text-green-500">dec</span>&times;0.1 +{" "}
+            <span className="text-purple-500">rec</span>&times;0.1
           </p>
         </div>
       </div>
 
       {/* Type boosts */}
       <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Type Boosts
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           {(Object.keys(TYPE_BOOSTS) as MemoryType[]).map((type) => (
             <div
               key={type}
-              className="rounded-md bg-neutral-800/60 px-2 py-1 text-[10px]"
+              className="rounded-[4px] px-2 py-1 text-[10px]"
+              style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}
             >
-              <span className="text-neutral-400">{TYPE_LABELS[type]}</span>{" "}
-              <span className="font-mono text-rose-400">
+              <span style={{ color: "var(--text-muted)" }}>{TYPE_LABELS[type]}</span>{" "}
+              <span className="font-mono text-rose-500">
                 +{(TYPE_BOOSTS[type] * 100).toFixed(0)}%
               </span>
             </div>
@@ -144,17 +145,18 @@ export function RetrievalFormula() {
 
       {/* Decay rates per type */}
       <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider text-neutral-600">
+        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
           Decay Rates (per day)
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           {(Object.keys(DECAY_RATES) as MemoryType[]).map((type) => (
             <div
               key={type}
-              className="rounded-md bg-neutral-800/60 px-2 py-1 text-[10px]"
+              className="rounded-[4px] px-2 py-1 text-[10px]"
+              style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}
             >
-              <span className="text-neutral-400">{TYPE_LABELS[type]}</span>{" "}
-              <span className="font-mono text-green-400">
+              <span style={{ color: "var(--text-muted)" }}>{TYPE_LABELS[type]}</span>{" "}
+              <span className="font-mono text-green-500">
                 {(DECAY_RATES[type] * 100).toFixed(0)}%
               </span>
             </div>
