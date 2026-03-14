@@ -2,12 +2,10 @@
 
 import { useMemo } from "react";
 
-// Generate brain-like contour widths (wider in middle, narrow at top/bottom)
 function brainContour(lines: number): number[] {
   const widths: number[] = [];
   for (let i = 0; i < lines; i++) {
-    const t = i / (lines - 1); // 0 to 1
-    // Brain shape: wider at 0.3-0.7, narrower at edges
+    const t = i / (lines - 1);
     const base = Math.sin(t * Math.PI);
     const asym = t < 0.5 ? 0.85 + 0.15 * Math.sin(t * Math.PI * 2) : 1;
     const noise = 0.9 + 0.1 * Math.sin(i * 0.7);
@@ -22,7 +20,7 @@ export function BrainScanline({ size = 200 }: { size?: number }) {
 
   return (
     <div
-      className="relative opacity-30"
+      className="relative opacity-25"
       style={{ width: size, height: size }}
     >
       {widths.map((w, i) => (
@@ -33,7 +31,7 @@ export function BrainScanline({ size = 200 }: { size?: number }) {
             top: `${(i / lines) * 100}%`,
             width: `${w * 80}%`,
             height: 1.5,
-            background: `linear-gradient(90deg, transparent, #3b82f6 30%, #8b5cf6 70%, transparent)`,
+            background: `linear-gradient(90deg, transparent, var(--episodic) 30%, var(--self-model) 70%, transparent)`,
             animation: `scanPulse ${2.5 + (i % 7) * 0.3}s ease-in-out ${(i % 11) * 0.15}s infinite alternate`,
           }}
         />

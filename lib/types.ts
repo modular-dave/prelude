@@ -53,11 +53,11 @@ export interface DreamPhase {
 }
 
 export const TYPE_COLORS: Record<MemoryType, string> = {
-  episodic: "#3b82f6",
-  semantic: "#8b5cf6",
-  procedural: "#22c55e",
-  self_model: "#f59e0b",
-  introspective: "#f43f5e",
+  episodic: "#1a3abf",
+  semantic: "#3a4a7a",
+  procedural: "#2a6a3a",
+  self_model: "#5a3a80",
+  introspective: "#9a3030",
 };
 
 export const TYPE_LABELS: Record<MemoryType, string> = {

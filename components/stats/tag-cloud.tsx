@@ -20,7 +20,7 @@ export function TagCloud() {
 
   if (tags.length === 0) {
     return (
-      <p className="text-xs text-neutral-600">No tags yet</p>
+      <p className="text-xs" style={{ color: "var(--text-faint)" }}>No tags yet</p>
     );
   }
 
@@ -33,11 +33,16 @@ export function TagCloud() {
         return (
           <span
             key={tag}
-            className="rounded-lg bg-neutral-800 px-2 py-1 text-neutral-400 transition hover:bg-neutral-700"
-            style={{ fontSize: `${Math.round(scale * 12)}px` }}
+            className="rounded-[4px] px-2 py-1 transition"
+            style={{
+              fontSize: `${Math.round(scale * 12)}px`,
+              background: "var(--surface-dim)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+            }}
           >
             {tag}
-            <span className="ml-1 text-neutral-600">{count}</span>
+            <span className="ml-1" style={{ color: "var(--text-faint)" }}>{count}</span>
           </span>
         );
       })}
