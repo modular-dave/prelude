@@ -1,1 +1,27 @@
 @import "tailwindcss";
+
+@keyframes scanPulse {
+  0% {
+    opacity: 0.15;
+    transform: translateX(-50%) scaleX(0.92);
+  }
+  100% {
+    opacity: 0.5;
+    transform: translateX(-50%) scaleX(1);
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
