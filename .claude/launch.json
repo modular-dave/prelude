@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prelude-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "mlx-server",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["server/mlx_server.py", "11434"],
+      "port": 11434
+    }
+  ]
+}
