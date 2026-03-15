@@ -8,10 +8,13 @@ import { ChatHistory } from "@/components/chat/chat-history";
 import {
   loadConversations,
   saveConversation,
+  updateConversation,
   deleteConversation,
+  clearAllConversations,
   generateTitle,
 } from "@/lib/chat-store";
 import { getActiveModel } from "@/lib/model-settings";
+import { loadSystemPrompt } from "@/lib/system-prompt";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
 
 export function ChatPanel() {
@@ -24,15 +27,21 @@ export function ChatPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh, retrievalSettings } = useMemory();
 
+  const refreshConversations = useCallback(async () => {
+    const convs = await loadConversations();
+    setConversations(convs);
+    return convs;
+  }, []);
+
   // Load conversations and restore most recent on mount
   useEffect(() => {
-    const convs = loadConversations();
-    setConversations(convs);
-    if (convs.length > 0) {
-      setActiveId(convs[0].id);
-      setMessages(convs[0].messages);
-    }
-  }, []);
+    refreshConversations().then((convs) => {
+      if (convs.length > 0) {
+        setActiveId(convs[0].id);
+        setMessages(convs[0].messages);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToBottom = () => {
     scrollRef.current?.scrollTo({
@@ -44,36 +53,31 @@ export function ChatPanel() {
   useEffect(scrollToBottom, [messages]);
 
   const persistConversation = useCallback(
-    (msgs: ChatMessage[], convId: string | null) => {
+    async (msgs: ChatMessage[], convId: string | null): Promise<string | null> => {
       if (msgs.length === 0) return convId;
 
       const now = new Date().toISOString();
+      const title = generateTitle(msgs);
+
       if (convId) {
-        const conv: Conversation = {
-          id: convId,
-          title: generateTitle(msgs),
-          messages: msgs,
-          createdAt: conversations.find((c) => c.id === convId)?.createdAt || now,
-          updatedAt: now,
-        };
-        saveConversation(conv);
-        setConversations(loadConversations());
+        await updateConversation(convId, { title, messages: msgs });
+        refreshConversations();
         return convId;
       } else {
         const id = crypto.randomUUID();
         const conv: Conversation = {
           id,
-          title: generateTitle(msgs),
+          title,
           messages: msgs,
           createdAt: now,
           updatedAt: now,
         };
-        saveConversation(conv);
-        setConversations(loadConversations());
+        await saveConversation(conv);
+        refreshConversations();
         return id;
       }
     },
-    [conversations]
+    [refreshConversations]
   );
 
   const handleNewChat = () => {
@@ -90,26 +94,10 @@ export function ChatPanel() {
   };
 
   const handleDeleteConversation = async (id: string) => {
-    // Extract user message summaries to delete associated memories
-    const conv = conversations.find((c) => c.id === id);
-    if (conv) {
-      const summaries = conv.messages
-        .filter((m) => m.role === "user")
-        .map((m) =>
-          m.content.length > 100 ? m.content.slice(0, 100) + "..." : m.content
-        );
-      if (summaries.length > 0) {
-        fetch("/api/memories", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ summaries }),
-        }).then(() => refresh());
-      }
-    }
-
-    deleteConversation(id);
-    const updated = loadConversations();
-    setConversations(updated);
+    // DELETE route cascade-deletes associated memories
+    await deleteConversation(id);
+    const updated = await refreshConversations();
+    refresh();
     if (activeId === id) {
       if (updated.length > 0) {
         setActiveId(updated[0].id);
@@ -119,6 +107,21 @@ export function ChatPanel() {
         setMessages([]);
       }
     }
+  };
+
+  const handleClearAll = async () => {
+    // Delete all memories from the brain
+    fetch("/api/memories", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    }).then(() => refresh());
+
+    await clearAllConversations();
+    setConversations([]);
+    setActiveId(null);
+    setMessages([]);
+    setHistoryOpen(false);
   };
 
   const sendMessage = async () => {
@@ -132,7 +135,7 @@ export function ChatPanel() {
     setStreaming(true);
 
     // Persist immediately on first message to create the conversation
-    const convId = persistConversation(newMessages, activeId);
+    const convId = await persistConversation(newMessages, activeId);
     setActiveId(convId);
 
     const assistantMsg: ChatMessage = { role: "assistant", content: "" };
@@ -145,10 +148,15 @@ export function ChatPanel() {
         body: JSON.stringify({
           messages: newMessages,
           model: getActiveModel(),
+          conversationId: convId,
           recallLimit: retrievalSettings.recallLimit,
           minImportance: retrievalSettings.minImportance || undefined,
           minDecay: retrievalSettings.minDecay || undefined,
           types: retrievalSettings.enabledTypes,
+          systemPrompt: loadSystemPrompt(),
+          clinamenLimit: retrievalSettings.clinamenLimit,
+          clinamenMinImportance: retrievalSettings.clinamenMinImportance,
+          clinamenMaxRelevance: retrievalSettings.clinamenMaxRelevance,
         }),
       });
 
@@ -189,10 +197,25 @@ export function ChatPanel() {
       // Persist after assistant response
       const finalMessages = [...newMessages, { role: "assistant" as const, content: fullContent }];
       setMessages(finalMessages);
-      persistConversation(finalMessages, convId);
+      await persistConversation(finalMessages, convId);
+
+      // Store assistant response as memory
+      if (fullContent) {
+        fetch("/api/memories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "semantic",
+            content: fullContent,
+            summary: fullContent.length > 100 ? fullContent.slice(0, 100) + "..." : fullContent,
+            tags: convId ? ["assistant-response", `conv:${convId}`] : ["assistant-response"],
+            importance: 0.4,
+          }),
+        }).catch(() => {});
+      }
 
       // Generate summary in background after first exchange
-      if (finalMessages.length <= 3) {
+      if (finalMessages.length <= 3 && convId) {
         fetch("/api/chat/summary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -201,13 +224,7 @@ export function ChatPanel() {
           .then((r) => r.json())
           .then(({ summary }) => {
             if (summary && convId) {
-              const convs = loadConversations();
-              const conv = convs.find((c) => c.id === convId);
-              if (conv) {
-                conv.summary = summary;
-                saveConversation(conv);
-                setConversations(loadConversations());
-              }
+              updateConversation(convId, { summary }).then(() => refreshConversations());
             }
           })
           .catch(() => {});
@@ -218,7 +235,7 @@ export function ChatPanel() {
       const errorMsg = `Error: ${err instanceof Error ? err.message : "Connection failed"}. Is the MLX server running?`;
       const finalMessages = [...newMessages, { role: "assistant" as const, content: errorMsg }];
       setMessages(finalMessages);
-      persistConversation(finalMessages, convId);
+      await persistConversation(finalMessages, convId);
     } finally {
       setStreaming(false);
     }
@@ -326,6 +343,7 @@ export function ChatPanel() {
         activeId={activeId}
         onSelect={handleLoadConversation}
         onDelete={handleDeleteConversation}
+        onClearAll={handleClearAll}
         onNewChat={handleNewChat}
       />
     </div>

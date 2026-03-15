@@ -1,0 +1,13 @@
+diff --git a/node_modules/clude-bot/dist/core/venice-client.js b/node_modules/clude-bot/dist/core/venice-client.js
+index e5e6ebe..47e7b31 100644
+--- a/node_modules/clude-bot/dist/core/venice-client.js
++++ b/node_modules/clude-bot/dist/core/venice-client.js
+@@ -24,7 +24,7 @@ const log = (0, logger_1.createChildLogger)('venice');
+ // - Memory: Solana (decentralized)
+ // - Inference: Venice (permissionless)
+ // ============================================================
+-const VENICE_API_URL = 'https://api.venice.ai/api/v1';
++const VENICE_API_URL = process.env.VENICE_BASE_URL || 'https://api.venice.ai/api/v1';
+ // Available Venice models (subset - they support many more)
+ exports.VENICE_MODELS = {
+     // Frontier (Anthropic via Venice - private inference, no logs)

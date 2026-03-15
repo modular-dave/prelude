@@ -1,418 +1,179 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Moon, Loader2, CheckCircle2, Circle, X, ChevronDown, ChevronRight, Sliders, Save, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Moon, Loader2, CheckCircle2, Circle, Sparkles, Calendar, Play,
+  Layers, Eye, AlertTriangle, ChevronDown, ChevronRight,
+  Clock, MemoryStick, ArrowRight,
+} from "lucide-react";
 import { useMemory } from "@/lib/memory-context";
-import {
-  runConsolidation,
-  runCompaction,
-  runReflection,
-  runContradiction,
-  runEmergence,
-} from "@/lib/dream-engine";
-import type { DreamPhaseResult } from "@/lib/dream-engine";
-import { TYPE_COLORS, TYPE_LABELS } from "@/lib/types";
-import type { MemoryType } from "@/lib/types";
-import { NeuroSlider } from "@/components/ui/neuro-slider";
-import type { DreamSettings, DreamPreset } from "@/lib/dream-settings";
-import {
-  DEFAULT_DREAM_SETTINGS,
-  BUILT_IN_PRESETS,
-  loadDreamSettings,
-  saveDreamSettings,
-  loadDreamPresets,
-  saveDreamPresets,
-} from "@/lib/dream-settings";
 
-const PHASE_ICONS = {
-  idle: Circle,
-  running: Loader2,
-  complete: CheckCircle2,
+// ── Phase metadata ──────────────────────────────────────────
+
+const PHASES = [
+  { key: "consolidation", name: "Consolidation", roman: "I", color: "#3b82f6", icon: Layers, desc: "Synthesize focal-point insights from recent memories" },
+  { key: "compaction", name: "Compaction", roman: "II", color: "#8b5cf6", icon: MemoryStick, desc: "Summarize old faded memories into semantic knowledge" },
+  { key: "reflection", name: "Reflection", roman: "III", color: "#22c55e", icon: Eye, desc: "Review self-model against accumulated knowledge" },
+  { key: "contradiction_resolution", name: "Contradiction Resolution", roman: "IV", color: "#f59e0b", icon: AlertTriangle, desc: "Find and resolve conflicting memories" },
+  { key: "emergence", name: "Emergence", roman: "V", color: "#f43f5e", icon: Sparkles, desc: "Discover unexpected connections and novel insights" },
+] as const;
+
+type PhaseKey = (typeof PHASES)[number]["key"];
+
+interface PhaseResult {
+  id: number;
+  phase: PhaseKey;
+  output: string;
+  inputCount: number;
+  newMemoryIds: number[];
+  createdAt: string;
+}
+
+interface NewMemory {
+  id: number;
+  type: string;
+  summary: string;
+  importance: number;
+  tags: string[];
+  source: string;
+  createdAt: string;
+}
+
+interface DreamResult {
+  emergence: string | null;
+  phases: PhaseResult[];
+  newMemories: NewMemory[];
+  stats: { totalPhases: number; totalNewMemories: number; totalInputMemories: number };
+}
+
+interface DreamLog {
+  id: number;
+  session_type: PhaseKey;
+  input_memory_ids: number[];
+  output: string;
+  new_memories_created: number[];
+  created_at: string;
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+
+function phaseMeta(key: string) {
+  return PHASES.find((p) => p.key === key) ?? PHASES[0];
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  semantic: "#3b82f6",
+  procedural: "#8b5cf6",
+  self_model: "#f43f5e",
+  episodic: "#22c55e",
+  introspective: "#f59e0b",
 };
 
-const PHASE_COLORS = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#22c55e",
-  "#f59e0b",
-  "#f43f5e",
-];
+// ── Component ───────────────────────────────────────────────
 
-const ROMAN = ["I", "II", "III", "IV", "V"];
-
-/* ── Metric bar (themed) ── */
-function MetricBar({ value, label, color }: { value: number; label: string; color?: string }) {
-  const pct = Math.round(value * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-20 shrink-0 text-[9px]" style={{ color: "var(--text-faint)" }}>{label}</span>
-      <div className="h-1.5 flex-1 rounded-full" style={{ background: "var(--bar-track)" }}>
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${pct}%`, background: color || "var(--accent)" }}
-        />
-      </div>
-      <span className="w-8 text-right text-[9px] font-mono" style={{ color: "var(--text-muted)" }}>{pct}%</span>
-    </div>
-  );
-}
-
-/* ── Expanded detail panel ── */
-function PhaseDetailPanel({ phase, color, onClose }: { phase: DreamPhaseResult; color: string; onClose: () => void }) {
-  return (
-    <div
-      className="mt-3 rounded-[8px] p-5 animate-fade-slide-up"
-      style={{
-        background: "var(--surface-dim)",
-        borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: color,
-        borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
-        borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
-        borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
-      }}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <h3 className="text-xs font-semibold" style={{ color }}>{phase.name}</h3>
-        <button onClick={onClose} className="shrink-0" style={{ color: "var(--text-faint)" }}>
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Reasoning */}
-      {phase.reasoning && (
-        <div className="mt-3">
-          <p className="label mb-1.5">Agent Reasoning</p>
-          <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            {phase.reasoning}
-          </p>
-        </div>
-      )}
-
-      {/* Phase-specific content */}
-      <ConsolidationDetail phase={phase} />
-      <CompactionDetail phase={phase} />
-      <ReflectionDetail phase={phase} />
-      <ContradictionDetail phase={phase} />
-      <EmergenceDetail phase={phase} />
-
-      {phase.lastRun && (
-        <p className="mt-4 text-[9px]" style={{ color: "var(--text-faint)" }}>
-          Completed {new Date(phase.lastRun).toLocaleTimeString()}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ── Consolidation ── */
-function ConsolidationDetail({ phase }: { phase: DreamPhaseResult }) {
-  if (!phase.clusters || phase.clusters.length === 0) return null;
-  return (
-    <div className="mt-4 space-y-3">
-      <p className="label">Clusters ({phase.clusters.length})</p>
-      {phase.clusters.slice(0, 5).map((c) => (
-        <div key={c.tag} className="rounded-[6px] p-3" style={{ background: "var(--surface-dimmer)" }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-blue-500">{c.tag}</span>
-            <span className="text-[9px] font-mono" style={{ color: "var(--text-faint)" }}>
-              {c.memoryIds.length} memories
-            </span>
-          </div>
-          <MetricBar value={c.avgImportance} label="Avg Importance" color="#3b82f6" />
-          <div className="mt-2 space-y-1">
-            {c.memories.slice(0, 3).map((m) => (
-              <div key={m.id} className="flex items-start gap-2 text-[9px]">
-                <span className="shrink-0 font-mono" style={{ color: TYPE_COLORS[m.type] }}>#{m.id}</span>
-                <span style={{ color: "var(--text-muted)" }}>{m.summary.slice(0, 60)}{m.summary.length > 60 ? "..." : ""}</span>
-              </div>
-            ))}
-            {c.memories.length > 3 && (
-              <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>+{c.memories.length - 3} more</p>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Compaction ── */
-function CompactionDetail({ phase }: { phase: DreamPhaseResult }) {
-  if (phase.candidates === undefined) return null;
-  if (phase.candidates.length === 0) {
-    return (
-      <div className="mt-4">
-        <p className="label mb-1.5">Compaction Candidates</p>
-        <p className="text-[10px] text-green-500" style={{ opacity: 0.8 }}>All memories are healthy — nothing to compact.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-4 space-y-2">
-      <p className="label">Flagged Memories ({phase.candidates.length})</p>
-      {phase.candidates.map((c) => (
-        <div key={c.id} className="rounded-[6px] p-3" style={{ background: "var(--surface-dimmer)" }}>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono" style={{ color: TYPE_COLORS[c.type] }}>#{c.id}</span>
-            <span className="flex-1 text-[10px]" style={{ color: "var(--text-muted)" }}>{c.summary.slice(0, 50)}{c.summary.length > 50 ? "..." : ""}</span>
-          </div>
-          <div className="mt-1.5 space-y-1">
-            <MetricBar value={c.importance} label="Importance" color="#f59e0b" />
-            <MetricBar value={c.decayFactor} label="Decay" color="#f43f5e" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Reflection ── */
-function ReflectionDetail({ phase }: { phase: DreamPhaseResult }) {
-  if (!phase.reflection) return null;
-  const r = phase.reflection;
-  const sortedTypes = Object.entries(r.typeCounts).sort(([, a], [, b]) => b - a);
-  return (
-    <div className="mt-4 space-y-3">
-      <div>
-        <p className="label mb-1.5">Type Distribution</p>
-        <div className="space-y-1">
-          {sortedTypes.map(([type, count]) => (
-            <div key={type} className="flex items-center gap-2">
-              <span className="w-20 shrink-0 text-[9px]" style={{ color: TYPE_COLORS[type as MemoryType] || "var(--text-muted)" }}>
-                {TYPE_LABELS[type as MemoryType] || type}
-              </span>
-              <div className="h-1.5 flex-1 rounded-full" style={{ background: "var(--bar-track)" }}>
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${(count / r.totalMemories) * 100}%`,
-                    background: TYPE_COLORS[type as MemoryType] || "var(--accent)",
-                  }}
-                />
-              </div>
-              <span className="w-8 text-right text-[9px] font-mono" style={{ color: "var(--text-muted)" }}>
-                {count}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-[6px] p-2.5 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>Importance</p>
-          <p className="text-sm font-semibold" style={{ color: "var(--accent)" }}>{Math.round(r.avgImportance * 100)}%</p>
-        </div>
-        <div className="rounded-[6px] p-2.5 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>Valence</p>
-          <p className={`text-sm font-semibold ${r.avgValence > 0.1 ? "text-green-500" : r.avgValence < -0.1 ? "text-red-500" : ""}`}
-            style={Math.abs(r.avgValence) <= 0.1 ? { color: "var(--text-muted)" } : undefined}
-          >
-            {r.avgValence > 0 ? "+" : ""}{r.avgValence.toFixed(2)}
-          </p>
-        </div>
-        <div className="rounded-[6px] p-2.5 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>Tone</p>
-          <p className={`text-sm font-semibold ${r.emotionalTone === "positive" ? "text-green-500" : r.emotionalTone === "negative" ? "text-red-500" : ""}`}
-            style={r.emotionalTone === "neutral" ? { color: "var(--text-muted)" } : undefined}
-          >
-            {r.emotionalTone}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Contradiction ── */
-function ContradictionDetail({ phase }: { phase: DreamPhaseResult }) {
-  if (phase.contradictions === undefined) return null;
-  if (phase.contradictions.length === 0) {
-    return (
-      <div className="mt-4">
-        <p className="label mb-1.5">Conflicts</p>
-        <p className="text-[10px] text-green-500" style={{ opacity: 0.8 }}>No contradictions detected — emotional consistency across concepts.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-4 space-y-2">
-      <p className="label">Conflicts ({phase.contradictions.length})</p>
-      {phase.contradictions.map((c, i) => (
-        <div key={i} className="rounded-[6px] p-3" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="text-[10px] font-medium text-rose-500">on &ldquo;{c.sharedConcept}&rdquo;</p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-[4px] p-2" style={{ background: "var(--surface-dim)" }}>
-              <div className="flex items-center gap-1 text-[9px]">
-                <span className="font-mono" style={{ color: TYPE_COLORS[c.memoryA.type] }}>#{c.memoryA.id}</span>
-                <span className={c.memoryA.valence > 0 ? "text-green-500" : "text-red-500"}>
-                  {c.memoryA.valence > 0 ? "+" : ""}{c.memoryA.valence.toFixed(1)}
-                </span>
-              </div>
-              <p className="mt-1 text-[9px]" style={{ color: "var(--text-muted)" }}>{c.memoryA.summary.slice(0, 50)}{c.memoryA.summary.length > 50 ? "..." : ""}</p>
-            </div>
-            <div className="rounded-[4px] p-2" style={{ background: "var(--surface-dim)" }}>
-              <div className="flex items-center gap-1 text-[9px]">
-                <span className="font-mono" style={{ color: TYPE_COLORS[c.memoryB.type] }}>#{c.memoryB.id}</span>
-                <span className={c.memoryB.valence > 0 ? "text-green-500" : "text-red-500"}>
-                  {c.memoryB.valence > 0 ? "+" : ""}{c.memoryB.valence.toFixed(1)}
-                </span>
-              </div>
-              <p className="mt-1 text-[9px]" style={{ color: "var(--text-muted)" }}>{c.memoryB.summary.slice(0, 50)}{c.memoryB.summary.length > 50 ? "..." : ""}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Emergence ── */
-function EmergenceDetail({ phase }: { phase: DreamPhaseResult }) {
-  if (!phase.emergence) return null;
-  const e = phase.emergence;
-  return (
-    <div className="mt-4 space-y-3">
-      <div>
-        <p className="label mb-1.5">Surfaced Memory</p>
-        <div className="rounded-[6px] p-3" style={{ background: "var(--surface-dimmer)" }}>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono" style={{ color: TYPE_COLORS[e.memory.type as MemoryType] }}>#{e.memory.id}</span>
-            <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
-              {TYPE_LABELS[e.memory.type as MemoryType] || e.memory.type}
-            </span>
-          </div>
-          <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>{e.memory.summary}</p>
-          <MetricBar value={e.memory.importance} label="Importance" color="#8b5cf6" />
-          {e.relatedConcepts.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {e.relatedConcepts.slice(0, 6).map((c) => (
-                <span key={c} className="rounded-full px-2 py-0.5 text-[8px]" style={{ background: "var(--surface-dim)", color: "var(--text-muted)" }}>
-                  {c}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      {e.connectedMemories.length > 0 && (
-        <div>
-          <p className="label mb-1.5">Connected Memories ({e.connectedMemories.length})</p>
-          <div className="space-y-1">
-            {e.connectedMemories.map((m) => (
-              <div key={m.id} className="flex items-start gap-2 rounded-[4px] px-2 py-1.5 text-[9px]" style={{ background: "var(--surface-dimmer)" }}>
-                <span className="shrink-0 font-mono" style={{ color: TYPE_COLORS[m.type] }}>#{m.id}</span>
-                <span className="flex-1" style={{ color: "var(--text-muted)" }}>{m.summary.slice(0, 50)}{m.summary.length > 50 ? "..." : ""}</span>
-                <span className="shrink-0" style={{ color: "var(--text-faint)" }}>
-                  {m.sharedConcepts.slice(0, 2).join(", ")}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Main component ── */
 export function DreamCycleDisplay() {
-  const { memories } = useMemory();
-  const [phases, setPhases] = useState<DreamPhaseResult[]>([
-    { name: "Consolidation", description: "Group related memories by shared tags", status: "idle" },
-    { name: "Compaction", description: "Compress fading low-importance memories", status: "idle" },
-    { name: "Reflection", description: "Review self-model against knowledge", status: "idle" },
-    { name: "Contradiction Resolution", description: "Find and resolve conflicting memories", status: "idle" },
-    { name: "Emergence", description: "Discover unexpected connections", status: "idle" },
-  ]);
+  const { memories, refresh } = useMemory();
   const [running, setRunning] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<DreamResult | null>(null);
+  const [dreamScheduleActive, setDreamScheduleActive] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
 
-  // Dream settings
-  const [settings, setSettings] = useState<DreamSettings>(DEFAULT_DREAM_SETTINGS);
-  const [userPresets, setUserPresets] = useState<DreamPreset[]>([]);
-  const [tuningOpen, setTuningOpen] = useState(false);
-  const [savingPreset, setSavingPreset] = useState(false);
-  const [presetName, setPresetName] = useState("");
+  // Dream history
+  const [history, setHistory] = useState<DreamLog[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  useEffect(() => {
-    setSettings(loadDreamSettings());
-    setUserPresets(loadDreamPresets());
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dream?limit=200");
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.logs || []);
+      }
+    } catch {
+      // silent
+    } finally {
+      setHistoryLoading(false);
+    }
   }, []);
 
-  const updateSettings = (patch: Partial<DreamSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    saveDreamSettings(next);
-  };
+  useEffect(() => {
+    loadHistory();
+    // Poll every 10s so history updates while cycles run externally
+    const interval = setInterval(loadHistory, 10_000);
+    return () => clearInterval(interval);
+  }, [loadHistory]);
 
-  const applyPreset = (preset: DreamPreset) => {
-    setSettings({ ...preset.settings });
-    saveDreamSettings(preset.settings);
+  const toggleDreamSchedule = async () => {
+    setScheduleLoading(true);
+    setError(null);
+    try {
+      if (dreamScheduleActive) {
+        const res = await fetch("/api/dream/schedule", { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Failed to stop dream schedule");
+          return;
+        }
+        setDreamScheduleActive(false);
+      } else {
+        const res = await fetch("/api/dream/schedule", { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.error || "Failed to start dream schedule");
+          return;
+        }
+        setDreamScheduleActive(true);
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setScheduleLoading(false);
+    }
   };
-
-  const savePreset = () => {
-    const name = presetName.trim();
-    if (!name) return;
-    const next = [...userPresets.filter((p) => p.name !== name), { name, settings: { ...settings } }];
-    setUserPresets(next);
-    saveDreamPresets(next);
-    setSavingPreset(false);
-    setPresetName("");
-  };
-
-  const deletePreset = (name: string) => {
-    const next = userPresets.filter((p) => p.name !== name);
-    setUserPresets(next);
-    saveDreamPresets(next);
-  };
-
-  const isDefault =
-    settings.clusterMinSize === DEFAULT_DREAM_SETTINGS.clusterMinSize &&
-    settings.compactionMaxImportance === DEFAULT_DREAM_SETTINGS.compactionMaxImportance &&
-    settings.compactionMaxDecay === DEFAULT_DREAM_SETTINGS.compactionMaxDecay &&
-    settings.contradictionMinValenceDiff === DEFAULT_DREAM_SETTINGS.contradictionMinValenceDiff &&
-    settings.contradictionMaxResults === DEFAULT_DREAM_SETTINGS.contradictionMaxResults &&
-    settings.emergenceMaxConnections === DEFAULT_DREAM_SETTINGS.emergenceMaxConnections;
 
   const runDream = async () => {
     if (running) return;
     setRunning(true);
-    setSelectedIdx(null);
+    setError(null);
+    setResult(null);
 
-    const runners = [
-      (m: typeof memories) => runConsolidation(m, settings),
-      (m: typeof memories) => runCompaction(m, settings),
-      (m: typeof memories) => runReflection(m),
-      (m: typeof memories) => runContradiction(m, settings),
-      (m: typeof memories) => runEmergence(m, settings),
-    ];
+    try {
+      const res = await fetch("/api/dream", { method: "POST" });
+      const data = await res.json();
 
-    for (let i = 0; i < runners.length; i++) {
-      setPhases((prev) =>
-        prev.map((p, idx) =>
-          idx === i ? { ...p, status: "running" as const } : p
-        )
-      );
-      await new Promise((r) => setTimeout(r, 600 + Math.random() * 400));
-
-      const result = runners[i](memories);
-      setPhases((prev) =>
-        prev.map((p, idx) => (idx === i ? result : p))
-      );
-      await new Promise((r) => setTimeout(r, 200));
+      if (!res.ok) {
+        setError(data.error || "Dream cycle failed");
+      } else {
+        setResult(data);
+        await refresh();
+        await loadHistory();
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setRunning(false);
     }
-
-    setRunning(false);
   };
 
-  const toggleCard = (i: number) => {
-    if (phases[i].status !== "complete") return;
-    setSelectedIdx(selectedIdx === i ? null : i);
-  };
-
-  const allPresets = [...BUILT_IN_PRESETS, ...userPresets];
+  // Group history by dream session (group consecutive logs within 15 min)
+  const dreamSessions = groupIntoSessions(history);
 
   return (
-    <div>
+    <div className="space-y-6">
+      {/* Header + actions */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
@@ -420,255 +181,377 @@ export function DreamCycleDisplay() {
             Dream Cycle
           </h2>
           <p className="mt-0.5 text-xs" style={{ color: "var(--text-faint)" }}>
-            5-phase memory consolidation inspired by biological sleep
+            5-phase LLM-powered memory consolidation via Cortex
           </p>
         </div>
-        <button
-          onClick={runDream}
-          disabled={running || memories.length === 0}
-          className="rounded-[6px] px-4 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-40 glass"
-          style={{ color: "var(--text)" }}
-        >
-          {running ? (
-            <span className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleDreamSchedule}
+            disabled={scheduleLoading}
+            className="rounded-[6px] px-3 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-40 glass"
+            style={{
+              color: dreamScheduleActive ? "#22c55e" : "var(--text)",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: dreamScheduleActive ? "rgba(34,197,94,0.4)" : "var(--border)",
+            }}
+          >
+            {scheduleLoading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
-              Dreaming...
-            </span>
-          ) : (
-            "Run Dream Cycle"
-          )}
-        </button>
-      </div>
-
-      {/* Dream Tuning */}
-      <div className="mt-4">
-        <button
-          onClick={() => setTuningOpen((v) => !v)}
-          className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
-          style={{ color: "var(--text-muted)" }}
-        >
-          <Sliders className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-          <span className="flex-1 font-medium">Dream Tuning</span>
-          {!isDefault && (
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
-          )}
-          {tuningOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        </button>
-
-        {tuningOpen && (
-          <div className="space-y-4 px-1 pb-3 animate-fade-slide-up">
-            {/* Preset selector */}
-            <div className="flex items-center gap-2">
-              <select
-                className="flex-1 rounded-[6px] px-2.5 py-1.5 text-[10px] font-medium"
-                style={{ background: "var(--surface-dim)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
-                value=""
-                onChange={(e) => {
-                  const p = allPresets.find((pr) => pr.name === e.target.value);
-                  if (p) applyPreset(p);
-                }}
-              >
-                <option value="" disabled>Load preset...</option>
-                {BUILT_IN_PRESETS.map((p) => (
-                  <option key={p.name} value={p.name}>{p.name}</option>
-                ))}
-                {userPresets.length > 0 && (
-                  <optgroup label="Your Presets">
-                    {userPresets.map((p) => (
-                      <option key={p.name} value={p.name}>{p.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-
-              {savingPreset ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    autoFocus
-                    className="w-24 rounded-[4px] px-2 py-1 text-[10px]"
-                    style={{ background: "var(--surface-dim)", color: "var(--text)", border: "1px solid var(--border)" }}
-                    placeholder="Name..."
-                    value={presetName}
-                    onChange={(e) => setPresetName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") savePreset(); if (e.key === "Escape") setSavingPreset(false); }}
-                  />
-                  <button
-                    onClick={savePreset}
-                    className="rounded-[4px] p-1 transition"
-                    style={{ color: "var(--accent)" }}
-                  >
-                    <Save className="h-3 w-3" />
-                  </button>
-                  <button
-                    onClick={() => setSavingPreset(false)}
-                    className="rounded-[4px] p-1 transition"
-                    style={{ color: "var(--text-faint)" }}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setSavingPreset(true)}
-                  className="rounded-[4px] px-2 py-1 text-[9px] font-medium transition"
-                  style={{ color: "var(--accent)" }}
-                >
-                  Save
-                </button>
-              )}
-
-              {!isDefault && (
-                <button
-                  onClick={() => { setSettings({ ...DEFAULT_DREAM_SETTINGS }); saveDreamSettings(DEFAULT_DREAM_SETTINGS); }}
-                  className="text-[9px] font-medium transition"
-                  style={{ color: "var(--text-faint)" }}
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-
-            {/* User preset delete buttons */}
-            {userPresets.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {userPresets.map((p) => (
-                  <span
-                    key={p.name}
-                    className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px]"
-                    style={{ background: "var(--surface-dim)", color: "var(--text-muted)" }}
-                  >
-                    {p.name}
-                    <button onClick={() => deletePreset(p.name)} style={{ color: "var(--text-faint)" }}>
-                      <Trash2 className="h-2.5 w-2.5" />
-                    </button>
-                  </span>
-                ))}
-              </div>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3" />
+                {dreamScheduleActive ? "Schedule On" : "Schedule Off"}
+              </span>
             )}
-
-            {/* Consolidation */}
-            <div className="space-y-2">
-              <h4 className="label">Consolidation</h4>
-              <NeuroSlider
-                label="Cluster Min Size"
-                value={settings.clusterMinSize}
-                min={2} max={10} step={1}
-                onChange={(v) => updateSettings({ clusterMinSize: v })}
-              />
-            </div>
-
-            {/* Compaction */}
-            <div className="space-y-2">
-              <h4 className="label">Compaction</h4>
-              <NeuroSlider
-                label="Max Importance"
-                value={settings.compactionMaxImportance}
-                min={0} max={1} step={0.05}
-                onChange={(v) => updateSettings({ compactionMaxImportance: v })}
-                formatValue={(v) => v.toFixed(2)}
-              />
-              <NeuroSlider
-                label="Max Decay Factor"
-                value={settings.compactionMaxDecay}
-                min={0} max={1} step={0.05}
-                onChange={(v) => updateSettings({ compactionMaxDecay: v })}
-                formatValue={(v) => v.toFixed(2)}
-              />
-            </div>
-
-            {/* Contradiction */}
-            <div className="space-y-2">
-              <h4 className="label">Contradiction</h4>
-              <NeuroSlider
-                label="Min Valence Diff"
-                value={settings.contradictionMinValenceDiff}
-                min={0.1} max={1} step={0.1}
-                onChange={(v) => updateSettings({ contradictionMinValenceDiff: v })}
-                formatValue={(v) => v.toFixed(1)}
-              />
-              <NeuroSlider
-                label="Max Results"
-                value={settings.contradictionMaxResults}
-                min={1} max={20} step={1}
-                onChange={(v) => updateSettings({ contradictionMaxResults: v })}
-              />
-            </div>
-
-            {/* Emergence */}
-            <div className="space-y-2">
-              <h4 className="label">Emergence</h4>
-              <NeuroSlider
-                label="Max Connections"
-                value={settings.emergenceMaxConnections}
-                min={1} max={20} step={1}
-                onChange={(v) => updateSettings({ emergenceMaxConnections: v })}
-              />
-            </div>
-          </div>
-        )}
+          </button>
+          <button
+            onClick={runDream}
+            disabled={running || memories.length === 0}
+            className="rounded-[6px] px-4 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-40 glass"
+            style={{ color: "var(--text)" }}
+          >
+            {running ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Dreaming...
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <Play className="h-3 w-3" />
+                Run Dream Cycle
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* Phase cards */}
-      <div className="mt-6 grid gap-3 sm:grid-cols-5">
-        {phases.map((phase, i) => {
-          const Icon = PHASE_ICONS[phase.status];
-          const isSelected = selectedIdx === i;
+      {/* Phase overview cards */}
+      <div className="grid gap-3 sm:grid-cols-5">
+        {PHASES.map((phase) => {
+          const phaseResult = result?.phases.find((p) => p.phase === phase.key);
+          const isComplete = !!phaseResult;
+          const Icon = running ? Loader2 : isComplete ? CheckCircle2 : Circle;
           return (
             <button
-              key={phase.name}
-              onClick={() => toggleCard(i)}
-              disabled={phase.status !== "complete"}
-              className="rounded-[6px] p-4 text-left transition disabled:cursor-default"
+              key={phase.key}
+              onClick={() => phaseResult && setExpandedPhase(expandedPhase === phase.key ? null : phase.key)}
+              className="rounded-[6px] p-4 text-left transition-all duration-200"
               style={{
                 background: "var(--surface-dim)",
-                borderTopWidth: phase.status === "complete" || isSelected ? 2 : 1,
+                borderTopWidth: isComplete ? 2 : 1,
                 borderTopStyle: "solid",
-                borderTopColor: phase.status === "complete" || isSelected ? PHASE_COLORS[i] : "var(--border)",
-                borderRightWidth: isSelected ? 2 : 1,
-                borderRightStyle: "solid",
-                borderRightColor: isSelected ? PHASE_COLORS[i] : "var(--border)",
-                borderBottomWidth: isSelected ? 2 : 1,
-                borderBottomStyle: "solid",
-                borderBottomColor: isSelected ? PHASE_COLORS[i] : "var(--border)",
-                borderLeftWidth: isSelected ? 2 : 1,
-                borderLeftStyle: "solid",
-                borderLeftColor: isSelected ? PHASE_COLORS[i] : "var(--border)",
+                borderTopColor: isComplete ? phase.color : "var(--border)",
+                borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
+                borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
+                borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+                cursor: phaseResult ? "pointer" : "default",
               }}
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold" style={{ color: PHASE_COLORS[i], opacity: 0.6 }}>
-                  {ROMAN[i]}
+                <span className="text-[10px] font-bold" style={{ color: phase.color, opacity: 0.6 }}>
+                  {phase.roman}
                 </span>
                 <Icon
-                  className={`h-3.5 w-3.5 ${
-                    phase.status === "running"
-                      ? "animate-spin text-blue-500"
-                      : phase.status === "complete"
-                        ? "text-green-500"
-                        : ""
-                  }`}
-                  style={phase.status === "idle" ? { color: "var(--text-faint)" } : undefined}
+                  className={`h-3.5 w-3.5 ${running ? "animate-spin text-blue-500" : isComplete ? "text-green-500" : ""}`}
+                  style={!running && !isComplete ? { color: "var(--text-faint)" } : undefined}
                 />
               </div>
               <p className="mt-2 text-[11px] font-semibold" style={{ color: "var(--text)" }}>
                 {phase.name}
               </p>
               <p className="mt-1 text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-                {phase.status === "complete" && phase.result ? phase.result : phase.description}
+                {phase.desc}
               </p>
+              {phaseResult && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[9px] font-medium" style={{ color: phase.color }}>
+                    {phaseResult.inputCount} in
+                  </span>
+                  <ArrowRight className="h-2 w-2" style={{ color: "var(--text-faint)" }} />
+                  <span className="text-[9px] font-medium" style={{ color: phase.color }}>
+                    {phaseResult.newMemoryIds.length} out
+                  </span>
+                </div>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* Expanded detail panel */}
-      {selectedIdx !== null && phases[selectedIdx].status === "complete" && (
-        <PhaseDetailPanel
-          phase={phases[selectedIdx]}
-          color={PHASE_COLORS[selectedIdx]}
-          onClose={() => setSelectedIdx(null)}
-        />
+      {/* Expanded phase detail */}
+      {expandedPhase && result && (() => {
+        const phaseResult = result.phases.find((p) => p.phase === expandedPhase);
+        if (!phaseResult) return null;
+        const meta = phaseMeta(expandedPhase);
+        const phaseMemories = result.newMemories.filter((m) => phaseResult.newMemoryIds.includes(m.id));
+        return (
+          <div
+            className="rounded-[8px] p-5 animate-fade-slide-up"
+            style={{
+              background: "var(--surface-dim)",
+              borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: meta.color,
+              borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
+              borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
+              borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <meta.icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
+              <h3 className="text-xs font-semibold" style={{ color: meta.color }}>{meta.name}</h3>
+              <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                {phaseResult.inputCount} memories analyzed
+              </span>
+            </div>
+
+            {/* Phase output */}
+            <div className="rounded-[6px] p-3 mb-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
+              <p className="text-[10px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
+                {phaseResult.output}
+              </p>
+            </div>
+
+            {/* New memories created */}
+            {phaseMemories.length > 0 && (
+              <div>
+                <p className="text-[9px] font-medium mb-2" style={{ color: "var(--text-faint)" }}>
+                  {phaseMemories.length} memories created
+                </p>
+                <div className="space-y-1.5">
+                  {phaseMemories.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-start gap-2 rounded-[6px] p-2.5"
+                      style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+                    >
+                      <div
+                        className="mt-1 h-[6px] w-[6px] rounded-full shrink-0"
+                        style={{ backgroundColor: TYPE_COLORS[m.type] || "var(--text-faint)" }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] leading-relaxed" style={{ color: "var(--text)" }}>
+                          {m.summary}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[8px]" style={{ color: TYPE_COLORS[m.type] || "var(--text-faint)" }}>
+                            {m.type}
+                          </span>
+                          <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                            imp: {m.importance.toFixed(2)}
+                          </span>
+                          {m.tags.slice(0, 3).map((t) => (
+                            <span key={t} className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Error */}
+      {error && (
+        <div className="rounded-[8px] p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
+          <p className="text-xs text-red-500">{error}</p>
+        </div>
+      )}
+
+      {/* Emergence highlight */}
+      {result?.emergence && (
+        <div
+          className="rounded-[8px] p-5 animate-fade-slide-up"
+          style={{
+            background: "var(--surface-dim)",
+            borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: "#f43f5e",
+            borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
+            borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
+            borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-3.5 w-3.5 text-rose-500" />
+            <h3 className="text-xs font-semibold text-rose-500">Emergence</h3>
+          </div>
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            {result.emergence}
+          </p>
+        </div>
+      )}
+
+      {/* Stats summary */}
+      {result && (
+        <div className="flex items-center gap-6">
+          <Stat label="Phases" value={result.stats.totalPhases} />
+          <Stat label="Memories analyzed" value={result.stats.totalInputMemories} />
+          <Stat label="Memories created" value={result.stats.totalNewMemories} />
+        </div>
+      )}
+
+      {/* Dream history */}
+      <div>
+        <h3 className="text-[11px] font-semibold mb-3" style={{ color: "var(--text)" }}>
+          Dream History{" "}
+          {dreamSessions.length > 0 && (
+            <span style={{ color: "var(--text-faint)" }}>({dreamSessions.length})</span>
+          )}
+        </h3>
+        {historyLoading ? (
+          <div className="flex items-center gap-2 py-4">
+            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-faint)" }} />
+            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Loading...</span>
+          </div>
+        ) : dreamSessions.length === 0 ? (
+          <p className="text-[10px] py-4" style={{ color: "var(--text-faint)" }}>
+            No dream cycles recorded yet. Run your first dream cycle above.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {dreamSessions.map((session) => (
+              <DreamSessionCard key={session.id} session={session} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-components ──────────────────────────────────────────
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-[16px] font-semibold" style={{ color: "var(--text)" }}>{value}</p>
+      <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>{label}</p>
+    </div>
+  );
+}
+
+interface DreamSession {
+  id: string;
+  timestamp: string;
+  logs: DreamLog[];
+}
+
+function DreamSessionCard({ session }: { session: DreamSession }) {
+  const [open, setOpen] = useState(false);
+  const totalIn = session.logs.reduce((s, l) => s + (l.input_memory_ids?.length || 0), 0);
+  const totalOut = session.logs.reduce((s, l) => s + (l.new_memories_created?.length || 0), 0);
+  const hasEmergence = session.logs.some((l) => l.session_type === "emergence" && l.output);
+
+  return (
+    <div
+      className="rounded-[6px] overflow-hidden"
+      style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 p-3 text-left transition-colors duration-150"
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Clock className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
+            <span className="text-[10px] font-medium" style={{ color: "var(--text)" }}>
+              {new Date(session.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+              {timeAgo(session.timestamp)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            {/* Phase dots */}
+            <div className="flex items-center gap-1">
+              {session.logs.map((l) => {
+                const meta = phaseMeta(l.session_type);
+                return (
+                  <div
+                    key={l.id}
+                    className="h-[5px] w-[5px] rounded-full"
+                    style={{ backgroundColor: meta.color }}
+                    title={meta.name}
+                  />
+                );
+              })}
+            </div>
+            <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+              {totalIn} in → {totalOut} out
+            </span>
+            {hasEmergence && (
+              <Sparkles className="h-2.5 w-2.5 text-rose-500" />
+            )}
+          </div>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-2" style={{ borderTop: "1px solid var(--border)" }}>
+          {session.logs.map((log) => {
+            const meta = phaseMeta(log.session_type);
+            return (
+              <div key={log.id} className="pt-2">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="h-[5px] w-[5px] rounded-full" style={{ backgroundColor: meta.color }} />
+                  <span className="text-[9px] font-semibold" style={{ color: meta.color }}>{meta.name}</span>
+                  <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                    {(log.input_memory_ids?.length || 0)} in → {(log.new_memories_created?.length || 0)} out
+                  </span>
+                </div>
+                <p className="text-[9px] leading-relaxed whitespace-pre-wrap pl-3" style={{ color: "var(--text-muted)" }}>
+                  {log.output.length > 400 ? log.output.slice(0, 400) + "…" : log.output}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
+}
+
+// ── Grouping utility ────────────────────────────────────────
+
+function groupIntoSessions(logs: DreamLog[]): DreamSession[] {
+  if (logs.length === 0) return [];
+
+  // Logs arrive sorted desc. Reverse to ascending for cycle detection.
+  const asc = [...logs].reverse();
+
+  const sessions: DreamSession[] = [];
+  let current: DreamLog[] = [asc[0]];
+
+  for (let i = 1; i < asc.length; i++) {
+    // A new "consolidation" after any other phase signals the start of a new dream cycle.
+    // Also split if there's a >15 min gap (safety net for partial cycles).
+    const gap = new Date(asc[i].created_at).getTime() - new Date(asc[i - 1].created_at).getTime();
+    const isNewCycle = asc[i].session_type === "consolidation" && current[current.length - 1].session_type !== "consolidation";
+    if (isNewCycle || gap > 15 * 60 * 1000) {
+      sessions.push({
+        id: String(current[0].id),
+        timestamp: current[current.length - 1].created_at, // use latest timestamp for display
+        logs: current,
+      });
+      current = [asc[i]];
+    } else {
+      current.push(asc[i]);
+    }
+  }
+  sessions.push({
+    id: String(current[0].id),
+    timestamp: current[current.length - 1].created_at,
+    logs: current,
+  });
+
+  // Return newest first
+  return sessions.reverse();
 }

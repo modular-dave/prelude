@@ -8,6 +8,8 @@ export interface RetrievalSettings {
   clinamenLimit: number;
   clinamenMinImportance: number;
   clinamenMaxRelevance: number;
+  dreamScheduleEnabled: boolean;
+  reflectionScheduleEnabled: boolean;
 }
 
 export const ALL_MEMORY_TYPES: MemoryType[] = [
@@ -26,6 +28,8 @@ export const DEFAULT_RETRIEVAL_SETTINGS: RetrievalSettings = {
   clinamenLimit: 3,
   clinamenMinImportance: 0.6,
   clinamenMaxRelevance: 0.35,
+  dreamScheduleEnabled: false,
+  reflectionScheduleEnabled: false,
 };
 
 const STORAGE_KEY = "prelude:retrieval-settings";

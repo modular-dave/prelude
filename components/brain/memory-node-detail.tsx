@@ -1,48 +1,24 @@
 "use client";
 
-import { X } from "lucide-react";
-import { useMemory } from "@/lib/memory-context";
+import { useState, useEffect } from "react";
+import { X, ChevronDown, ChevronUp, Loader2, Search, Send, MessageSquare, Bot, User } from "lucide-react";
+import { useMemory, type MemoryLink } from "@/lib/memory-context";
 import {
   TYPE_COLORS,
   TYPE_LABELS,
-  DECAY_RATES,
+  LINK_TYPE_COLORS,
+  LINK_TYPE_LABELS,
   type Memory,
-  type MemoryType,
+  type Entity,
 } from "@/lib/types";
 
-const TYPE_BOOSTS: Record<MemoryType, number> = {
-  semantic: 0.15,
-  procedural: 0.12,
-  self_model: 0.1,
-  episodic: 0.0,
-  introspective: 0.08,
-};
-
-function computeRetrievalBreakdown(memory: Memory) {
-  const hoursOld =
-    (Date.now() - new Date(memory.created_at).getTime()) / 3600000;
-  const recency = Math.pow(0.995, hoursOld);
-  const importance = memory.importance;
-  const decayFactor = memory.decay_factor ?? 1;
-  const typeBoost = 1 + (TYPE_BOOSTS[memory.memory_type] || 0);
-  const decayRate = DECAY_RATES[memory.memory_type] || 0.03;
-
-  // Local score approximation
-  const localScore =
-    0.6 * 1.0 + // term_score (unknown, assume 1 for self)
-    0.2 * importance +
-    0.1 * decayFactor +
-    0.1 * recency;
-
-  return {
-    recency,
-    importance,
-    decayFactor,
-    typeBoost,
-    decayRate,
-    localScore,
-    hoursOld,
-  };
+interface TraceData {
+  ancestors: Array<{ id: number; summary?: string; depth: number; memory_type?: string }>;
+  descendants: Array<{ id: number; summary?: string; depth: number; memory_type?: string }>;
+  related: Array<{ id: number; summary?: string; score?: number; memory_type?: string }>;
+  linkTypes: string[];
+  entities: Array<{ name: string; entity_type: string }>;
+  timeSpan: { earliest: string; latest: string } | null;
 }
 
 export function MemoryNodeDetail({
@@ -54,62 +30,172 @@ export function MemoryNodeDetail({
   onClose: () => void;
   onNavigate?: (memoryId: number) => void;
 }) {
-  const { graphData, memories } = useMemory();
-  const breakdown = computeRetrievalBreakdown(memory);
+  const { memories, fetchMemoryLinks } = useMemory();
 
-  // Hebbian stats for this memory
+  const [links, setLinks] = useState<MemoryLink[]>([]);
+  const [relatedMemories, setRelatedMemories] = useState<Array<{ memory: Memory; score: number }>>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(true);
+  const [loadingRelated, setLoadingRelated] = useState(true);
+  const [loadingEntities, setLoadingEntities] = useState(true);
+
+  // Trace state
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceData, setTraceData] = useState<TraceData | null>(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState<string | null>(null);
+
+  // Conversation pair state
+  const [convPair, setConvPair] = useState<Memory[]>([]);
+  const [loadingConvPair, setLoadingConvPair] = useState(false);
+
+  // Explain state
+  const [explainQuestion, setExplainQuestion] = useState("");
+  const [explainAnswer, setExplainAnswer] = useState<string | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+
+  const fetchTrace = async () => {
+    if (traceData) {
+      // Already fetched, just toggle visibility
+      setTraceOpen((v) => !v);
+      return;
+    }
+    setTraceOpen(true);
+    setTraceLoading(true);
+    setTraceError(null);
+    try {
+      const res = await fetch(`/api/trace?memoryId=${memory.id}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setTraceError(data.error || "Failed to fetch trace");
+      } else {
+        setTraceData(data);
+      }
+    } catch (err) {
+      setTraceError(String(err));
+    } finally {
+      setTraceLoading(false);
+    }
+  };
+
+  const submitExplain = async () => {
+    if (!explainQuestion.trim()) return;
+    setExplainLoading(true);
+    setExplainAnswer(null);
+    try {
+      const res = await fetch("/api/trace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memoryId: memory.id, question: explainQuestion }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setExplainAnswer(data.error || "Failed to get explanation");
+      } else {
+        setExplainAnswer(data.explanation || data.answer || JSON.stringify(data));
+      }
+    } catch (err) {
+      setExplainAnswer(String(err));
+    } finally {
+      setExplainLoading(false);
+    }
+  };
+
+  // Fetch Cortex links for this memory
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingLinks(true);
+    fetchMemoryLinks(memory.id).then((data) => {
+      if (!cancelled) {
+        setLinks(data);
+        setLoadingLinks(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [memory.id, fetchMemoryLinks]);
+
+  // Fetch retrieval-related memories from Cortex
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRelated(true);
+    const query = encodeURIComponent(memory.summary || memory.content?.slice(0, 100) || "");
+    fetch(`/api/memories?q=${query}&limit=8`)
+      .then((r) => r.json())
+      .then((data: any[]) => {
+        if (!cancelled) {
+          const scored = (Array.isArray(data) ? data : [])
+            .filter((m: any) => m.id !== memory.id)
+            .map((m: any) => ({ memory: m as Memory, score: m.score ?? m.importance ?? 0 }));
+          setRelatedMemories(scored);
+          setLoadingRelated(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) { setRelatedMemories([]); setLoadingRelated(false); }
+      });
+    return () => { cancelled = true; };
+  }, [memory.id, memory.summary, memory.content]);
+
+  // Fetch entities for this memory
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingEntities(true);
+    fetch(`/api/entities?memoryId=${memory.id}`)
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (!cancelled) {
+          setEntities(Array.isArray(data) ? data : []);
+          setLoadingEntities(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) { setEntities([]); setLoadingEntities(false); }
+      });
+    return () => { cancelled = true; };
+  }, [memory.id]);
+
+  // Fetch conversation pair (user-message ↔ assistant-response sharing the same conv:* tag)
+  useEffect(() => {
+    let cancelled = false;
+    const convTag = memory.tags?.find((t) => t.startsWith("conv:"));
+    if (!convTag) {
+      setConvPair([]);
+      return;
+    }
+    setLoadingConvPair(true);
+    fetch(`/api/memories?tag=${encodeURIComponent(convTag)}&limit=20`)
+      .then((r) => r.json())
+      .then((data: any[]) => {
+        if (!cancelled) {
+          const others = (Array.isArray(data) ? data : []).filter((m: any) => m.id !== memory.id);
+          setConvPair(others as Memory[]);
+          setLoadingConvPair(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) { setConvPair([]); setLoadingConvPair(false); }
+      });
+    return () => { cancelled = true; };
+  }, [memory.id, memory.tags]);
+
+  // Resolve linked memories from the local memories array
+  const linkedMemories = links
+    .map((link) => {
+      const otherId = link.source_id === memory.id ? link.target_id : link.source_id;
+      const m = memories.find((mem) => mem.id === otherId);
+      return m ? { memory: m, link } : null;
+    })
+    .filter(Boolean) as Array<{ memory: Memory; link: MemoryLink }>;
+
+  const totalLinkStrength = links.reduce((s, l) => s + l.strength, 0);
+  const maxRelatedScore = relatedMemories[0]?.score || 1;
+
+  // Hebbian stats
   const hebbianGrowth = Math.min(
     (memory.access_count || 0) * 0.01,
     1 - memory.importance
   );
-  const effectiveImportance = Math.min(
-    1,
-    memory.importance + hebbianGrowth
-  );
-
-  // Count connections in graph
-  const connections = graphData.links.filter((l) => {
-    const src = typeof l.source === "object" ? (l.source as any).id : l.source;
-    const tgt = typeof l.target === "object" ? (l.target as any).id : l.target;
-    return src === memory.id || tgt === memory.id;
-  });
-
-  const connectedMemoryIds = connections.map((l) => {
-    const src = typeof l.source === "object" ? (l.source as any).id : l.source;
-    const tgt = typeof l.target === "object" ? (l.target as any).id : l.target;
-    return src === memory.id ? tgt : src;
-  });
-
-  const connectedMemories = connectedMemoryIds
-    .map((id) => memories.find((m) => m.id === id))
-    .filter(Boolean) as Memory[];
-
-  const totalLinkStrength = connections.reduce((s, l) => s + l.value, 0);
-  const graphBoost = connections.length > 0 ? 1 + connections.length * 0.02 : 1;
-
-  // Retrieval-scored related memories
-  const selectedTags = new Set([...(memory.tags || []), ...(memory.concepts || [])]);
-  const now = Date.now();
-  const retrievalScored = memories
-    .filter((m) => m.id !== memory.id)
-    .map((m) => {
-      const memTags = [...(m.tags || []), ...(m.concepts || [])];
-      let shared = 0;
-      for (const t of memTags) if (selectedTags.has(t)) shared++;
-      const relevance = selectedTags.size > 0 ? shared / selectedTags.size : 0;
-      const ageMs = now - new Date(m.created_at).getTime();
-      const ageDays = ageMs / (1000 * 60 * 60 * 24);
-      const recency = Math.exp(-ageDays * 0.05);
-      const decayRate = DECAY_RATES[m.memory_type] || 0.03;
-      const decay = Math.max(0, 1 - decayRate * ageDays);
-      const typeBoost = 1 + (TYPE_BOOSTS[m.memory_type] || 0);
-      const score = ((recency * 1 + relevance * 2 + m.importance * 2) / 5) * decay * typeBoost;
-      return { memory: m, score };
-    })
-    .filter((r) => r.score > 0.01)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8);
-  const maxRetrievalScore = retrievalScored[0]?.score || 1;
+  const effectiveImportance = Math.min(1, memory.importance + hebbianGrowth);
 
   return (
     <div className="flex h-full flex-col">
@@ -141,57 +227,123 @@ export function MemoryNodeDetail({
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 pt-3">
-        {/* Retrieval Score Breakdown */}
+        {/* Cortex Score Breakdown */}
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-cyan-500">
-            Retrieval Score Breakdown
+            Cortex Score Breakdown
           </h4>
           <div className="mt-2 space-y-1.5">
             <ScoreRow
-              label="Recency"
-              value={breakdown.recency}
-              weight={1}
-              color="#06b6d4"
-              detail={`0.995^${Math.round(breakdown.hoursOld)}h`}
-            />
-            <ScoreRow
               label="Importance"
-              value={breakdown.importance}
-              weight={2}
+              value={memory.importance}
               color="#f59e0b"
-              detail={`base: ${Math.round(breakdown.importance * 100)}%`}
+              detail={`${Math.round(memory.importance * 100)}%`}
             />
             <ScoreRow
               label="Decay Factor"
-              value={breakdown.decayFactor}
-              weight={0}
+              value={memory.decay_factor ?? 1}
               color="#22c55e"
-              detail={`${(breakdown.decayRate * 100).toFixed(0)}%/day`}
+              detail={`${Math.round((memory.decay_factor ?? 1) * 100)}%`}
             />
             <ScoreRow
-              label="Type Boost"
-              value={breakdown.typeBoost - 1}
-              weight={0}
-              color="#f43f5e"
-              detail={`+${((breakdown.typeBoost - 1) * 100).toFixed(0)}%`}
+              label="Access Count"
+              value={Math.min((memory.access_count || 0) / 50, 1)}
+              color="#06b6d4"
+              detail={`${memory.access_count || 0} recalls`}
             />
             <ScoreRow
-              label="Graph Boost"
-              value={graphBoost - 1}
-              weight={0}
+              label="Valence"
+              value={Math.abs(memory.emotional_valence || 0)}
+              color={
+                (memory.emotional_valence || 0) >= 0 ? "#3b82f6" : "#ef4444"
+              }
+              detail={`${(memory.emotional_valence || 0) > 0 ? "+" : ""}${(memory.emotional_valence || 0).toFixed(2)}`}
+            />
+            <ScoreRow
+              label="Links"
+              value={Math.min(links.length / 10, 1)}
               color="#f97316"
-              detail={`${connections.length} links → +${((graphBoost - 1) * 100).toFixed(0)}%`}
+              detail={`${links.length} link${links.length !== 1 ? "s" : ""}`}
             />
           </div>
           <div className="mt-2 rounded-[4px] px-2.5 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
-            <span style={{ color: "var(--text-faint)" }}>Local _score: </span>
+            <span style={{ color: "var(--text-faint)" }}>Effective importance: </span>
             <span className="font-mono" style={{ color: "var(--text)" }}>
-              {breakdown.localScore.toFixed(3)}
+              {effectiveImportance.toFixed(3)}
             </span>
+            <span style={{ color: "var(--text-faint)" }}> (base {memory.importance.toFixed(3)} + {(hebbianGrowth).toFixed(3)} hebbian)</span>
           </div>
         </div>
 
-        {/* Hebbian Reinforcement — per-node detail */}
+        {/* Conversation Pair (Input ↔ Output) */}
+        {(loadingConvPair || convPair.length > 0) && (
+          <div>
+            <h4 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-violet-500">
+              <MessageSquare className="h-3 w-3" />
+              Conversation Pair
+            </h4>
+            {loadingConvPair ? (
+              <div className="mt-2 flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-faint)" }}>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading conversation...
+              </div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {/* Current memory */}
+                <div
+                  className="rounded-[4px] px-2.5 py-2"
+                  style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {memory.tags?.includes("user-message") ? (
+                      <User className="h-3 w-3 text-blue-400" />
+                    ) : (
+                      <Bot className="h-3 w-3 text-emerald-400" />
+                    )}
+                    <span className="text-[9px] font-semibold uppercase tracking-wider" style={{
+                      color: memory.tags?.includes("user-message") ? "#60a5fa" : "#34d399"
+                    }}>
+                      {memory.tags?.includes("user-message") ? "You" : "Assistant"}
+                    </span>
+                    <span className="text-[8px] font-mono" style={{ color: "var(--text-faint)" }}>#{memory.id}</span>
+                  </div>
+                  <p className="text-[10px] leading-relaxed" style={{ color: "var(--text)" }}>
+                    {memory.content?.slice(0, 200)}{(memory.content?.length ?? 0) > 200 ? "..." : ""}
+                  </p>
+                </div>
+
+                {/* Partner memories */}
+                {convPair.map((m) => (
+                  <div
+                    key={m.id}
+                    className="rounded-[4px] px-2.5 py-2 cursor-pointer transition-all duration-150 hover:scale-[1.01]"
+                    style={{ background: "var(--surface-dimmer)" }}
+                    onClick={() => onNavigate?.(m.id)}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {m.tags?.includes("user-message") ? (
+                        <User className="h-3 w-3 text-blue-400" />
+                      ) : (
+                        <Bot className="h-3 w-3 text-emerald-400" />
+                      )}
+                      <span className="text-[9px] font-semibold uppercase tracking-wider" style={{
+                        color: m.tags?.includes("user-message") ? "#60a5fa" : "#34d399"
+                      }}>
+                        {m.tags?.includes("user-message") ? "You" : "Assistant"}
+                      </span>
+                      <span className="text-[8px] font-mono" style={{ color: "var(--text-faint)" }}>#{m.id}</span>
+                    </div>
+                    <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                      {m.content?.slice(0, 200)}{(m.content?.length ?? 0) > 200 ? "..." : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Hebbian Reinforcement */}
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-purple-500">
             Hebbian Reinforcement
@@ -213,7 +365,7 @@ export function MemoryNodeDetail({
             </div>
             <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
               <p className="text-lg font-bold text-purple-500">
-                {connections.length}
+                {links.length}
               </p>
               <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>links</p>
             </div>
@@ -245,7 +397,7 @@ export function MemoryNodeDetail({
             </div>
           </div>
 
-          {/* Reinforcement rules applied to this node */}
+          {/* Reinforcement rules */}
           <div className="mt-3 rounded-[4px] p-2 text-[10px] space-y-1" style={{ background: "var(--surface-dim)" }}>
             <div className="flex justify-between">
               <span style={{ color: "var(--text-muted)" }}>Importance increment</span>
@@ -260,66 +412,36 @@ export function MemoryNodeDetail({
               </span>
             </div>
             <div className="flex justify-between">
-              <span style={{ color: "var(--text-muted)" }}>Co-retrieval links</span>
-              <span className="font-mono text-purple-500">
-                {connections.length} &times; +0.05 per co-retrieval
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span style={{ color: "var(--text-muted)" }}>Graph boost</span>
-              <span className="font-mono text-orange-500">
-                {connections.length} links &rarr; &times;{graphBoost.toFixed(2)}
+              <span style={{ color: "var(--text-muted)" }}>Decay factor</span>
+              <span className="font-mono text-green-500">
+                {(memory.decay_factor ?? 1).toFixed(3)}
               </span>
             </div>
           </div>
 
-          {/* Association links with strength bars */}
+          {/* Cortex Association Links */}
           <div className="mt-3">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500">
-                Association Links ({connections.length})
+                Cortex Links ({links.length})
               </p>
-              {connections.length > 0 && (
+              {links.length > 0 && (
                 <span className="font-mono text-[9px]" style={{ color: "var(--text-faint)" }}>
-                  total str: {totalLinkStrength}
+                  total str: {totalLinkStrength.toFixed(1)}
                 </span>
               )}
             </div>
-            {connections.length > 0 ? (
+            {loadingLinks ? (
+              <p className="mt-2 text-[10px]" style={{ color: "var(--text-faint)" }}>Loading links...</p>
+            ) : linkedMemories.length > 0 ? (
               <div className="mt-2 space-y-1.5">
-                {connectedMemories
-                  .map((cm) => {
-                    const link = connections.find((l) => {
-                      const src =
-                        typeof l.source === "object"
-                          ? (l.source as any).id
-                          : l.source;
-                      const tgt =
-                        typeof l.target === "object"
-                          ? (l.target as any).id
-                          : l.target;
-                      return src === cm.id || tgt === cm.id;
-                    });
-                    const strength = link?.value || 0;
-                    const sharedTags = (memory.tags || []).filter((t) =>
-                      (cm.tags || []).includes(t)
-                    );
-                    const sharedConcepts = (memory.concepts || []).filter((c) =>
-                      (cm.concepts || []).includes(c)
-                    );
-                    const coRetrievalEst = Math.min(
-                      (memory.access_count || 0),
-                      (cm.access_count || 0)
-                    );
-                    return { cm, strength, sharedTags, sharedConcepts, coRetrievalEst };
-                  })
-                  .sort((a, b) => b.strength - a.strength)
+                {linkedMemories
+                  .sort((a, b) => b.link.strength - a.link.strength)
                   .slice(0, 8)
-                  .map(({ cm, strength, sharedTags, sharedConcepts, coRetrievalEst }) => {
-                    const maxStrength = Math.max(
-                      ...connections.map((l) => l.value),
-                      1
-                    );
+                  .map(({ memory: cm, link }) => {
+                    const maxStrength = Math.max(...links.map((l) => l.strength), 1);
+                    const linkColor = LINK_TYPE_COLORS[link.link_type] || "#6b7280";
+                    const linkLabel = LINK_TYPE_LABELS[link.link_type] || link.link_type;
                     return (
                       <div
                         key={cm.id}
@@ -330,78 +452,61 @@ export function MemoryNodeDetail({
                         <div className="flex items-center gap-2">
                           <div
                             className="h-2 w-2 shrink-0 rounded-full"
-                            style={{
-                              backgroundColor: TYPE_COLORS[cm.memory_type],
-                            }}
+                            style={{ backgroundColor: TYPE_COLORS[cm.memory_type] }}
                           />
                           <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
                             #{cm.id} {cm.summary?.slice(0, 40)}
                           </span>
                         </div>
-                        {/* Strength bar */}
+                        {/* Link type + strength bar */}
                         <div className="mt-1.5 flex items-center gap-2">
-                          <span className="w-8 text-[9px]" style={{ color: "var(--text-faint)" }}>str</span>
+                          <span
+                            className="w-16 text-[9px] font-medium"
+                            style={{ color: linkColor }}
+                          >
+                            {linkLabel}
+                          </span>
                           <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
                             <div
-                              className="absolute inset-y-0 left-0 rounded-full bg-purple-500"
+                              className="absolute inset-y-0 left-0 rounded-full"
                               style={{
-                                width: `${(strength / maxStrength) * 100}%`,
+                                width: `${(link.strength / maxStrength) * 100}%`,
+                                backgroundColor: linkColor,
                                 opacity: 0.7,
                               }}
                             />
                           </div>
-                          <span className="w-6 text-right font-mono text-[9px] text-purple-500">
-                            {strength}
-                          </span>
-                        </div>
-                        {/* Shared tags/concepts */}
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {sharedTags.map((t) => (
-                            <span
-                              key={`t-${t}`}
-                              className="rounded-[3px] px-1 py-0.5 text-[8px]"
-                              style={{ background: "var(--surface-dim)", color: "var(--text-muted)" }}
-                            >
-                              {t}
-                            </span>
-                          ))}
-                          {sharedConcepts.map((c) => (
-                            <span
-                              key={`c-${c}`}
-                              className="rounded-[3px] px-1 py-0.5 text-[8px]"
-                              style={{ background: "rgba(147, 51, 234, 0.1)", color: "rgb(147, 51, 234)" }}
-                            >
-                              {c}
-                            </span>
-                          ))}
-                          <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
-                            ~{coRetrievalEst} co-retrievals
+                          <span
+                            className="w-6 text-right font-mono text-[9px]"
+                            style={{ color: linkColor }}
+                          >
+                            {link.strength.toFixed(1)}
                           </span>
                         </div>
                       </div>
                     );
                   })}
-                {connectedMemories.length > 8 && (
+                {linkedMemories.length > 8 && (
                   <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>
-                    +{connectedMemories.length - 8} more connections
+                    +{linkedMemories.length - 8} more connections
                   </p>
                 )}
               </div>
             ) : (
               <p className="mt-2 text-[10px]" style={{ color: "var(--text-faint)" }}>
-                No associations yet &mdash; links form when memories share tags/concepts or have vector similarity &ge;0.6
+                No Cortex links yet &mdash; links form via co-retrieval, shared concepts, or vector similarity
               </p>
             )}
           </div>
 
-          {/* Retrieval-linked memories */}
-          {retrievalScored.length > 0 && (
+          {/* Retrieval-linked memories from Cortex search */}
+          {!loadingRelated && relatedMemories.length > 0 && (
             <div className="mt-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>
-                Retrieval-Linked ({retrievalScored.length})
+                Retrieval-Linked ({relatedMemories.length})
               </p>
               <div className="mt-2 space-y-1.5">
-                {retrievalScored.map(({ memory: m, score }) => (
+                {relatedMemories.map(({ memory: m, score }) => (
                   <div
                     key={m.id}
                     className="rounded-[4px] px-2.5 py-2 transition-all duration-150 cursor-pointer hover:scale-[1.01]"
@@ -423,7 +528,7 @@ export function MemoryNodeDetail({
                         <div
                           className="absolute inset-y-0 left-0 rounded-full"
                           style={{
-                            width: `${(score / maxRetrievalScore) * 100}%`,
+                            width: `${(score / maxRelatedScore) * 100}%`,
                             background: "var(--accent)",
                             opacity: 0.6,
                           }}
@@ -438,7 +543,38 @@ export function MemoryNodeDetail({
               </div>
             </div>
           )}
+          {loadingRelated && (
+            <p className="mt-3 text-[10px]" style={{ color: "var(--text-faint)" }}>Loading related memories...</p>
+          )}
         </div>
+
+        {/* Entities */}
+        {!loadingEntities && entities.length > 0 && (
+          <div>
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-teal-500">
+              Entities ({entities.length})
+            </h4>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {entities.map((entity) => (
+                <div
+                  key={entity.id}
+                  className="rounded-[4px] px-2 py-1 text-[10px]"
+                  style={{ background: "var(--surface-dimmer)" }}
+                >
+                  <span style={{ color: "var(--text)" }}>{entity.name}</span>
+                  <span className="ml-1.5 text-[8px] uppercase" style={{ color: "var(--text-faint)" }}>
+                    {entity.entity_type}
+                  </span>
+                  {entity.mention_count > 1 && (
+                    <span className="ml-1 font-mono text-[8px] text-teal-500">
+                      &times;{entity.mention_count}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Raw Memory Data */}
         <div>
@@ -505,6 +641,238 @@ export function MemoryNodeDetail({
             </div>
           </div>
         </div>
+
+        {/* Trace / Provenance */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+          <button
+            onClick={fetchTrace}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <h4 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-500">
+              <Search className="h-3 w-3" />
+              Memory Trace / Provenance
+            </h4>
+            {traceOpen ? (
+              <ChevronUp className="h-3.5 w-3.5" style={{ color: "var(--text-faint)" }} />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--text-faint)" }} />
+            )}
+          </button>
+
+          {traceLoading && (
+            <div className="mt-2 flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-faint)" }}>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading trace data...
+            </div>
+          )}
+
+          {traceError && (
+            <p className="mt-2 text-[10px] text-red-500">{traceError}</p>
+          )}
+
+          {traceOpen && traceData && (
+            <div className="mt-3 space-y-3">
+              {/* Time span */}
+              {traceData.timeSpan && (
+                <div className="rounded-[4px] px-2.5 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
+                  <span style={{ color: "var(--text-faint)" }}>Time span: </span>
+                  <span className="font-mono" style={{ color: "var(--text)" }}>
+                    {new Date(traceData.timeSpan.earliest).toLocaleDateString()} &mdash; {new Date(traceData.timeSpan.latest).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+
+              {/* Link types */}
+              {traceData.linkTypes?.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                    Link Types
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {traceData.linkTypes?.map((lt) => (
+                      <span
+                        key={lt}
+                        className="rounded-[3px] px-1.5 py-0.5 text-[9px] font-medium"
+                        style={{
+                          background: `${LINK_TYPE_COLORS[lt] || "#6b7280"}20`,
+                          color: LINK_TYPE_COLORS[lt] || "#6b7280",
+                        }}
+                      >
+                        {LINK_TYPE_LABELS[lt] || lt}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ancestors */}
+              {(traceData.ancestors?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-amber-500">
+                    Ancestors ({(traceData.ancestors?.length ?? 0)})
+                  </p>
+                  <div className="mt-1 space-y-1">
+                    {traceData.ancestors?.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
+                        style={{ background: "var(--surface-dimmer)", paddingLeft: `${0.625 + a.depth * 0.5}rem` }}
+                        onClick={() => onNavigate?.(a.id)}
+                      >
+                        <div
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: a.memory_type ? TYPE_COLORS[a.memory_type as keyof typeof TYPE_COLORS] : "var(--text-faint)" }}
+                        />
+                        <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
+                          #{a.id} {a.summary?.slice(0, 50)}
+                        </span>
+                        <span className="text-[8px] font-mono" style={{ color: "var(--text-faint)" }}>
+                          depth {a.depth}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Descendants */}
+              {(traceData.descendants?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-green-500">
+                    Descendants ({(traceData.descendants?.length ?? 0)})
+                  </p>
+                  <div className="mt-1 space-y-1">
+                    {traceData.descendants?.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
+                        style={{ background: "var(--surface-dimmer)", paddingLeft: `${0.625 + d.depth * 0.5}rem` }}
+                        onClick={() => onNavigate?.(d.id)}
+                      >
+                        <div
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: d.memory_type ? TYPE_COLORS[d.memory_type as keyof typeof TYPE_COLORS] : "var(--text-faint)" }}
+                        />
+                        <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
+                          #{d.id} {d.summary?.slice(0, 50)}
+                        </span>
+                        <span className="text-[8px] font-mono" style={{ color: "var(--text-faint)" }}>
+                          depth {d.depth}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Related memories */}
+              {(traceData.related?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>
+                    Related ({(traceData.related?.length ?? 0)})
+                  </p>
+                  <div className="mt-1 space-y-1">
+                    {traceData.related?.map((r) => (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
+                        style={{ background: "var(--surface-dimmer)" }}
+                        onClick={() => onNavigate?.(r.id)}
+                      >
+                        <div
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: r.memory_type ? TYPE_COLORS[r.memory_type as keyof typeof TYPE_COLORS] : "var(--text-faint)" }}
+                        />
+                        <span className="flex-1 truncate text-[10px]" style={{ color: "var(--text)" }}>
+                          #{r.id} {r.summary?.slice(0, 50)}
+                        </span>
+                        {r.score != null && (
+                          <span className="font-mono text-[9px]" style={{ color: "var(--accent)" }}>
+                            {r.score.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Entities from trace */}
+              {(traceData.entities?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-teal-500">
+                    Traced Entities ({(traceData.entities?.length ?? 0)})
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {traceData.entities?.map((e, i) => (
+                      <span
+                        key={`${e.name}-${i}`}
+                        className="rounded-[3px] px-1.5 py-0.5 text-[9px]"
+                        style={{ background: "var(--surface-dimmer)", color: "var(--text)" }}
+                      >
+                        {e.name}
+                        <span className="ml-1 text-[8px] uppercase" style={{ color: "var(--text-faint)" }}>
+                          {e.entity_type}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty trace */}
+              {(traceData.ancestors?.length ?? 0) === 0 &&
+                (traceData.descendants?.length ?? 0) === 0 &&
+                (traceData.related?.length ?? 0) === 0 && (
+                  <p className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+                    No provenance trace found for this memory.
+                  </p>
+                )}
+
+              {/* Explain input */}
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-purple-500 mb-1.5">
+                  Ask about this memory
+                </p>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={explainQuestion}
+                    onChange={(e) => setExplainQuestion(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") submitExplain(); }}
+                    placeholder="Why did you think this?"
+                    className="flex-1 rounded-[4px] px-2.5 py-1.5 text-[10px] outline-none"
+                    style={{
+                      background: "var(--surface-dimmer)",
+                      color: "var(--text)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                  <button
+                    onClick={submitExplain}
+                    disabled={explainLoading || !explainQuestion.trim()}
+                    className="rounded-[4px] px-2 py-1.5 transition active:scale-95 disabled:opacity-40"
+                    style={{ background: "var(--surface-dimmer)", color: "var(--text)" }}
+                  >
+                    {explainLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Send className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
+                {explainAnswer && (
+                  <div
+                    className="mt-2 rounded-[4px] p-2.5 text-[10px] leading-relaxed whitespace-pre-wrap"
+                    style={{ background: "var(--surface-dim)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                  >
+                    {explainAnswer}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -513,13 +881,11 @@ export function MemoryNodeDetail({
 function ScoreRow({
   label,
   value,
-  weight,
   color,
   detail,
 }: {
   label: string;
   value: number;
-  weight: number;
   color: string;
   detail: string;
 }) {
@@ -539,11 +905,6 @@ function ScoreRow({
       <span className="w-12 text-right font-mono text-[9px]" style={{ color }}>
         {value.toFixed(3)}
       </span>
-      {weight > 0 && (
-        <span className="w-5 text-right text-[9px]" style={{ color: "var(--text-faint)" }}>
-          &times;{weight}
-        </span>
-      )}
       <span className="w-16 text-right text-[9px]" style={{ color: "var(--text-faint)" }}>
         {detail}
       </span>

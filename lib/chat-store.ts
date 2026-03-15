@@ -12,46 +12,45 @@ export interface Conversation {
   updatedAt: string;
 }
 
-const STORAGE_KEY = "prelude:conversations";
-
-export function loadConversations(): Conversation[] {
-  if (typeof window === "undefined") return [];
+export async function loadConversations(): Promise<Conversation[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const convs = JSON.parse(raw) as Conversation[];
-    return convs.sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+    const res = await fetch("/api/conversations");
+    if (!res.ok) return [];
+    return await res.json();
   } catch {
     return [];
   }
 }
 
-export function saveConversation(conv: Conversation): void {
-  if (typeof window === "undefined") return;
-  try {
-    const all = loadConversations();
-    const idx = all.findIndex((c) => c.id === conv.id);
-    if (idx >= 0) {
-      all[idx] = conv;
-    } else {
-      all.unshift(conv);
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-  } catch {
-    // quota exceeded or private browsing
-  }
+export async function saveConversation(conv: Conversation): Promise<Conversation> {
+  const res = await fetch("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(conv),
+  });
+  return res.json();
 }
 
-export function deleteConversation(id: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    const all = loadConversations().filter((c) => c.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-  } catch {
-    // ignore
-  }
+export async function updateConversation(
+  id: string,
+  updates: Partial<Pick<Conversation, "title" | "summary" | "messages">>
+): Promise<Conversation> {
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+}
+
+export async function clearAllConversations(): Promise<void> {
+  // Fetch all conversation IDs and delete each
+  const convs = await loadConversations();
+  await Promise.all(convs.map((c) => deleteConversation(c.id)));
 }
 
 export function generateTitle(messages: ChatMessage[]): string {

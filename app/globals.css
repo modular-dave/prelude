@@ -140,6 +140,17 @@ body {
   color: var(--text-faint);
 }
 
+/* === Force-graph tooltip wrapper reset === */
+.float-tooltip-kap {
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  font: inherit !important;
+}
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }

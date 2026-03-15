@@ -1,57 +1,36 @@
-export type MemoryType =
-  | "episodic"
-  | "semantic"
-  | "procedural"
-  | "self_model"
-  | "introspective";
+// Re-export Cortex SDK types as the single source of truth
+export type {
+  MemoryType,
+  Memory,
+  MemorySummary,
+  MemoryStats,
+  RecallOptions,
+  StoreMemoryOptions,
+  MemoryLinkType,
+  MemoryConcept,
+  DreamOptions,
+} from "clude-bot";
 
-export interface Memory {
+// Entity graph types — re-exported via lib/clude.ts which uses require() to
+// bypass the package.json exports restriction
+export type { Entity, EntityType, EntityMention } from "@/lib/clude";
+
+// EntityRelation is used by some components but not re-exported from clude.ts
+// Define it locally to match the Cortex shape
+export interface EntityRelation {
   id: number;
-  memory_type: MemoryType;
-  content: string;
-  summary: string;
-  tags: string[];
-  concepts: string[];
-  importance: number;
-  decay_factor: number;
-  access_count: number;
-  emotional_valence: number;
-  source: string;
-  source_id?: string;
-  related_user?: string;
-  metadata: Record<string, unknown>;
+  source_entity_id: number;
+  target_entity_id: number;
+  relation_type: string;
+  weight: number;
+  context?: string;
   created_at: string;
-  last_accessed: string;
 }
 
-export interface GraphNode {
-  id: number;
-  name: string;
-  val: number;
-  color: string;
-  type: MemoryType;
-  importance: number;
-}
+// Re-import MemoryType for use in display constants
+import type { MemoryType } from "clude-bot";
 
-export interface GraphLink {
-  source: number;
-  target: number;
-  value: number;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  links: GraphLink[];
-}
-
-export interface DreamPhase {
-  name: string;
-  description: string;
-  status: "idle" | "running" | "complete";
-  result?: string;
-  reasoning?: string;
-  lastRun?: string;
-}
+// ── Display-only constants (UI layer) ──────────────────────────
 
 export const TYPE_COLORS: Record<MemoryType, string> = {
   episodic: "#1a3abf",
@@ -69,12 +48,40 @@ export const TYPE_LABELS: Record<MemoryType, string> = {
   introspective: "Introspective",
 };
 
-export const DECAY_RATES: Record<MemoryType, number> = {
-  episodic: 0.07,
-  semantic: 0.02,
-  procedural: 0.03,
-  self_model: 0.01,
-  introspective: 0.02,
+export const LINK_TYPE_COLORS: Record<string, string> = {
+  supports: "#22c55e",
+  contradicts: "#ef4444",
+  elaborates: "#3b82f6",
+  causes: "#f97316",
+  follows: "#8b5cf6",
+  relates: "#6b7280",
+  resolves: "#14b8a6",
+  conversation: "#a78bfa",
 };
+
+export const LINK_TYPE_LABELS: Record<string, string> = {
+  supports: "Supports",
+  contradicts: "Contradicts",
+  elaborates: "Elaborates",
+  causes: "Causes",
+  follows: "Follows",
+  relates: "Relates",
+  resolves: "Resolves",
+  conversation: "Conversation",
+};
+
+// ── Cortex knowledge graph shape (from getKnowledgeGraph()) ────
+
+export interface KnowledgeGraphData {
+  nodes: Array<{ id: string; type: string; label: string; size: number }>;
+  edges: Array<{ source: string; target: string; type: string; weight: number }>;
+}
+
+export interface GraphStats {
+  entityCount: number;
+  relationCount: number;
+  mentionCount: number;
+  topEntities: Array<{ name: string; type: string; mentions: number }>;
+}
 
 export type ViewMode = "hebbian" | "retrieved";

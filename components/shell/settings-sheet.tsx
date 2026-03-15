@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Sliders, Cpu, Check, Trash2, Plus, Loader2 } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Sliders, Cpu, Check, Trash2, Plus, Loader2, Moon, Brain, MessageSquare, Settings2, Clock, BarChart3 } from "lucide-react";
+import Link from "next/link";
 import { NeuroSlider } from "@/components/ui/neuro-slider";
 import { TypeFilterToggles } from "@/components/ui/type-filter-toggles";
 import { useMemory } from "@/lib/memory-context";
 import { DEFAULT_RETRIEVAL_SETTINGS } from "@/lib/retrieval-settings";
+import { loadSystemPrompt, saveSystemPrompt } from "@/lib/system-prompt";
 import {
-  loadModelSettings,
-  saveModelSettings,
   setActiveModel,
   addKnownModel,
   removeKnownModel,
@@ -27,58 +27,132 @@ export function SettingsSheet({
   const backdropRef = useRef<HTMLDivElement>(null);
   const [modelOpen, setModelOpen] = useState(true);
   const [tuningOpen, setTuningOpen] = useState(false);
+
   const { retrievalSettings, updateRetrievalSettings } = useMemory();
 
   // Model management state
-  const [modelSettings, setModelSettings] = useState(() => loadModelSettings());
+  const [installedModels, setInstalledModels] = useState<string[]>([]);
+  const [activeModel, setActiveModelState] = useState<string | null>(null);
   const [customModelInput, setCustomModelInput] = useState("");
   const [modelLoading, setModelLoading] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [dreamScheduleLoading, setDreamScheduleLoading] = useState(false);
+  const [reflectionScheduleLoading, setReflectionScheduleLoading] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [cortexConfig, setCortexConfig] = useState<Record<string, any> | null>(null);
 
-  const refreshModelSettings = useCallback(() => {
-    setModelSettings(loadModelSettings());
+  // Fetch real model state from backend
+  const refreshModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models");
+      const data = await res.json();
+      if (data.error) {
+        setBackendOnline(false);
+        return;
+      }
+      setBackendOnline(data.running);
+      setInstalledModels(data.installed || []);
+      setActiveModelState(data.active || null);
+      // Sync localStorage
+      if (data.active) setActiveModel(data.active);
+      for (const m of data.installed || []) addKnownModel(m);
+    } catch {
+      setBackendOnline(false);
+    }
   }, []);
 
-  // Check backend status when section opens
+  // Load system prompt when sheet opens
+  useEffect(() => {
+    if (open) {
+      setSystemPrompt(loadSystemPrompt());
+    }
+  }, [open]);
+
   useEffect(() => {
     if (!open || !modelOpen) return;
-    fetch("/api/models")
-      .then((r) => r.json())
-      .then((d) => setBackendOnline(!d.error))
-      .catch(() => setBackendOnline(false));
-  }, [open, modelOpen]);
+    refreshModels();
+  }, [open, modelOpen, refreshModels]);
+
+  // Fetch Cortex config when section opens
+  useEffect(() => {
+    if (!configOpen || cortexConfig) return;
+    fetch("/api/config").then((r) => r.json()).then(setCortexConfig).catch(() => {});
+  }, [configOpen, cortexConfig]);
 
   const handleSwitchModel = async (model: string) => {
-    if (model === modelSettings.activeModel) return;
+    if (model === activeModel) return;
     setModelLoading(model);
+    setModelError(null);
     try {
       const res = await fetch("/api/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+        body: JSON.stringify({ action: "switch", model }),
       });
-      if (res.ok) {
-        setActiveModel(model);
-        refreshModelSettings();
+      const data = await res.json();
+      if (!res.ok) {
+        setModelError(data.error || "Failed to switch model");
+        return;
       }
+      await refreshModels();
     } catch {
-      // backend error
+      setModelError("Failed to connect to backend");
     } finally {
       setModelLoading(null);
     }
   };
 
-  const handleAddModel = (model: string) => {
+  const handleInstallModel = async (model: string) => {
     const trimmed = model.trim();
     if (!trimmed) return;
-    addKnownModel(trimmed);
-    refreshModelSettings();
+    setModelLoading(trimmed);
+    setModelError(null);
     setCustomModelInput("");
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "install", model: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setModelError(data.error || "Failed to install model");
+        return;
+      }
+      addKnownModel(trimmed);
+      await refreshModels();
+    } catch {
+      setModelError("Failed to connect to backend");
+    } finally {
+      setModelLoading(null);
+    }
   };
 
-  const handleRemoveModel = (model: string) => {
-    removeKnownModel(model);
-    refreshModelSettings();
+  const handleUninstallModel = async (model: string) => {
+    setModelLoading(model);
+    setModelError(null);
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "uninstall", model }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setModelError(data.error || "Failed to uninstall model");
+        return;
+      }
+      removeKnownModel(model);
+      await refreshModels();
+    } catch {
+      setModelError("Failed to connect to backend");
+    } finally {
+      setModelLoading(null);
+    }
   };
 
   useEffect(() => {
@@ -135,6 +209,55 @@ export function SettingsSheet({
         </div>
 
         <div className="p-4 space-y-2">
+          {/* System Prompt */}
+          <button
+            onClick={() => setPromptOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1 font-medium">System Prompt</span>
+            {systemPrompt.trim() && (
+              <span className="text-[9px]" style={{ color: "var(--accent)" }}>
+                Active
+              </span>
+            )}
+            {promptOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+          {promptOpen && (
+            <div className="space-y-2 px-1 pb-2 animate-fade-slide-up">
+              <p className="text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                Custom instructions prepended to every conversation.
+              </p>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => {
+                  setSystemPrompt(e.target.value);
+                }}
+                onBlur={() => {
+                  saveSystemPrompt(systemPrompt);
+                }}
+                placeholder="You are a helpful assistant..."
+                rows={4}
+                className="w-full resize-y rounded-[6px] px-2.5 py-2 text-[10px] leading-relaxed bg-transparent outline-none"
+                style={{
+                  border: "1px solid var(--border)",
+                  color: "var(--text)",
+                  minHeight: "60px",
+                  maxHeight: "200px",
+                }}
+              />
+              {systemPrompt.trim() && (
+                <div className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
+                  <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                    Custom prompt active
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Model */}
           <button
             onClick={() => setModelOpen((v) => !v)}
@@ -144,7 +267,7 @@ export function SettingsSheet({
             <Cpu className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
             <span className="flex-1 font-medium">Model</span>
             <span className="truncate max-w-[120px] text-[9px]" style={{ color: "var(--text-faint)" }}>
-              {modelDisplayName(modelSettings.activeModel)}
+              {activeModel ? modelDisplayName(activeModel) : "No model"}
             </span>
             {modelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -161,12 +284,22 @@ export function SettingsSheet({
                 </span>
               </div>
 
+              {/* Error message */}
+              {modelError && (
+                <div
+                  className="rounded-[6px] px-2.5 py-2 text-[10px]"
+                  style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
+                >
+                  {modelError}
+                </div>
+              )}
+
               {/* Installed models */}
-              {modelSettings.knownModels.length > 0 && (
+              {installedModels.length > 0 && (
                 <div className="space-y-1">
                   <h4 className="label">Installed</h4>
-                  {modelSettings.knownModels.map((model) => {
-                    const isActive = model === modelSettings.activeModel;
+                  {installedModels.map((model) => {
+                    const isActive = model === activeModel;
                     const isLoading = model === modelLoading;
                     const desc = MODEL_DESCRIPTIONS[model];
                     return (
@@ -174,7 +307,7 @@ export function SettingsSheet({
                         key={model}
                         className="group flex items-center gap-2 rounded-[6px] px-2.5 py-2 transition cursor-pointer"
                         style={{ background: isActive ? "var(--surface-dim)" : "transparent" }}
-                        onClick={() => handleSwitchModel(model)}
+                        onClick={() => !isLoading && handleSwitchModel(model)}
                       >
                         {isLoading ? (
                           <Loader2 className="h-3 w-3 shrink-0 animate-spin" style={{ color: "var(--accent)" }} />
@@ -195,17 +328,24 @@ export function SettingsSheet({
                               {desc}
                             </span>
                           )}
+                          {isLoading && (
+                            <span className="block text-[9px]" style={{ color: "var(--accent)" }}>
+                              Switching...
+                            </span>
+                          )}
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveModel(model);
-                          }}
-                          className="shrink-0 opacity-0 group-hover:opacity-100 transition p-0.5"
-                          style={{ color: "var(--text-faint)" }}
-                        >
-                          <Trash2 className="h-2.5 w-2.5" />
-                        </button>
+                        {!isActive && !isLoading && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUninstallModel(model);
+                            }}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 transition p-0.5"
+                            style={{ color: "var(--text-faint)" }}
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -213,19 +353,24 @@ export function SettingsSheet({
               )}
 
               {/* Available (not yet installed) */}
-              {PRESET_MODELS.filter((p) => !modelSettings.knownModels.includes(p)).length > 0 && (
+              {PRESET_MODELS.filter((p) => !installedModels.includes(p)).length > 0 && (
                 <div className="space-y-1">
                   <h4 className="label">Available</h4>
-                  {PRESET_MODELS.filter((p) => !modelSettings.knownModels.includes(p)).map((model) => {
+                  {PRESET_MODELS.filter((p) => !installedModels.includes(p)).map((model) => {
                     const desc = MODEL_DESCRIPTIONS[model];
+                    const isLoading = model === modelLoading;
                     return (
                       <div
                         key={model}
                         className="group flex items-center gap-2 rounded-[6px] px-2.5 py-2 transition cursor-pointer"
-                        style={{ opacity: 0.6 }}
-                        onClick={() => handleAddModel(model)}
+                        style={{ opacity: isLoading ? 1 : 0.6 }}
+                        onClick={() => !isLoading && handleInstallModel(model)}
                       >
-                        <Plus className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+                        {isLoading ? (
+                          <Loader2 className="h-3 w-3 shrink-0 animate-spin" style={{ color: "var(--accent)" }} />
+                        ) : (
+                          <Plus className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+                        )}
                         <div className="flex-1 min-w-0">
                           <span className="block truncate text-[11px]" style={{ color: "var(--text)" }}>
                             {modelDisplayName(model)}
@@ -233,6 +378,11 @@ export function SettingsSheet({
                           {desc && (
                             <span className="block truncate text-[9px]" style={{ color: "var(--text-faint)" }}>
                               {desc}
+                            </span>
+                          )}
+                          {isLoading && (
+                            <span className="block text-[9px]" style={{ color: "var(--accent)" }}>
+                              Downloading...
                             </span>
                           )}
                         </div>
@@ -251,7 +401,7 @@ export function SettingsSheet({
                     value={customModelInput}
                     onChange={(e) => setCustomModelInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddModel(customModelInput);
+                      if (e.key === "Enter") handleInstallModel(customModelInput);
                     }}
                     placeholder="mlx-community/model-name"
                     className="flex-1 rounded-[6px] px-2.5 py-1.5 text-[10px] bg-transparent outline-none"
@@ -261,8 +411,8 @@ export function SettingsSheet({
                     }}
                   />
                   <button
-                    onClick={() => handleAddModel(customModelInput)}
-                    disabled={!customModelInput.trim()}
+                    onClick={() => handleInstallModel(customModelInput)}
+                    disabled={!customModelInput.trim() || !!modelLoading}
                     className="shrink-0 rounded-[6px] px-2.5 py-1.5 text-[10px] font-medium transition active:scale-95 disabled:opacity-30"
                     style={{ color: "var(--accent)" }}
                   >
@@ -372,6 +522,293 @@ export function SettingsSheet({
               </div>
             </div>
           )}
+
+          {/* Cortex Schedules */}
+          <button
+            onClick={() => setSchedulesOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Moon className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1 font-medium">Cortex Schedules</span>
+            {(s.dreamScheduleEnabled || s.reflectionScheduleEnabled) && (
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: "#22c55e" }}
+              />
+            )}
+            {schedulesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+          {schedulesOpen && (
+            <div className="space-y-3 px-1 pb-2 animate-fade-slide-up">
+              <p className="text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                Automated background processes for memory consolidation and introspection.
+              </p>
+
+              {/* Dream Schedule */}
+              <div className="rounded-[6px] overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between px-2.5 py-2" style={{ background: "var(--surface-dim)" }}>
+                  <div className="flex items-center gap-2">
+                    <Moon className="h-3 w-3" style={{ color: s.dreamScheduleEnabled ? "#22c55e" : "var(--text-faint)" }} />
+                    <div>
+                      <span className="block text-[11px]" style={{ color: "var(--text)" }}>Dream Cycle</span>
+                      <span className="block text-[9px]" style={{ color: "var(--text-faint)" }}>Consolidate, compact, reflect, resolve, emerge</span>
+                    </div>
+                  </div>
+                  <button
+                    disabled={dreamScheduleLoading}
+                    onClick={async () => {
+                      setDreamScheduleLoading(true);
+                      try {
+                        const method = s.dreamScheduleEnabled ? "DELETE" : "POST";
+                        await fetch("/api/dream/schedule", { method });
+                        updateRetrievalSettings({ dreamScheduleEnabled: !s.dreamScheduleEnabled });
+                      } finally {
+                        setDreamScheduleLoading(false);
+                      }
+                    }}
+                    className="rounded-full px-2.5 py-1 text-[9px] font-medium transition"
+                    style={{
+                      background: s.dreamScheduleEnabled ? "rgba(34,197,94,0.15)" : "var(--surface)",
+                      color: s.dreamScheduleEnabled ? "#22c55e" : "var(--text-faint)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {dreamScheduleLoading ? "..." : s.dreamScheduleEnabled ? "Active" : "Off"}
+                  </button>
+                </div>
+                {/* Dream schedule parameters */}
+                <div className="px-2.5 py-2 space-y-1.5" style={{ background: "var(--surface-dimmer, var(--surface))" }}>
+                  <h4 className="label" style={{ fontSize: "8px" }}>Schedule Parameters</h4>
+                  {[
+                    { label: "Cron", value: "Every 6 hours", mono: true },
+                    { label: "Initial delay", value: "2 min after start" },
+                    { label: "Cycle timeout", value: "10 min max" },
+                    { label: "Decay schedule", value: "Daily 3:00 AM UTC", mono: true },
+                  ].map((p) => (
+                    <div key={p.label} className="flex items-center justify-between">
+                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className={`text-[9px] ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                    </div>
+                  ))}
+                  <h4 className="label pt-1" style={{ fontSize: "8px" }}>Event-Driven Triggers</h4>
+                  {[
+                    { label: "Importance threshold", value: "2.0 cumulative" },
+                    { label: "Min interval", value: "30 min between reflections" },
+                  ].map((p) => (
+                    <div key={p.label} className="flex items-center justify-between">
+                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                    </div>
+                  ))}
+                  <h4 className="label pt-1" style={{ fontSize: "8px" }}>Decay Rates (per 24h)</h4>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                    {[
+                      { type: "Episodic", rate: "0.93" },
+                      { type: "Semantic", rate: "0.98" },
+                      { type: "Procedural", rate: "0.97" },
+                      { type: "Self Model", rate: "0.99" },
+                      { type: "Introspective", rate: "0.98" },
+                    ].map((d) => (
+                      <div key={d.type} className="flex items-center justify-between">
+                        <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{d.type}</span>
+                        <span className="text-[9px] font-mono" style={{ color: "var(--text-muted)" }}>{d.rate}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Reflection Schedule */}
+              <div className="rounded-[6px] overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between px-2.5 py-2" style={{ background: "var(--surface-dim)" }}>
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-3 w-3" style={{ color: s.reflectionScheduleEnabled ? "#22c55e" : "var(--text-faint)" }} />
+                    <div>
+                      <span className="block text-[11px]" style={{ color: "var(--text)" }}>Active Reflection</span>
+                      <span className="block text-[9px]" style={{ color: "var(--text-faint)" }}>Journaling, introspection, self-model</span>
+                    </div>
+                  </div>
+                  <button
+                    disabled={reflectionScheduleLoading}
+                    onClick={async () => {
+                      setReflectionScheduleLoading(true);
+                      try {
+                        const action = s.reflectionScheduleEnabled ? "stop" : "start";
+                        await fetch("/api/reflect", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ schedule: action }),
+                        });
+                        updateRetrievalSettings({ reflectionScheduleEnabled: !s.reflectionScheduleEnabled });
+                      } finally {
+                        setReflectionScheduleLoading(false);
+                      }
+                    }}
+                    className="rounded-full px-2.5 py-1 text-[9px] font-medium transition"
+                    style={{
+                      background: s.reflectionScheduleEnabled ? "rgba(34,197,94,0.15)" : "var(--surface)",
+                      color: s.reflectionScheduleEnabled ? "#22c55e" : "var(--text-faint)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {reflectionScheduleLoading ? "..." : s.reflectionScheduleEnabled ? "Active" : "Off"}
+                  </button>
+                </div>
+                {/* Reflection schedule parameters */}
+                <div className="px-2.5 py-2 space-y-1.5" style={{ background: "var(--surface-dimmer, var(--surface))" }}>
+                  <h4 className="label" style={{ fontSize: "8px" }}>Schedule Parameters</h4>
+                  {[
+                    { label: "Interval", value: "Every 3 hours" },
+                    { label: "Cron", value: "At :30 past 1,4,7,10,13,16,19,22h UTC", mono: true },
+                    { label: "Initial delay", value: "30 min after start" },
+                    { label: "Session timeout", value: "8 min max" },
+                    { label: "Quiet hours", value: "23:00 - 08:00 UTC" },
+                  ].map((p) => (
+                    <div key={p.label} className="flex items-center justify-between">
+                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className={`text-[9px] ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                    </div>
+                  ))}
+                  <h4 className="label pt-1" style={{ fontSize: "8px" }}>Reflection Constraints</h4>
+                  {[
+                    { label: "Min memories", value: "5 required" },
+                    { label: "Max journal tokens", value: "1,500" },
+                    { label: "Seed limit", value: "15 unique memories" },
+                    { label: "Importance", value: "0.8 (stored)" },
+                  ].map((p) => (
+                    <div key={p.label} className="flex items-center justify-between">
+                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                    </div>
+                  ))}
+                  <h4 className="label pt-1" style={{ fontSize: "8px" }}>Seed Selection</h4>
+                  <div className="space-y-0.5">
+                    {[
+                      "Recent episodic (last 6h, up to 10)",
+                      "High-importance (last 48h, >= 0.7)",
+                      "Clinamen (high-importance, low-relevance)",
+                      "Random older (up to 30 days fallback)",
+                    ].map((s) => (
+                      <div key={s} className="flex items-center gap-1.5">
+                        <span className="h-0.5 w-0.5 shrink-0 rounded-full" style={{ background: "var(--text-faint)" }} />
+                        <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Cortex Config */}
+          <button
+            onClick={() => setConfigOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Settings2 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1 font-medium">Cortex Status</span>
+            {configOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+          {configOpen && (
+            <div className="space-y-3 px-1 pb-2 animate-fade-slide-up">
+              {!cortexConfig ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />
+                  <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>Loading config...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Connected Services */}
+                  <div className="space-y-1.5">
+                    <h4 className="label">Services</h4>
+                    {[
+                      { name: "Supabase", connected: cortexConfig.supabase?.connected, detail: cortexConfig.supabase?.url, required: true },
+                      { name: "Inference", connected: cortexConfig.inference?.connected, detail: cortexConfig.inference?.provider, required: true },
+                      { name: "Embedding", connected: cortexConfig.embedding?.connected, detail: cortexConfig.embedding?.provider || "not configured", required: false },
+                    ].map((svc) => (
+                      <div key={svc.name} className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5" style={{ background: "var(--surface-dim)" }}>
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: svc.connected ? "#22c55e" : svc.required ? "#ef4444" : "var(--text-faint)" }}
+                        />
+                        <span className="text-[10px]" style={{ color: "var(--text)" }}>{svc.name}</span>
+                        {svc.detail && (
+                          <span className="ml-auto truncate max-w-[140px] text-[9px]" style={{ color: "var(--text-faint)" }}>
+                            {svc.detail}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {cortexConfig.inference?.model && (
+                      <div className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5" style={{ background: "var(--surface-dim)" }}>
+                        <Cpu className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
+                        <span className="text-[10px]" style={{ color: "var(--text)" }}>Model</span>
+                        <span className="ml-auto truncate max-w-[160px] text-[9px]" style={{ color: "var(--text-faint)" }}>
+                          {cortexConfig.inference.model}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Feature Flags */}
+                  <div className="space-y-1.5">
+                    <h4 className="label">Features</h4>
+                    <div className="grid grid-cols-2 gap-1">
+                      {cortexConfig.features && Object.entries(cortexConfig.features).map(([key, enabled]) => (
+                        <div
+                          key={key}
+                          className="flex items-center gap-1.5 rounded-[4px] px-2 py-1"
+                          style={{ background: "var(--surface-dim)" }}
+                        >
+                          <span
+                            className="h-1 w-1 shrink-0 rounded-full"
+                            style={{ background: enabled ? "#22c55e" : "var(--text-faint)" }}
+                          />
+                          <span className="text-[9px] truncate" style={{ color: enabled ? "var(--text)" : "var(--text-faint)" }}>
+                            {key.replace(/([A-Z])/g, " $1").trim()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Wallet */}
+                  {cortexConfig.ownerWallet && (
+                    <div className="space-y-1">
+                      <h4 className="label">Owner Wallet</h4>
+                      <div className="rounded-[6px] px-2.5 py-1.5 font-mono text-[9px] truncate" style={{ background: "var(--surface-dim)", color: "var(--text-faint)" }}>
+                        {cortexConfig.ownerWallet}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Stats link */}
+          <Link
+            href="/stats"
+            onClick={onClose}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <BarChart3 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1 font-medium">Stats</span>
+          </Link>
+
+          {/* History link */}
+          <Link
+            href="/history"
+            onClick={onClose}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Clock className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1 font-medium">Memory History</span>
+          </Link>
 
         </div>
       </div>

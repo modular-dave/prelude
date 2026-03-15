@@ -76,6 +76,7 @@ export function ChatHistory({
   activeId,
   onSelect,
   onDelete,
+  onClearAll,
   onNewChat,
 }: {
   open: boolean;
@@ -84,14 +85,17 @@ export function ChatHistory({
   activeId: string | null;
   onSelect: (conv: Conversation) => void;
   onDelete: (id: string) => void;
+  onClearAll: () => void;
   onNewChat: () => void;
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+  const [pendingClearAll, setPendingClearAll] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setPendingDelete(null);
+      setPendingClearAll(false);
     }
   }, [open]);
 
@@ -202,6 +206,20 @@ export function ChatHistory({
             </div>
           )}
         </div>
+
+        {/* Clear all */}
+        {conversations.length > 0 && (
+          <div className="p-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <button
+              onClick={() => setPendingClearAll(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 text-[10px] font-medium transition active:scale-95"
+              style={{ color: "#ef4444" }}
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear all conversations & memories
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Delete confirmation */}
@@ -214,6 +232,49 @@ export function ChatHistory({
             setPendingDelete(null);
           }}
         />
+      )}
+
+      {/* Clear all confirmation */}
+      {pendingClearAll && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 animate-fade-in"
+            style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)" }}
+            onClick={() => setPendingClearAll(false)}
+          />
+          <div className="relative z-10 mx-4 w-full max-w-xs rounded-[10px] p-5 animate-fade-slide-up glass-panel">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+              <div>
+                <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>
+                  Clear everything?
+                </p>
+                <p className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                  This will delete all {conversations.length} conversation{conversations.length !== 1 ? "s" : ""} and all associated memories from the brain. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPendingClearAll(false)}
+                className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition active:scale-95"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onClearAll();
+                  setPendingClearAll(false);
+                }}
+                className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium text-white transition active:scale-95"
+                style={{ background: "#ef4444" }}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

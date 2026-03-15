@@ -10,6 +10,7 @@ export function TagCloud() {
     const counts: Record<string, number> = {};
     for (const m of memories) {
       for (const tag of [...(m.tags || []), ...(m.concepts || [])]) {
+        if (tag === "user-message" || tag === "assistant-response" || tag.startsWith("conv:")) continue;
         counts[tag] = (counts[tag] || 0) + 1;
       }
     }
