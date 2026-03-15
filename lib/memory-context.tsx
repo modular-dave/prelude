@@ -9,8 +9,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { Memory, GraphData, GraphNode, GraphLink } from "./types";
-import { TYPE_COLORS } from "./types";
+import type { Memory, MemoryStats, KnowledgeGraphData, GraphStats } from "./types";
 import {
   type RetrievalSettings,
   DEFAULT_RETRIEVAL_SETTINGS,
@@ -19,82 +18,81 @@ import {
   ALL_MEMORY_TYPES,
 } from "./retrieval-settings";
 
+// ── Context shape ──────────────────────────────────────────────
+
 interface MemoryContextValue {
   memories: Memory[];
-  stats: Record<string, unknown>;
-  graphData: GraphData;
+  stats: MemoryStats | null;
   loading: boolean;
   refresh: () => Promise<void>;
+
+  // Cortex knowledge graph (entities + relations)
+  knowledgeGraph: KnowledgeGraphData;
+  graphStats: GraphStats | null;
+
+  // Settings
   retrievalSettings: RetrievalSettings;
   updateRetrievalSettings: (patch: Partial<RetrievalSettings>) => void;
+
+  // On-demand fetchers
+  fetchMemoryLinks: (memoryId: number) => Promise<MemoryLink[]>;
+  fetchEntityMemories: (entityId: number) => Promise<Memory[]>;
+  fetchSelfModel: () => Promise<Memory[]>;
+  triggerReflection: () => Promise<ReflectionJournal | null>;
+  triggerDecay: () => Promise<number>;
 }
+
+export interface MemoryLink {
+  id: number;
+  source_id: number;
+  target_id: number;
+  link_type: string;
+  strength: number;
+  created_at: string;
+}
+
+export interface ReflectionJournal {
+  text: string;
+  title: string;
+  seedMemoryIds: number[];
+  memoryId: number | null;
+  timestamp: string;
+}
+
+const EMPTY_KG: KnowledgeGraphData = { nodes: [], edges: [] };
 
 const MemoryContext = createContext<MemoryContextValue>({
   memories: [],
-  stats: {},
-  graphData: { nodes: [], links: [] },
+  stats: null,
+  knowledgeGraph: EMPTY_KG,
+  graphStats: null,
   loading: true,
   refresh: async () => {},
   retrievalSettings: DEFAULT_RETRIEVAL_SETTINGS,
   updateRetrievalSettings: () => {},
+  fetchMemoryLinks: async () => [],
+  fetchEntityMemories: async () => [],
+  fetchSelfModel: async () => [],
+  triggerReflection: async () => null,
+  triggerDecay: async () => 0,
 });
 
 export function useMemory() {
   return useContext(MemoryContext);
 }
 
-function buildGraphData(memories: Memory[]): GraphData {
-  const nodes: GraphNode[] = memories.map((m) => ({
-    id: m.id,
-    name: m.summary.length > 40 ? m.summary.slice(0, 40) + "..." : m.summary,
-    val: Math.max(2, m.importance * 12),
-    color: TYPE_COLORS[m.memory_type] || "#666",
-    type: m.memory_type,
-    importance: m.importance,
-  }));
-
-  const links: GraphLink[] = [];
-  // Build links from shared tags/concepts
-  for (let i = 0; i < memories.length; i++) {
-    const a = memories[i];
-    const aTags = new Set([...(a.tags || []), ...(a.concepts || [])]);
-    if (aTags.size === 0) continue;
-
-    for (let j = i + 1; j < memories.length; j++) {
-      const b = memories[j];
-      const bTags = [...(b.tags || []), ...(b.concepts || [])];
-      let shared = 0;
-      for (const t of bTags) {
-        if (aTags.has(t)) shared++;
-      }
-      if (shared > 0) {
-        links.push({ source: a.id, target: b.id, value: shared });
-      }
-    }
-  }
-
-  return { nodes, links };
-}
-
-/** Build a fingerprint of memory IDs to detect actual data changes */
-function memoryFingerprint(mems: Memory[]): string {
-  return mems.map((m) => m.id).sort((a, b) => a - b).join(",");
-}
+// ── Provider ───────────────────────────────────────────────────
 
 export function MemoryProvider({ children }: { children: ReactNode }) {
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [stats, setStats] = useState<Record<string, unknown>>({});
-  const [graphData, setGraphData] = useState<GraphData>({
-    nodes: [],
-    links: [],
-  });
+  const [stats, setStats] = useState<MemoryStats | null>(null);
+  const [knowledgeGraph, setKnowledgeGraph] = useState<KnowledgeGraphData>(EMPTY_KG);
+  const [graphStatsData, setGraphStats] = useState<GraphStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrievalSettings, setRetrievalSettings] = useState<RetrievalSettings>(DEFAULT_RETRIEVAL_SETTINGS);
-  const lastFingerprintRef = useRef("");
   const settingsRef = useRef(retrievalSettings);
   const initializedRef = useRef(false);
 
-  // Load settings from localStorage on mount (client-only)
   useEffect(() => {
     const stored = loadSettings();
     setRetrievalSettings(stored);
@@ -111,32 +109,24 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const refresh = useCallback(async () => {
+  // ── Memory + Stats refresh (every 15s) ────────────────────
+
+  const refreshMemories = useCallback(async () => {
     const s = settingsRef.current;
-    const params = new URLSearchParams({ limit: "500" });
-    if (s.minImportance > 0) params.set("min_importance", String(s.minImportance));
-    if (s.minDecay > 0) params.set("min_decay", String(s.minDecay));
+    const params = new URLSearchParams({ hours: "87600" });
     if (s.enabledTypes.length < ALL_MEMORY_TYPES.length) {
       params.set("types", s.enabledTypes.join(","));
     }
 
     try {
       const [memRes, statsRes] = await Promise.all([
-        fetch(`/api/memories?${params}`),
+        fetch(`/api/recent?${params}`),
         fetch("/api/memories?q=__stats__"),
       ]);
       const memData = await memRes.json();
       const statsData = await statsRes.json();
-      const mems = Array.isArray(memData) ? memData : [];
-      setMemories(mems);
+      setMemories(Array.isArray(memData) ? memData : []);
       setStats(statsData);
-
-      // Only rebuild graph data if memories actually changed
-      const fp = memoryFingerprint(mems);
-      if (fp !== lastFingerprintRef.current) {
-        lastFingerprintRef.current = fp;
-        setGraphData(buildGraphData(mems));
-      }
     } catch {
       // ignore
     } finally {
@@ -144,22 +134,130 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Re-fetch when settings change (after initial load)
+  // ── Knowledge graph refresh (every 30s) ───────────────────
+
+  const refreshGraph = useCallback(async () => {
+    try {
+      const [kgRes, gsRes, linksRes] = await Promise.all([
+        fetch("/api/graph?includeMemories=true&limit=10000"),
+        fetch("/api/graph/stats"),
+        fetch("/api/graph/links?limit=10000"),
+      ]);
+      const kgData = await kgRes.json();
+      const gsData = await gsRes.json();
+      const linksData = await linksRes.json();
+
+      // Merge memory_links as edges into the knowledge graph
+      if (kgData.nodes && Array.isArray(linksData)) {
+        const memoryLinkEdges = linksData.map((l: { source_id: number; target_id: number; link_type: string; strength: number }) => ({
+          source: `m_${l.source_id}`,
+          target: `m_${l.target_id}`,
+          type: l.link_type,
+          weight: l.strength,
+        }));
+        kgData.edges = [...(kgData.edges || []), ...memoryLinkEdges];
+      }
+
+      if (kgData.nodes) setKnowledgeGraph(kgData);
+      if (gsData.entityCount !== undefined) setGraphStats(gsData);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // ── Consolidated refresh ──────────────────────────────────
+
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshMemories(), refreshGraph()]);
+  }, [refreshMemories, refreshGraph]);
+
   useEffect(() => {
     if (initializedRef.current) {
-      refresh();
+      refreshMemories();
     }
-  }, [retrievalSettings, refresh]);
+  }, [retrievalSettings, refreshMemories]);
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
-  }, [refresh]);
+    const memInterval = setInterval(refreshMemories, 15000);
+    const graphInterval = setInterval(refreshGraph, 30000);
+    return () => {
+      clearInterval(memInterval);
+      clearInterval(graphInterval);
+    };
+  }, [refresh, refreshMemories, refreshGraph]);
+
+  // ── On-demand fetchers ────────────────────────────────────
+
+  const fetchMemoryLinks = useCallback(async (memoryId: number): Promise<MemoryLink[]> => {
+    try {
+      const res = await fetch(`/api/links?memoryId=${memoryId}`);
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const fetchEntityMemories = useCallback(async (entityId: number): Promise<Memory[]> => {
+    try {
+      const res = await fetch(`/api/entities/${entityId}`);
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const fetchSelfModel = useCallback(async (): Promise<Memory[]> => {
+    try {
+      const res = await fetch("/api/self-model");
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const triggerReflection = useCallback(async (): Promise<ReflectionJournal | null> => {
+    try {
+      const res = await fetch("/api/reflect", { method: "POST" });
+      const data = await res.json();
+      if (data.journal) {
+        await refreshMemories();
+        return data.journal;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, [refreshMemories]);
+
+  const triggerDecay = useCallback(async (): Promise<number> => {
+    try {
+      const res = await fetch("/api/decay", { method: "POST" });
+      const data = await res.json();
+      if (data.decayed > 0) await refreshMemories();
+      return data.decayed ?? 0;
+    } catch {
+      return 0;
+    }
+  }, [refreshMemories]);
 
   return (
     <MemoryContext.Provider
-      value={{ memories, stats, graphData, loading, refresh, retrievalSettings, updateRetrievalSettings }}
+      value={{
+        memories,
+        stats,
+        knowledgeGraph,
+        graphStats: graphStatsData,
+        loading,
+        refresh,
+        retrievalSettings,
+        updateRetrievalSettings,
+        fetchMemoryLinks,
+        fetchEntityMemories,
+        fetchSelfModel,
+        triggerReflection,
+        triggerDecay,
+      }}
     >
       {children}
     </MemoryContext.Provider>

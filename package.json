@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@types/three": "^0.183.1",
@@ -23,6 +24,8 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "patch-package": "^8.0.1",
+    "supabase": "^2.78.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0"
   }

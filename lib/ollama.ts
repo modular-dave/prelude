@@ -1,23 +1,65 @@
-const LLM_BASE = process.env.LLM_BASE_URL || "http://localhost:8899";
+const LLM_BASE = process.env.LLM_BASE_URL || "http://127.0.0.1:8899";
 const DEFAULT_MODEL = process.env.LLM_MODEL || "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+
+// Models that don't support the system role — system messages get merged into the first user message
+const NO_SYSTEM_ROLE = new Set([
+  "mlx-community/gemma-2-2b-it-4bit",
+]);
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
 
+/** Fold system messages into the first user message for models that don't support system role */
+function normalizeMessages(messages: ChatMessage[], model: string): ChatMessage[] {
+  if (!NO_SYSTEM_ROLE.has(model)) return messages;
+
+  const systemParts: string[] = [];
+  const rest: ChatMessage[] = [];
+
+  for (const m of messages) {
+    if (m.role === "system") {
+      systemParts.push(m.content);
+    } else {
+      rest.push(m);
+    }
+  }
+
+  if (systemParts.length === 0) return messages;
+
+  // Prepend system content to the first user message
+  const firstUserIdx = rest.findIndex((m) => m.role === "user");
+  if (firstUserIdx >= 0) {
+    rest[firstUserIdx] = {
+      ...rest[firstUserIdx],
+      content: `${systemParts.join("\n\n")}\n\n${rest[firstUserIdx].content}`,
+    };
+  } else {
+    // No user message — add as user message
+    rest.unshift({ role: "user", content: systemParts.join("\n\n") });
+  }
+
+  return rest;
+}
+
 export async function streamChat(
   messages: ChatMessage[],
   model?: string
 ): Promise<ReadableStream<Uint8Array>> {
-  const res = await fetch(`${LLM_BASE}/v1/chat/completions`, {
+  const url = `${LLM_BASE}/v1/chat/completions`;
+  const resolvedModel = model || DEFAULT_MODEL;
+  const normalized = normalizeMessages(messages, resolvedModel);
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: model || DEFAULT_MODEL, messages, stream: true, max_tokens: 512 }),
+    body: JSON.stringify({ model: resolvedModel, messages: normalized, stream: true, max_tokens: 512 }),
+    cache: "no-store",
   });
 
   if (!res.ok || !res.body) {
-    throw new Error(`LLM error: ${res.status} ${res.statusText}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`LLM error: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`);
   }
 
   const reader = res.body.getReader();
@@ -60,14 +102,18 @@ export async function streamChat(
 }
 
 export async function chat(messages: ChatMessage[], model?: string): Promise<string> {
+  const resolvedModel = model || DEFAULT_MODEL;
+  const normalized = normalizeMessages(messages, resolvedModel);
   const res = await fetch(`${LLM_BASE}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: model || DEFAULT_MODEL, messages, stream: false, max_tokens: 512 }),
+    body: JSON.stringify({ model: resolvedModel, messages: normalized, stream: false, max_tokens: 512 }),
+    cache: "no-store",
   });
 
   if (!res.ok) {
-    throw new Error(`LLM error: ${res.status} ${res.statusText}`);
+    const body = await res.text().catch(() => "");
+    throw new Error(`LLM error: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`);
   }
 
   const json = await res.json();

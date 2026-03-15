@@ -2,21 +2,12 @@
 
 import { useMemory } from "@/lib/memory-context";
 import { Activity } from "lucide-react";
-import { DECAY_RATES, TYPE_LABELS, type MemoryType } from "@/lib/types";
 
 const WEIGHTS = {
   recency: { value: 1, label: "Recency", color: "#06b6d4" },
   relevance: { value: 2, label: "Relevance", color: "#3b82f6" },
   importance: { value: 2, label: "Importance", color: "#f59e0b" },
   vector: { value: 4, label: "Vector Sim", color: "#8b5cf6" },
-};
-
-const TYPE_BOOSTS: Record<MemoryType, number> = {
-  semantic: 0.15,
-  procedural: 0.12,
-  self_model: 0.1,
-  episodic: 0.0,
-  introspective: 0.08,
 };
 
 export function RetrievalFormula() {
@@ -122,47 +113,6 @@ export function RetrievalFormula() {
         </div>
       </div>
 
-      {/* Type boosts */}
-      <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-          Type Boosts
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(Object.keys(TYPE_BOOSTS) as MemoryType[]).map((type) => (
-            <div
-              key={type}
-              className="rounded-[4px] px-2 py-1 text-[10px]"
-              style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}
-            >
-              <span style={{ color: "var(--text-muted)" }}>{TYPE_LABELS[type]}</span>{" "}
-              <span className="font-mono text-rose-500">
-                +{(TYPE_BOOSTS[type] * 100).toFixed(0)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Decay rates per type */}
-      <div className="mt-4">
-        <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-          Decay Rates (per day)
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(Object.keys(DECAY_RATES) as MemoryType[]).map((type) => (
-            <div
-              key={type}
-              className="rounded-[4px] px-2 py-1 text-[10px]"
-              style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}
-            >
-              <span style={{ color: "var(--text-muted)" }}>{TYPE_LABELS[type]}</span>{" "}
-              <span className="font-mono text-green-500">
-                {(DECAY_RATES[type] * 100).toFixed(0)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

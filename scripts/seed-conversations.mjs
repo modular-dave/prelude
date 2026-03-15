@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 /**
- * Seeds real conversations by calling the Prelude chat API.
- * Each conversation topic sends messages and collects real bot responses.
- * Outputs a JSON file to inject into localStorage.
+ * Seeds conversations + memories into Supabase via the Prelude API.
+ *
+ * For each conversation topic:
+ *  1. Sends user messages through /api/chat to get real LLM responses
+ *     (this also creates episodic memories with embeddings via the chat route)
+ *  2. Saves the full conversation to /api/conversations
+ *
+ * Usage:
+ *   node scripts/seed-conversations.mjs          # seed all 25
+ *   COUNT=5 node scripts/seed-conversations.mjs  # seed first 5
  */
 
-const API = "http://localhost:53231/api/chat";
+const BASE = process.env.API_URL || "http://localhost:64582";
+const CHAT_API = `${BASE}/api/chat`;
+const CONV_API = `${BASE}/api/conversations`;
 
-// Conversation topics — each is an array of user messages forming a natural conversation
 const CONVERSATIONS = [
   [
     "Hey, I just set up a new Docker compose file for our microservices. Any tips for optimizing container builds?",
@@ -136,17 +144,22 @@ const CONVERSATIONS = [
   ],
 ];
 
-async function sendMessages(userMessages) {
+/** Stream a conversation through the chat API, collecting responses */
+async function chatConversation(userMessages, conversationId) {
   const allMessages = [];
 
   for (const content of userMessages) {
     allMessages.push({ role: "user", content });
 
     try {
-      const res = await fetch(API, {
+      const res = await fetch(CHAT_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, recallLimit: 5 }),
+        body: JSON.stringify({
+          messages: allMessages,
+          conversationId,
+          recallLimit: 5,
+        }),
       });
 
       if (!res.ok) {
@@ -161,7 +174,6 @@ async function sendMessages(userMessages) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value, { stream: true });
         for (const line of chunk.split("\n")) {
           if (!line.startsWith("data: ")) continue;
@@ -169,7 +181,8 @@ async function sendMessages(userMessages) {
           if (data === "[DONE]") break;
           try {
             const json = JSON.parse(data);
-            if (json.content) fullContent += json.content;
+            const token = json.choices?.[0]?.delta?.content || json.content || "";
+            if (token) fullContent += token;
           } catch {}
         }
       }
@@ -184,37 +197,90 @@ async function sendMessages(userMessages) {
 }
 
 async function main() {
-  const conversations = [];
   const baseTime = new Date("2026-03-01T09:00:00Z");
+  const count = parseInt(process.env.COUNT || String(CONVERSATIONS.length), 10);
+  let seeded = 0;
 
-  for (let i = 0; i < CONVERSATIONS.length; i++) {
+  for (let i = 0; i < Math.min(count, CONVERSATIONS.length); i++) {
     const userMsgs = CONVERSATIONS[i];
     const title = userMsgs[0].length > 40 ? userMsgs[0].slice(0, 40) + "..." : userMsgs[0];
 
-    process.stdout.write(`[${i + 1}/${CONVERSATIONS.length}] ${title}...`);
+    process.stdout.write(`[${i + 1}/${count}] ${title}...`);
 
-    const messages = await sendMessages(userMsgs);
-
-    const convTime = new Date(baseTime.getTime() + i * 8 * 3600_000 + i * 17 * 60_000);
     const id = crypto.randomUUID();
 
-    conversations.push({
-      id,
-      title,
-      messages,
-      createdAt: convTime.toISOString(),
-      updatedAt: new Date(convTime.getTime() + messages.length * 2 * 60_000).toISOString(),
-    });
+    // 1. Chat through the API — creates memories with embeddings + entity extraction
+    const messages = await chatConversation(userMsgs, id);
 
-    console.log(` done (${messages.length} msgs)`);
+    // 2. Save conversation to Supabase via conversations API
+    const convTime = new Date(baseTime.getTime() + i * 8 * 3600_000 + i * 17 * 60_000);
+    try {
+      const res = await fetch(CONV_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          title,
+          messages,
+          createdAt: convTime.toISOString(),
+          updatedAt: new Date(convTime.getTime() + messages.length * 2 * 60_000).toISOString(),
+        }),
+      });
+
+      if (!res.ok) {
+        console.log(` chat OK, but save failed: ${res.status}`);
+      } else {
+        seeded++;
+        console.log(` done (${messages.length} msgs)`);
+      }
+    } catch (err) {
+      console.log(` chat OK, but save failed: ${err.message}`);
+    }
   }
 
-  // Sort by updatedAt descending
-  conversations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // 3. Create memory links between co-occurring memories (same conversation)
+  console.log("Creating memory links from conversation co-occurrence...");
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.SUPABASE_URL || "http://127.0.0.1:54321",
+      process.env.SUPABASE_SERVICE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+    );
 
-  const { writeFileSync } = await import("fs");
-  writeFileSync("/tmp/prelude_conversations.json", JSON.stringify(conversations, null, 2));
-  console.log(`\nDone! ${conversations.length} conversations written to /tmp/prelude_conversations.json`);
+    // For each conversation, find its memories and link them
+    const { data: allMems } = await supabase.from("memories").select("id, tags");
+    if (allMems) {
+      const convGroups = new Map();
+      for (const m of allMems) {
+        for (const tag of m.tags || []) {
+          if (tag.startsWith("conv:")) {
+            if (!convGroups.has(tag)) convGroups.set(tag, []);
+            convGroups.get(tag).push(m.id);
+          }
+        }
+      }
+
+      let linkCount = 0;
+      for (const [, ids] of convGroups) {
+        for (let i = 0; i < ids.length; i++) {
+          for (let j = i + 1; j < ids.length; j++) {
+            const { error } = await supabase.from("memory_links").upsert({
+              source_id: Math.min(ids[i], ids[j]),
+              target_id: Math.max(ids[i], ids[j]),
+              link_type: "relates",
+              strength: 0.5,
+            }, { onConflict: "source_id,target_id,link_type" });
+            if (!error) linkCount++;
+          }
+        }
+      }
+      console.log(`Created ${linkCount} memory links.`);
+    }
+  } catch (err) {
+    console.log(`Link creation failed: ${err.message}`);
+  }
+
+  console.log(`\nDone! ${seeded} conversations seeded.`);
 }
 
 main().catch(console.error);

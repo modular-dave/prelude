@@ -7,12 +7,13 @@ import { SettingsSheet } from "@/components/shell/settings-sheet";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 import { Logo } from "@/components/ui/logo";
 
-type Route = "chat" | "brain" | "dreams";
+type Route = "chat" | "brain" | "dreams" | "journal" | "history" | "stats";
 
 const NAV_ITEMS: { label: string; href: string; route: Route }[] = [
   { label: "Chat", href: "/", route: "chat" },
-  { label: "Brain", href: "/brain", route: "brain" },
+  { label: "Journal", href: "/journal", route: "journal" },
   { label: "Dreams", href: "/dreams", route: "dreams" },
+  { label: "Brain", href: "/brain", route: "brain" },
 ];
 
 export function FloatNav({ route }: { route: Route }) {

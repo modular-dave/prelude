@@ -5,7 +5,7 @@ import { GitBranch, TrendingUp, Repeat } from "lucide-react";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/types";
 
 export function HebbianPanel() {
-  const { memories, graphData } = useMemory();
+  const { memories, knowledgeGraph, graphStats } = useMemory();
 
   // Compute Hebbian stats
   const totalAccesses = memories.reduce(
@@ -24,30 +24,16 @@ export function HebbianPanel() {
     }))
     .sort((a, b) => b.estimatedGrowth - a.estimatedGrowth);
 
-  // Link stats from graph
-  const linkCount = graphData.links.length;
-  const strongLinks = graphData.links.filter((l) => l.value >= 3);
+  // Link stats from knowledge graph
+  const linkCount = graphStats?.relationCount ?? 0;
+  const strongLinkCount = knowledgeGraph.edges.filter((e) => e.weight >= 0.5).length;
   const avgLinkStrength =
-    linkCount > 0
-      ? graphData.links.reduce((s, l) => s + l.value, 0) / linkCount
+    knowledgeGraph.edges.length > 0
+      ? knowledgeGraph.edges.reduce((s, e) => s + e.weight, 0) / knowledgeGraph.edges.length
       : 0;
 
-  // Most connected nodes
-  const connectionCounts: Record<number, number> = {};
-  for (const link of graphData.links) {
-    const src = typeof link.source === "object" ? (link.source as any).id : link.source;
-    const tgt = typeof link.target === "object" ? (link.target as any).id : link.target;
-    connectionCounts[src] = (connectionCounts[src] || 0) + 1;
-    connectionCounts[tgt] = (connectionCounts[tgt] || 0) + 1;
-  }
-  const topConnected = Object.entries(connectionCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5)
-    .map(([id, count]) => ({
-      memory: memories.find((m) => m.id === Number(id)),
-      connections: count,
-    }))
-    .filter((x) => x.memory);
+  // Top entities from graph stats
+  const topEntities = graphStats?.topEntities ?? [];
 
   return (
     <div className="rounded-[6px] p-5" style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}>
@@ -91,12 +77,12 @@ export function HebbianPanel() {
             <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>links</p>
           </div>
           <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
-            <p className="text-lg font-bold" style={{ color: "var(--text)" }}>{strongLinks.length}</p>
-            <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>strong (&ge;3)</p>
+            <p className="text-lg font-bold" style={{ color: "var(--text)" }}>{strongLinkCount}</p>
+            <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>strong (&ge;0.5)</p>
           </div>
           <div className="rounded-[4px] p-2 text-center" style={{ background: "var(--surface-dimmer)" }}>
             <p className="text-lg font-bold" style={{ color: "var(--text)" }}>
-              {avgLinkStrength.toFixed(1)}
+              {avgLinkStrength.toFixed(2)}
             </p>
             <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>avg strength</p>
           </div>
@@ -148,28 +134,31 @@ export function HebbianPanel() {
         </div>
       )}
 
-      {/* Top connected (hub) nodes */}
-      {topConnected.length > 0 && (
+      {/* Top entities (hub nodes) */}
+      {topEntities.length > 0 && (
         <div className="mt-4">
           <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
             Hub Nodes
           </p>
           <div className="mt-2 space-y-1.5">
-            {topConnected.map(({ memory: m, connections }) => (
+            {topEntities.slice(0, 5).map((entity) => (
               <div
-                key={m!.id}
+                key={entity.name}
                 className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5"
                 style={{ background: "var(--surface-dimmer)" }}
               >
                 <div
                   className="h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: TYPE_COLORS[m!.memory_type] }}
+                  style={{ backgroundColor: "var(--accent)" }}
                 />
                 <span className="flex-1 truncate text-[11px]" style={{ color: "var(--text)" }}>
-                  {m!.summary?.slice(0, 50)}
+                  {entity.name}
+                </span>
+                <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+                  {entity.type}
                 </span>
                 <span className="font-mono text-[10px] text-purple-500">
-                  {connections} links
+                  {entity.mentions} mentions
                 </span>
               </div>
             ))}

@@ -5,7 +5,7 @@ import { Sparkles, TrendingUp, TrendingDown } from "lucide-react";
 import { TYPE_COLORS, TYPE_LABELS, type MemoryType } from "@/lib/types";
 
 export function IntrospectionPanel() {
-  const { memories } = useMemory();
+  const { memories, stats } = useMemory();
 
   if (memories.length === 0) {
     return (
@@ -57,16 +57,10 @@ export function IntrospectionPanel() {
     ([, a], [, b]) => b - a
   )[0];
 
-  // Concept frequency for cognitive focus areas
-  const conceptFreq: Record<string, number> = {};
-  for (const m of memories) {
-    for (const c of m.concepts || []) {
-      conceptFreq[c] = (conceptFreq[c] || 0) + 1;
-    }
-  }
-  const topConcepts = Object.entries(conceptFreq)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 8);
+  // Cognitive focus areas from Cortex stats
+  const topConcepts: Array<[string, number]> = (stats?.topConcepts ?? [])
+    .slice(0, 8)
+    .map((c) => [c.concept, c.count] as [string, number]);
 
   // Importance distribution
   const highImp = memories.filter((m) => m.importance >= 0.7).length;

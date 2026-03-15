@@ -4,7 +4,6 @@ import { useMemory } from "@/lib/memory-context";
 import {
   TYPE_COLORS,
   TYPE_LABELS,
-  DECAY_RATES,
   type MemoryType,
 } from "@/lib/types";
 
@@ -52,7 +51,9 @@ export function MemoryTypeCards() {
               {count > 0 ? `${Math.round(avgImportance * 100)}% avg importance` : "No memories"}
             </div>
             <div className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
-              {(DECAY_RATES[type] * 100).toFixed(0)}% daily decay
+              {count > 0
+                ? `${Math.round((mems.reduce((s, m) => s + (m.decay_factor ?? 1), 0) / count) * 100)}% avg decay`
+                : "—"}
             </div>
           </div>
         );
