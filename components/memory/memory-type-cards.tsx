@@ -41,16 +41,16 @@ export function MemoryTypeCards() {
             }}
           >
             <div
-              className="text-xs font-semibold uppercase tracking-wider"
+              className="t-label"
               style={{ color: TYPE_COLORS[type] }}
             >
               {TYPE_LABELS[type]}
             </div>
-            <div className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{count}</div>
-            <div className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <div className="mt-2 t-stat" style={{ color: "var(--text)" }}>{count}</div>
+            <div className="mt-1" style={{ color: "var(--text-muted)" }}>
               {count > 0 ? `${Math.round(avgImportance * 100)}% avg importance` : "No memories"}
             </div>
-            <div className="mt-1 text-[10px]" style={{ color: "var(--text-faint)" }}>
+            <div className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>
               {count > 0
                 ? `${Math.round((mems.reduce((s, m) => s + (m.decay_factor ?? 1), 0) / count) * 100)}% avg decay`
                 : "—"}

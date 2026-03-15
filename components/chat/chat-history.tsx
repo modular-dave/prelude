@@ -37,13 +37,13 @@ function DeleteConfirm({
         <div className="flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
           <div>
-            <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>
-              Delete conversation?
+            <p className="t-btn" style={{ color: "var(--text)" }}>
+              Delete chat?
             </p>
-            <p className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            <p className="mt-1.5 t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
               This will also remove the associated memories from the brain. This action cannot be undone.
             </p>
-            <p className="mt-2 truncate text-[10px] font-medium" style={{ color: "var(--text-faint)" }}>
+            <p className="mt-2 truncate t-small" style={{ color: "var(--text-faint)" }}>
               &ldquo;{conv.title}&rdquo;
             </p>
           </div>
@@ -51,14 +51,14 @@ function DeleteConfirm({
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition active:scale-95"
+            className="rounded-[6px] px-3 py-1.5 t-btn transition active:scale-95"
             style={{ color: "var(--text-muted)" }}
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium text-white transition active:scale-95"
+            className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
             style={{ background: "#ef4444" }}
           >
             Delete
@@ -139,7 +139,7 @@ export function ChatHistory({
       <div className="relative z-10 w-full sm:w-80 h-full flex flex-col glass-panel animate-slide-in-left">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between p-4 glass">
-          <h2 className="heading">History</h2>
+          <h2 className="t-heading" style={{ color: "var(--text)" }}>History</h2>
           <div className="flex items-center gap-1">
             <button
               onClick={onNewChat}
@@ -159,11 +159,11 @@ export function ChatHistory({
           </div>
         </div>
 
-        {/* Conversation list */}
+        {/* Chat list */}
         <div className="flex-1 overflow-y-auto p-2">
           {conversations.length === 0 ? (
-            <p className="px-3 py-8 text-center text-[10px]" style={{ color: "var(--text-faint)" }}>
-              No conversations yet
+            <p className="px-3 py-8 text-center t-small" style={{ color: "var(--text-faint)" }}>
+              No chats yet
             </p>
           ) : (
             <div className="space-y-0.5">
@@ -180,12 +180,17 @@ export function ChatHistory({
                   >
                     <div className="flex-1 min-w-0">
                       <p
-                        className="truncate text-xs font-medium"
+                        className="truncate t-btn"
                         style={{ color: isActive ? "var(--accent)" : "var(--text)" }}
                       >
                         {conv.summary || conv.title}
                       </p>
-                      <p className="mt-0.5 text-[9px]" style={{ color: "var(--text-faint)" }}>
+                      <p className="mt-0.5 t-tiny flex items-center gap-1" style={{ color: "var(--text-faint)" }}>
+                        {conv.source && conv.source !== "internal" && (
+                          <span className="inline-flex items-center rounded px-1 py-px t-micro" style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}>
+                            {conv.source === "chatgpt" ? "ChatGPT" : conv.source}
+                          </span>
+                        )}
                         {conv.messages.length} messages · {timeAgo(conv.updatedAt)}
                       </p>
                     </div>
@@ -196,7 +201,7 @@ export function ChatHistory({
                       }}
                       className="shrink-0 opacity-0 group-hover:opacity-100 transition rounded-[4px] p-1"
                       style={{ color: "var(--text-faint)" }}
-                      title="Delete conversation"
+                      title="Delete chat"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -212,11 +217,11 @@ export function ChatHistory({
           <div className="p-3" style={{ borderTop: "1px solid var(--border)" }}>
             <button
               onClick={() => setPendingClearAll(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 text-[10px] font-medium transition active:scale-95"
+              className="flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 t-small transition active:scale-95"
               style={{ color: "#ef4444" }}
             >
               <Trash2 className="h-3 w-3" />
-              Clear all conversations & memories
+              Clear all chats & memories
             </button>
           </div>
         )}
@@ -246,18 +251,18 @@ export function ChatHistory({
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
               <div>
-                <p className="text-xs font-semibold" style={{ color: "var(--text)" }}>
+                <p className="t-btn" style={{ color: "var(--text)" }}>
                   Clear everything?
                 </p>
-                <p className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                  This will delete all {conversations.length} conversation{conversations.length !== 1 ? "s" : ""} and all associated memories from the brain. This cannot be undone.
+                <p className="mt-1.5 t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                  This will delete all {conversations.length} chat{conversations.length !== 1 ? "s" : ""} and all associated memories from the brain. This cannot be undone.
                 </p>
               </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setPendingClearAll(false)}
-                className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium transition active:scale-95"
+                className="rounded-[6px] px-3 py-1.5 t-btn transition active:scale-95"
                 style={{ color: "var(--text-muted)" }}
               >
                 Cancel
@@ -267,7 +272,7 @@ export function ChatHistory({
                   onClearAll();
                   setPendingClearAll(false);
                 }}
-                className="rounded-[6px] px-3 py-1.5 text-[10px] font-medium text-white transition active:scale-95"
+                className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
                 style={{ background: "#ef4444" }}
               >
                 Clear All

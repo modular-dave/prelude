@@ -21,7 +21,7 @@ export function TagCloud() {
 
   if (tags.length === 0) {
     return (
-      <p className="text-xs" style={{ color: "var(--text-faint)" }}>No tags yet</p>
+      <p className="t-small" style={{ color: "var(--text-faint)" }}>No tags yet</p>
     );
   }
 

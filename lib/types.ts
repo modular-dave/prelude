@@ -67,7 +67,7 @@ export const LINK_TYPE_LABELS: Record<string, string> = {
   follows: "Follows",
   relates: "Relates",
   resolves: "Resolves",
-  conversation: "Conversation",
+  conversation: "Chat",
 };
 
 // ── Cortex knowledge graph shape (from getKnowledgeGraph()) ────

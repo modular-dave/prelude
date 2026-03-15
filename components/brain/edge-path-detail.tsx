@@ -201,13 +201,13 @@ export function EdgePathDetail({
               style={{ backgroundColor: linkColor }}
             />
             <span
-              className="text-[10px] font-semibold uppercase tracking-wider"
+              className="t-label"
               style={{ color: linkColor }}
             >
               {linkLabel}
             </span>
           </div>
-          <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <p className="mt-1.5" style={{ color: "var(--text-muted)" }}>
             Edge between {sourceMemory?.memory_type?.replace("_", " ") || "?"} and {targetMemory?.memory_type?.replace("_", " ") || "?"}
           </p>
         </div>
@@ -223,25 +223,25 @@ export function EdgePathDetail({
       <div className="flex-1 overflow-y-auto space-y-4 pt-3">
         {/* Edge Stats */}
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: linkColor }}>
+          <h4 className="t-label" style={{ color: linkColor }}>
             Edge Stats
           </h4>
           <div className="mt-2 space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="w-20 text-[10px]" style={{ color: "var(--text-muted)" }}>Strength</span>
+              <span className="w-20 t-small" style={{ color: "var(--text-muted)" }}>Strength</span>
               <div className="relative h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--bar-track)" }}>
                 <div
                   className="absolute inset-y-0 left-0 rounded-full"
                   style={{ width: `${Math.min(strength, 1) * 100}%`, backgroundColor: linkColor, opacity: 0.7 }}
                 />
               </div>
-              <span className="text-[10px] font-mono w-10 text-right" style={{ color: "var(--text)" }}>
+              <span className="t-small font-mono w-10 text-right" style={{ color: "var(--text)" }}>
                 {Math.round(strength * 100)}%
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-20 text-[10px]" style={{ color: "var(--text-muted)" }}>Type</span>
-              <span className="text-[10px] font-mono" style={{ color: linkColor }}>{linkLabel}</span>
+              <span className="w-20 t-small" style={{ color: "var(--text-muted)" }}>Type</span>
+              <span className="t-small font-mono" style={{ color: linkColor }}>{linkLabel}</span>
             </div>
           </div>
         </div>
@@ -267,14 +267,14 @@ export function EdgePathDetail({
         {/* Shared Concepts */}
         {sharedConcepts.length > 0 && (
           <div>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+            <h4 className="t-label text-amber-500">
               Shared Concepts
             </h4>
             <div className="mt-2 flex flex-wrap gap-1">
               {sharedConcepts.map((c) => (
                 <span
                   key={c}
-                  className="rounded-full px-2 py-0.5 text-[9px]"
+                  className="rounded-full px-2 py-0.5 t-tiny"
                   style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
                 >
                   {c}
@@ -287,12 +287,12 @@ export function EdgePathDetail({
         {/* Path Controls */}
         {!loadingTrace && (
           <div>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-violet-500">
+            <h4 className="t-label text-violet-500">
               Path
             </h4>
 
             {pathInfo && (
-              <div className="mt-2 rounded-[4px] px-2.5 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
+              <div className="mt-2 rounded-[4px] px-2.5 py-1.5 t-small" style={{ background: "var(--surface-dimmer)" }}>
                 <span style={{ color: "var(--text-faint)" }}>Target is </span>
                 <span className="font-mono" style={{ color: "var(--text)" }}>
                   {pathInfo.direction === "ancestor"
@@ -307,7 +307,7 @@ export function EdgePathDetail({
             <div className="mt-2 rounded-[4px] px-3 py-2.5 space-y-2.5" style={{ background: "var(--surface-dimmer)", border: "1px solid var(--border)" }}>
               {/* Depth slider */}
               <div className="flex items-center gap-2">
-                <span className="w-16 text-[9px] shrink-0" style={{ color: "var(--text-faint)" }}>Depth</span>
+                <span className="w-16 t-tiny shrink-0" style={{ color: "var(--text-faint)" }}>Depth</span>
                 <input
                   type="range"
                   min={0}
@@ -316,18 +316,18 @@ export function EdgePathDetail({
                   onChange={(e) => setPathDepth(Number(e.target.value))}
                   className="neuro-range flex-1 h-1"
                 />
-                <span className="text-[9px] font-mono w-4 text-right" style={{ color: "var(--text)" }}>{pathDepth}</span>
+                <span className="t-tiny font-mono w-4 text-right" style={{ color: "var(--text)" }}>{pathDepth}</span>
               </div>
 
               {/* Direction toggle */}
               <div className="flex items-center gap-2">
-                <span className="w-16 text-[9px] shrink-0" style={{ color: "var(--text-faint)" }}>Direction</span>
+                <span className="w-16 t-tiny shrink-0" style={{ color: "var(--text-faint)" }}>Direction</span>
                 <div className="flex gap-0.5">
                   {(["both", "upstream", "downstream"] as const).map((dir) => (
                     <button
                       key={dir}
                       onClick={() => setPathDirection(dir)}
-                      className="rounded-[3px] px-1.5 py-0.5 text-[8px] transition"
+                      className="rounded-[3px] px-1.5 py-0.5 t-micro transition"
                       style={{
                         background: pathDirection === dir ? "var(--accent)" : "transparent",
                         color: pathDirection === dir ? "#fff" : "var(--text-faint)",
@@ -342,7 +342,7 @@ export function EdgePathDetail({
 
               {/* Min Strength slider */}
               <div className="flex items-center gap-2">
-                <span className="w-16 text-[9px] shrink-0" style={{ color: "var(--text-faint)" }}>Min Strength</span>
+                <span className="w-16 t-tiny shrink-0" style={{ color: "var(--text-faint)" }}>Min Strength</span>
                 <input
                   type="range"
                   min={0}
@@ -351,7 +351,7 @@ export function EdgePathDetail({
                   onChange={(e) => setPathMinStrength(Number(e.target.value) / 100)}
                   className="neuro-range flex-1 h-1"
                 />
-                <span className="text-[9px] font-mono w-8 text-right" style={{ color: "var(--text)" }}>{Math.round(pathMinStrength * 100)}%</span>
+                <span className="t-tiny font-mono w-8 text-right" style={{ color: "var(--text)" }}>{Math.round(pathMinStrength * 100)}%</span>
               </div>
 
               {/* Path status — animated counter */}
@@ -418,7 +418,7 @@ function MemoryCard({
 }) {
   return (
     <div>
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+      <h4 className="t-label" style={{ color: "var(--text-faint)" }}>
         {label}
       </h4>
       <button
@@ -431,15 +431,15 @@ function MemoryCard({
             className="h-2 w-2 rounded-full shrink-0"
             style={{ backgroundColor: TYPE_COLORS[memory.memory_type] }}
           />
-          <span className="text-[9px] uppercase tracking-wider" style={{ color: TYPE_COLORS[memory.memory_type] }}>
+          <span className="t-label" style={{ color: TYPE_COLORS[memory.memory_type] }}>
             {TYPE_LABELS[memory.memory_type]}
           </span>
-          <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>#{memory.id}</span>
+          <span className="t-tiny" style={{ color: "var(--text-faint)" }}>#{memory.id}</span>
         </div>
-        <p className="text-[10px] leading-relaxed" style={{ color: "var(--text)" }}>
+        <p className="t-small leading-relaxed" style={{ color: "var(--text)" }}>
           {memory.summary}
         </p>
-        <div className="mt-1.5 flex gap-3 text-[9px]" style={{ color: "var(--text-faint)" }}>
+        <div className="mt-1.5 flex gap-3 t-tiny" style={{ color: "var(--text-faint)" }}>
           <span>importance {Math.round(memory.importance * 100)}%</span>
           <span>recalls {memory.access_count || 0}</span>
         </div>
@@ -484,7 +484,7 @@ function LinksSection({
 
   return (
     <div>
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider" style={{ color }}>
+      <h4 className="t-label" style={{ color }}>
         {title} <span style={{ color: "var(--text-faint)", fontWeight: 400 }}>({linkedMemories.length})</span>
       </h4>
       <div className="mt-2 space-y-1">
@@ -501,14 +501,14 @@ function LinksSection({
                 className="h-1.5 w-1.5 rounded-full shrink-0"
                 style={{ backgroundColor: TYPE_COLORS[m.memory_type] }}
               />
-              <span className="flex-1 text-[9px] truncate" style={{ color: "var(--text-muted)" }}>
+              <span className="flex-1 t-tiny truncate" style={{ color: "var(--text-muted)" }}>
                 {m.summary}
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 <div className="h-1 w-4 rounded-full overflow-hidden" style={{ background: "var(--bar-track)" }}>
                   <div className="h-full rounded-full" style={{ width: `${Math.min(link.strength, 1) * 100}%`, backgroundColor: ltColor }} />
                 </div>
-                <span className="text-[8px] font-mono" style={{ color: "var(--text-faint)" }}>
+                <span className="t-micro font-mono" style={{ color: "var(--text-faint)" }}>
                   {Math.round(link.strength * 100)}%
                 </span>
               </div>
@@ -538,7 +538,7 @@ function AnimatedPathStatus({ count, loading }: { count: number; loading: boolea
 
   const active = display > 1;
   return (
-    <div className="text-[8px] font-mono text-center" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
+    <div className="t-micro font-mono text-center" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
       {active ? `${display} memories highlighted` : loading ? "..." : "No path found"}
     </div>
   );

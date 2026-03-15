@@ -14,7 +14,7 @@ export function ImportanceBar({ value }: { value: number }) {
           }}
         />
       </div>
-      <span className="text-[10px] tabular-nums text-neutral-500">{pct}%</span>
+      <span className="t-small tabular-nums text-neutral-500">{pct}%</span>
     </div>
   );
 }

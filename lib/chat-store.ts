@@ -10,11 +10,12 @@ export interface Conversation {
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
+  source?: string;
 }
 
 export async function loadConversations(): Promise<Conversation[]> {
   try {
-    const res = await fetch("/api/conversations");
+    const res = await fetch("/api/chats");
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -23,7 +24,7 @@ export async function loadConversations(): Promise<Conversation[]> {
 }
 
 export async function saveConversation(conv: Conversation): Promise<Conversation> {
-  const res = await fetch("/api/conversations", {
+  const res = await fetch("/api/chats", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(conv),
@@ -35,7 +36,7 @@ export async function updateConversation(
   id: string,
   updates: Partial<Pick<Conversation, "title" | "summary" | "messages">>
 ): Promise<Conversation> {
-  const res = await fetch(`/api/conversations/${id}`, {
+  const res = await fetch(`/api/chats/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -44,18 +45,25 @@ export async function updateConversation(
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+  await fetch(`/api/chats/${id}`, { method: "DELETE" });
 }
 
 export async function clearAllConversations(): Promise<void> {
   // Fetch all conversation IDs and delete each
   const convs = await loadConversations();
   await Promise.all(convs.map((c) => deleteConversation(c.id)));
+
+  // Clean up any orphaned chat memories (belt + suspenders with per-conversation cascade)
+  await fetch("/api/memories", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "chat" }),
+  });
 }
 
 export function generateTitle(messages: ChatMessage[]): string {
   const first = messages.find((m) => m.role === "user");
-  if (!first) return "New conversation";
+  if (!first) return "New chat";
   const text = first.content.trim();
   return text.length > 40 ? text.slice(0, 40) + "..." : text;
 }

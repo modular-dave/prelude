@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { NeuralGraph, PinnedCardBody, type NeuralGraphHandle, type SelectedEdgeInfo } from "@/components/brain/neural-graph";
+import { NeuralGraph, type NeuralGraphHandle, type SelectedEdgeInfo } from "@/components/brain/neural-graph";
 import { MemoryNodeDetail } from "@/components/brain/memory-node-detail";
 import { EdgePathDetail } from "@/components/brain/edge-path-detail";
 import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType } from "@/lib/types";
 import { ALL_MEMORY_TYPES } from "@/lib/retrieval-settings";
-import { Target, Link2, SlidersHorizontal, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus } from "lucide-react";
+import { Target, Link2, SlidersHorizontal, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, RotateCcw, Info } from "lucide-react";
 
 type MemoryFilter = "all" | "inputs" | "outputs";
 type CenterMode = "reinforced" | "retrieved";
@@ -41,7 +41,7 @@ interface BrainViewProps {
 }
 
 export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
-  const { memories } = useMemory();
+  const { memories, retrievalSettings, updateRetrievalSettings, refresh } = useMemory();
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdgeInfo | null>(initialEdge);
   const [highlightedPath, setHighlightedPath] = useState<Set<string> | null>(null);
@@ -56,22 +56,9 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [dreamSessions, setDreamSessions] = useState<DreamSession[]>([]);
   const [timelineCutoff, setTimelineCutoff] = useState(Infinity); // Infinity = "now", no cutoff
   const [timelineDragging, setTimelineDragging] = useState(false);
-  const [pinnedContent, setPinnedContent] = useState<any | null>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const [pinnedCardPos, setPinnedCardPos] = useState<{ x: number; y: number } | null>(null);
-  const pinnedCardDragging = useRef(false);
-  const pinnedCardDragOffset = useRef({ x: 0, y: 0 });
-  const [playBtnPos, setPlayBtnPos] = useState<{ x: number; y: number } | null>(null);
-  const [zoomBtnPos, setZoomBtnPos] = useState<{ x: number; y: number } | null>(null);
-  const playBtnPosRef = useRef(playBtnPos);
-  const zoomBtnPosRef = useRef(zoomBtnPos);
-  playBtnPosRef.current = playBtnPos;
-  zoomBtnPosRef.current = zoomBtnPos;
-  const draggingRef = useRef(false);
-  const wasDraggedRef = useRef(false);
-  const dragStartPosRef = useRef({ x: 0, y: 0 });
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
-  const dragTargetRef = useRef<"play" | "zoom">("play");
-  const zoomActionRef = useRef<"in" | "out" | null>(null);
+  const [statusCardCollapsed, setStatusCardCollapsed] = useState(false);
+  const [showClock, setShowClock] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const neuralGraphRef = useRef<NeuralGraphHandle>(null);
@@ -120,10 +107,50 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     })();
   }, []);
 
-  const handlePinnedContentChange = useCallback((content: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-    setPinnedContent(content);
-    if (content) setPinnedCardPos(null); // reset position for each new pin
+  // ── Cortex status ──
+  const [cortexOnline, setCortexOnline] = useState<boolean | null>(null);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [dreamToggling, setDreamToggling] = useState(false);
+  const [reflectToggling, setReflectToggling] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/models");
+        const data = await res.json();
+        setCortexOnline(!!data.running);
+        if (data.active) setActiveModel(data.active);
+      } catch {
+        setCortexOnline(false);
+      }
+    })();
   }, []);
+
+  const toggleDreamSchedule = useCallback(async () => {
+    setDreamToggling(true);
+    try {
+      const method = retrievalSettings.dreamScheduleEnabled ? "DELETE" : "POST";
+      await fetch("/api/dream/schedule", { method });
+      updateRetrievalSettings({ dreamScheduleEnabled: !retrievalSettings.dreamScheduleEnabled });
+    } finally {
+      setDreamToggling(false);
+    }
+  }, [retrievalSettings.dreamScheduleEnabled, updateRetrievalSettings]);
+
+  const toggleReflectSchedule = useCallback(async () => {
+    setReflectToggling(true);
+    try {
+      const action = retrievalSettings.reflectionScheduleEnabled ? "stop" : "start";
+      await fetch("/api/reflect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedule: action }),
+      });
+      updateRetrievalSettings({ reflectionScheduleEnabled: !retrievalSettings.reflectionScheduleEnabled });
+    } finally {
+      setReflectToggling(false);
+    }
+  }, [retrievalSettings.reflectionScheduleEnabled, updateRetrievalSettings]);
 
   // Build a set of memory IDs belonging to any dream session
   const allDreamMemoryIds = useMemo(() => {
@@ -144,16 +171,16 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   const handleNodeSelect = useCallback((memoryId: number) => {
     setSelectedEdge(null);
+    setDetailsOpen(false);
     setSelectedMemoryId((prev) => (prev === memoryId ? null : memoryId));
   }, []);
 
   const handleEdgeSelect = useCallback((edge: SelectedEdgeInfo) => {
     setSelectedMemoryId(null);
     setHighlightedPath(null);
+    setDetailsOpen(false);
     setSelectedEdge(edge);
     neuralGraphRef.current?.clearPinned();
-    setPinnedContent(null);
-    setPinnedCardPos(null);
   }, []);
 
   const toggleType = useCallback((type: MemoryType) => {
@@ -177,7 +204,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   }, []);
 
   const toggleSection = useCallback((key: string) => {
-    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+    setCollapsed((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }, []);
 
   // Check if a memory passes the dream filter
@@ -233,144 +260,143 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     {} as Record<string, number>
   );
 
-  // Draggable area with overlap avoidance between play and zoom buttons
-  const clampDragArea = useCallback((x: number, y: number, target: "play" | "zoom") => {
-    const container = containerRef.current;
-    if (!container) return { x, y };
-    const rect = container.getBoundingClientRect();
-    const btn = 32;
-    const top = 100;
-    const bottom = 72;
-    const rightEdge = filtersOpen ? rect.width - 216 - btn : rect.width - btn;
-
-    let cx = Math.max(0, Math.min(x, rightEdge));
-    let cy = Math.max(top, Math.min(y, rect.height - btn - bottom));
-
-    // Push away from the other button group to prevent overlap
-    const other = target === "play" ? zoomBtnPosRef.current : playBtnPosRef.current;
-    if (other) {
-      const zoomH = target === "zoom" ? 70 : btn; // zoom group is ~70px tall (2 buttons + gap)
-      const otherH = target === "play" ? 70 : btn;
-      const dx = cx - other.x;
-      const dy = cy - other.y;
-      const overlapX = Math.abs(dx) < btn + 4;
-      const overlapY = target === "play"
-        ? cy < other.y + otherH + 4 && cy + btn > other.y - 4
-        : cy < other.y + btn + 4 && cy + zoomH > other.y - 4;
-      if (overlapX && overlapY) {
-        // Push horizontally in the direction we came from
-        if (Math.abs(dx) >= Math.abs(dy)) {
-          cx = dx >= 0 ? other.x + btn + 4 : other.x - btn - 4;
-        } else {
-          const selfH = target === "zoom" ? zoomH : btn;
-          cy = dy >= 0 ? other.y + otherH + 4 : other.y - selfH - 4;
-        }
-        // Re-clamp after push
-        cx = Math.max(0, Math.min(cx, rightEdge));
-        cy = Math.max(top, Math.min(cy, rect.height - btn - bottom));
-      }
-    }
-
-    return { x: cx, y: cy };
-  }, [filtersOpen]);
-
-  const makeDragStart = useCallback((target: "play" | "zoom") => (e: React.PointerEvent) => {
-    e.preventDefault();
-    draggingRef.current = true;
-    wasDraggedRef.current = false;
-    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
-    dragTargetRef.current = target;
-    const el = e.currentTarget as HTMLElement;
-    const elRect = el.getBoundingClientRect();
-    const container = containerRef.current;
-    if (!container) return;
-    const containerRect = container.getBoundingClientRect();
-    dragOffsetRef.current = {
-      x: e.clientX - (elRect.left - containerRect.left),
-      y: e.clientY - (elRect.top - containerRect.top),
-    };
-    // Lock current visual position immediately to prevent jump from right→left switch
-    const currentPos = { x: elRect.left - containerRect.left, y: elRect.top - containerRect.top };
-    if (target === "zoom") setZoomBtnPos(currentPos);
-    else if (!playBtnPos) setPlayBtnPos(currentPos);
-    el.setPointerCapture(e.pointerId);
-  }, [playBtnPos]);
-
-  const handleDragMove = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    // Only count as drag if moved > 5px from start (prevents jitter from blocking clicks)
-    const dx = e.clientX - dragStartPosRef.current.x;
-    const dy = e.clientY - dragStartPosRef.current.y;
-    if (dx * dx + dy * dy > 25) wasDraggedRef.current = true;
-    if (!wasDraggedRef.current) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const containerRect = container.getBoundingClientRect();
-    const x = e.clientX - dragOffsetRef.current.x - containerRect.left;
-    const y = e.clientY - dragOffsetRef.current.y - containerRect.top;
-    const target = dragTargetRef.current;
-    const clamped = clampDragArea(x, y, target);
-    if (target === "play") setPlayBtnPos(clamped);
-    else setZoomBtnPos(clamped);
-  }, [clampDragArea]);
-
-  const handlePlayDragEnd = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    if (!wasDraggedRef.current) {
-      setAutoRotate((v) => !v);
-    }
-  }, []);
-
-  const handleZoomDragEnd = useCallback((e: React.PointerEvent) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    if (!wasDraggedRef.current && zoomActionRef.current) {
-      if (zoomActionRef.current === "in") neuralGraphRef.current?.zoomIn();
-      else neuralGraphRef.current?.zoomOut();
-    }
-    zoomActionRef.current = null;
-  }, []);
 
   return (
     <div ref={containerRef} className="relative flex h-full flex-row overflow-hidden" style={{ background: "var(--bg)" }}>
-      {/* Page title — top left, below nav */}
-      <div className={`pointer-events-none absolute top-16 left-4 z-10 ${(selectedMemoryId || selectedEdge) ? "hidden" : ""}`}>
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <h1 className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>Neural Map</h1>
-          <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
-            {filteredMemories.length} nodes
-          </span>
+      {/* Top bar: filter (left) · Now (center) · status (right) */}
+      <div className="absolute top-16 left-4 right-4 z-30 flex items-start justify-between pointer-events-none">
+        {/* Left buttons: filter + details */}
+        <div className="flex flex-row gap-1.5 pointer-events-auto">
+          <button
+            onClick={() => { setFiltersOpen((v) => !v); if (!filtersOpen) setDetailsOpen(false); }}
+            className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
+            style={{ color: filtersOpen ? "var(--accent)" : "var(--text-faint)" }}
+            title={filtersOpen ? "Hide filters" : "Show filters"}
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+          </button>
+          {(selectedMemoryId || selectedEdge) && (
+            <button
+              onClick={() => { setDetailsOpen((v) => !v); if (!detailsOpen) setFiltersOpen(false); }}
+              className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
+              style={{ color: detailsOpen ? "var(--accent)" : "var(--text-faint)" }}
+              title={detailsOpen ? "Hide details" : "See details"}
+            >
+              <Info className="h-3 w-3" />
+            </button>
+          )}
         </div>
-      </div>
 
-      {/* Current timeline date — top center */}
-      {timeRange.min < timeRange.max && (
-        <div className={`pointer-events-none absolute top-16 left-0 right-0 z-10 flex justify-center ${(selectedMemoryId || selectedEdge) ? "hidden" : ""}`}>
-          <span className="text-[11px] font-mono" style={{ color: "var(--accent)" }}>
-            {timelineCutoff === Infinity ? "Now" : formatTimelineTick(timelineCutoff, timeRange.max - timeRange.min, true)}
-          </span>
-        </div>
-      )}
+        {/* Now / timeline date — true center, click to toggle clock */}
+        {timeRange.min < timeRange.max && (
+          <button
+            className="absolute left-1/2 -translate-x-1/2 font-mono cursor-pointer pointer-events-auto"
+            style={{ color: "var(--accent)" }}
+            onClick={() => setShowClock((v) => !v)}
+          >
+            {timelineCutoff === Infinity
+              ? (showClock ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Now")
+              : formatTimelineTick(timelineCutoff, timeRange.max - timeRange.min, true)}
+          </button>
+        )}
 
-      {/* Filter toggle button — top right */}
-      <div className={`pointer-events-none absolute top-16 right-4 z-10 ${(selectedMemoryId || selectedEdge) ? "hidden" : ""}`}>
-        <button
-          onClick={() => setFiltersOpen((v) => !v)}
-          className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-          style={{ color: filtersOpen ? "var(--accent)" : "var(--text-faint)" }}
-          title={filtersOpen ? "Hide filters" : "Show filters"}
-        >
-          <SlidersHorizontal className="h-3 w-3" />
-        </button>
+        {/* Neural Map status — collapsible, right */}
+        {(() => {
+          const memActive = memories.length > 0;
+          const modelActive = !!activeModel;
+          const dreamActive = retrievalSettings.dreamScheduleEnabled;
+          const reflectActive = retrievalSettings.reflectionScheduleEnabled;
+          const activeCount = [memActive, modelActive, dreamActive, reflectActive].filter(Boolean).length;
+          const status = cortexOnline === null ? "..." : !cortexOnline ? "inactive" : activeCount === 4 ? "live" : activeCount > 0 ? "partial" : "inactive";
+          const dotColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : "#ef4444";
+          const textColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : "#ef4444";
+          return (
+            <div className="select-none text-right pointer-events-auto">
+              <button
+                onClick={() => setStatusCardCollapsed((v) => !v)}
+                className="flex items-center gap-1.5 ml-auto"
+              >
+                <span className="font-mono" style={{ color: "var(--accent)" }}>
+                  Neural Map
+                </span>
+                <span className="font-mono" style={{ color: "var(--text-faint)" }}>
+                  {filteredMemories.length}
+                </span>
+                <span
+                  className="h-[5px] w-[5px] rounded-full"
+                  style={{ background: status === "..." ? "var(--text-faint)" : dotColor }}
+                />
+                <span className="font-mono" style={{ color: status === "..." ? "var(--text-faint)" : textColor }}>
+                  {status}
+                </span>
+              </button>
+              {!statusCardCollapsed && (
+                <div className="mt-1 space-y-0.5">
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>memory</span>
+                    <span className="font-mono" style={{ color: memActive ? "var(--accent)" : "var(--text-faint)" }}>
+                      {memActive ? "active" : "inactive"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>model</span>
+                    <span className="font-mono" style={{ color: modelActive ? "var(--accent)" : "var(--text-faint)" }}>
+                      {activeModel || "none"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span
+                      className="h-[5px] w-[5px] rounded-full"
+                      style={{ background: dreamActive ? "#22c55e" : "transparent" }}
+                    />
+                    <button
+                      onClick={toggleDreamSchedule}
+                      disabled={dreamToggling}
+                      className="font-mono transition active:scale-95"
+                      style={{ color: "var(--text-faint)" }}
+                    >
+                      dream
+                    </button>
+                    <span
+                      className="font-mono cursor-pointer"
+                      onClick={toggleDreamSchedule}
+                      style={{ color: dreamActive ? "#22c55e" : "var(--text-faint)" }}
+                    >
+                      {dreamToggling ? "..." : dreamActive ? "active" : "inactive"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <span
+                      className="h-[5px] w-[5px] rounded-full"
+                      style={{ background: reflectActive ? "#22c55e" : "transparent" }}
+                    />
+                    <button
+                      onClick={toggleReflectSchedule}
+                      disabled={reflectToggling}
+                      className="font-mono transition active:scale-95"
+                      style={{ color: "var(--text-faint)" }}
+                    >
+                      reflect
+                    </button>
+                    <span
+                      className="font-mono cursor-pointer"
+                      onClick={toggleReflectSchedule}
+                      style={{ color: reflectActive ? "#22c55e" : "var(--text-faint)" }}
+                    >
+                      {reflectToggling ? "..." : reflectActive ? "active" : "inactive"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Zoom buttons */}
       <div
         className="absolute z-10 flex flex-col gap-1.5 select-none"
-        style={{ top: "100px", right: (selectedMemoryId || selectedEdge) ? "calc(50% + 16px)" : filtersOpen ? "216px" : "16px" }}
+        style={{ top: statusCardCollapsed ? "100px" : "170px", right: "16px", transition: "top 0.2s ease" }}
       >
         <button
           onClick={() => neuralGraphRef.current?.zoomIn()}
@@ -388,61 +414,25 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         >
           <Minus className="h-3 w-3" />
         </button>
+        <button
+          onClick={async () => {
+            setSelectedMemoryId(null);
+            setSelectedEdge(null);
+            setHighlightedPath(null);
+            await refresh();
+            neuralGraphRef.current?.resetView();
+          }}
+          className="flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200 active:scale-95 cursor-pointer"
+          style={{ color: "var(--accent)", background: "transparent", border: "1px solid var(--border)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
+          title="Refresh graph"
+        >
+          <RotateCcw className="h-3 w-3" />
+        </button>
       </div>
 
-      {/* Graph area */}
-      <div
-        ref={graphContainerRef}
-        className="flex-1 min-h-0 min-w-0 transition-all duration-300"
-      >
-        {graphSize.width > 0 && graphSize.height > 0 && (
-          <NeuralGraph
-            ref={neuralGraphRef}
-            onNodeSelect={handleNodeSelect}
-            selectedNodeId={selectedMemoryId}
-            memoryFilter={memoryFilter}
-            typeFilter={enabledTypes}
-            centerMode={centerMode}
-            width={graphSize.width}
-            height={graphSize.height}
-            autoRotate={autoRotate}
-            timelineCutoff={timelineCutoff}
-            hideEdges={timelineDragging}
-            selectedEdge={selectedEdge ? { sourceId: selectedEdge.sourceId, targetId: selectedEdge.targetId } : null}
-            highlightedPath={highlightedPath}
-            onPinnedContentChange={handlePinnedContentChange}
-          />
-        )}
-      </div>
-
-      {/* Right side panel: filter or detail */}
-      {(filtersOpen || selectedMemory || selectedEdge) && (
-        <div className={`${(selectedMemory || selectedEdge) ? "w-1/2" : "w-[200px]"} shrink-0 overflow-y-auto px-4 pb-4 pt-4 space-y-3 transition-all duration-300`} style={{ borderLeft: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
-
-          {/* Show detail panel when a node/edge is selected, otherwise show filters */}
-          {selectedMemory ? (
-            <>
-              <div className="flex justify-center lg:hidden">
-                <div className="h-1 w-10 rounded-full" style={{ background: "var(--border)" }} />
-              </div>
-              <MemoryNodeDetail
-                memory={selectedMemory}
-                onClose={() => setSelectedMemoryId(null)}
-                onNavigate={setSelectedMemoryId}
-              />
-            </>
-          ) : selectedEdge ? (
-            <EdgePathDetail
-              sourceMemory={memories.find((m) => m.id === selectedEdge.sourceNumericId) ?? null}
-              targetMemory={memories.find((m) => m.id === selectedEdge.targetNumericId) ?? null}
-              linkType={selectedEdge.linkType}
-              strength={selectedEdge.strength}
-              onClose={() => { setSelectedEdge(null); setHighlightedPath(null); }}
-              onNavigateMemory={(id) => { setSelectedEdge(null); setHighlightedPath(null); setSelectedMemoryId(id); }}
-              onNavigateEdge={(edge) => { setHighlightedPath(null); handleEdgeSelect(edge); }}
-              onPathHighlight={setHighlightedPath}
-            />
-          ) : (
+      {/* Left side panel: filters only */}
+      {filtersOpen && (
+        <div className="w-[200px] relative z-10 shrink-0 overflow-y-auto px-4 pb-4 pt-12 space-y-3 transition-all duration-300" style={{ borderRight: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
             <div className="space-y-1">
               {/* Mode section */}
               <FilterSection title="Mode" sectionKey="mode" collapsed={collapsed} onToggle={toggleSection}>
@@ -454,7 +444,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                     style={{ opacity: centerMode === key ? 1 : 0.3 }}
                   >
                     <Icon className="h-2.5 w-2.5 shrink-0" style={{ color: centerMode === key ? "var(--accent)" : "var(--text-faint)" }} />
-                    <span className="text-[9px]" style={{ color: centerMode === key ? "var(--text-muted)" : "var(--text-faint)" }}>
+                    <span className="t-tiny" style={{ color: centerMode === key ? "var(--text-muted)" : "var(--text-faint)" }}>
                       {label}
                     </span>
                   </button>
@@ -474,7 +464,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                       className="h-[6px] w-[6px] rounded-sm shrink-0"
                       style={{ backgroundColor: memoryFilter === key ? "var(--accent)" : "var(--text-faint)" }}
                     />
-                    <span className="text-[9px]" style={{ color: memoryFilter === key ? "var(--text-muted)" : "var(--text-faint)" }}>
+                    <span className="t-tiny" style={{ color: memoryFilter === key ? "var(--text-muted)" : "var(--text-faint)" }}>
                       {label}
                     </span>
                   </button>
@@ -498,7 +488,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                         className="h-[6px] w-[6px] rounded-full shrink-0"
                         style={{ backgroundColor: color }}
                       />
-                      <span className="text-[9px]" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
+                      <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
                         {TYPE_LABELS[type]} {count}
                       </span>
                     </button>
@@ -514,7 +504,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                     <div className="flex flex-col gap-0.5 max-h-[120px] overflow-y-auto">
                       <button
                         onClick={() => setSelectedDream(null)}
-                        className="flex items-center gap-1.5 text-left text-[9px] transition-all duration-200"
+                        className="flex items-center gap-1.5 text-left t-tiny transition-all duration-200"
                         style={{ color: selectedDream === null ? "var(--text-muted)" : "var(--text-faint)" }}
                       >
                         <Check className="h-2.5 w-2.5 shrink-0" style={{ opacity: selectedDream === null ? 1 : 0, color: "var(--accent)" }} />
@@ -524,7 +514,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                         <button
                           key={s.index}
                           onClick={() => setSelectedDream(s.index === selectedDream ? null : s.index)}
-                          className="flex items-center gap-1.5 text-left text-[9px] transition-all duration-200"
+                          className="flex items-center gap-1.5 text-left t-tiny transition-all duration-200"
                           style={{ color: selectedDream === s.index ? "var(--text-muted)" : "var(--text-faint)" }}
                         >
                           <Check className="h-2.5 w-2.5 shrink-0" style={{ opacity: selectedDream === s.index ? 1 : 0, color: "var(--accent)" }} />
@@ -551,7 +541,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                             className="h-[6px] w-[6px] rounded-full shrink-0"
                             style={{ backgroundColor: color }}
                           />
-                          <span className="text-[9px]" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
+                          <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
                             {DREAM_SOURCE_LABELS[src] || src} {count}
                           </span>
                         </button>
@@ -562,18 +552,18 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                   {/* Dream Created sub-section */}
                   <FilterSection title="Created" sectionKey="dreamCreated" collapsed={collapsed} onToggle={toggleSection}>
                     {selectedDream !== null && dreamSessions.find((s) => s.index === selectedDream) ? (
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                         {new Date(dreamSessions.find((s) => s.index === selectedDream)!.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                       </span>
                     ) : dreamSessions.length > 0 ? (
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                         {new Date(dreamSessions[0].timestamp).toLocaleString(undefined, { month: "short", day: "numeric" })}
                         {" – "}
                         {new Date(dreamSessions[dreamSessions.length - 1].timestamp).toLocaleString(undefined, { month: "short", day: "numeric" })}
                         {` · ${dreamSessions.length} sessions`}
                       </span>
                     ) : (
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>No dream data</span>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>No dream data</span>
                     )}
                   </FilterSection>
                 </div>
@@ -587,72 +577,72 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                       className="h-[1.5px] w-[8px] shrink-0 rounded-full"
                       style={{ backgroundColor: color }}
                     />
-                    <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                    <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                       {LINK_TYPE_LABELS[type] || type}
                     </span>
                   </div>
                 ))}
               </FilterSection>
             </div>
-          )}
         </div>
       )}
 
-      {/* Pinned card — draggable within same frame */}
-      {pinnedContent && (
-        <div
-          className="pointer-events-auto absolute z-20 cursor-grab active:cursor-grabbing touch-none select-none"
-          style={{
-            left: pinnedCardPos?.x ?? 16,
-            top: pinnedCardPos?.y ?? 100,
-            fontFamily: "'JetBrains Mono', monospace",
-            background: "rgba(255,255,255,0.95)",
-            padding: "8px 10px",
-            borderRadius: 6,
-            border: "1px solid rgba(0,0,0,0.08)",
-            width: 220,
-            backdropFilter: "blur(12px)",
-          }}
-          onPointerDown={(e) => {
-            if ((e.target as HTMLElement).closest("button")) return;
-            e.preventDefault();
-            pinnedCardDragging.current = true;
-            const el = e.currentTarget;
-            const container = containerRef.current;
-            if (!container) return;
-            const containerRect = container.getBoundingClientRect();
-            pinnedCardDragOffset.current = {
-              x: e.clientX - (el.getBoundingClientRect().left - containerRect.left),
-              y: e.clientY - (el.getBoundingClientRect().top - containerRect.top),
-            };
-            el.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            if (!pinnedCardDragging.current) return;
-            const container = containerRef.current;
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            const x = e.clientX - pinnedCardDragOffset.current.x;
-            const y = e.clientY - pinnedCardDragOffset.current.y;
-            setPinnedCardPos({
-              x: Math.max(0, Math.min(x, rect.width - 220)),
-              y: Math.max(0, Math.min(y, rect.height - 60)),
-            });
-          }}
-          onPointerUp={(e) => {
-            if (!pinnedCardDragging.current) return;
-            pinnedCardDragging.current = false;
-            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-          }}
-        >
-          <PinnedCardBody
-            content={pinnedContent}
-            onOpenMemory={handleNodeSelect}
-            onOpenEdge={handleEdgeSelect}
-            onClose={() => { neuralGraphRef.current?.clearPinned(); setPinnedContent(null); setPinnedCardPos(null); }}
-          />
+      {/* Left side panel: details */}
+      {detailsOpen && (selectedMemory || selectedEdge) && (
+        <div className="w-[280px] relative z-10 shrink-0 overflow-y-auto px-4 pb-4 pt-12 space-y-3 transition-all duration-300" style={{ borderRight: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
+          {selectedMemory ? (
+            <MemoryNodeDetail
+              memory={selectedMemory}
+              onClose={() => { setSelectedMemoryId(null); setDetailsOpen(false); }}
+              onNavigate={(id) => { setSelectedMemoryId(id); }}
+            />
+          ) : selectedEdge ? (
+            <EdgePathDetail
+              sourceMemory={memories.find((m) => m.id === selectedEdge.sourceNumericId) ?? null}
+              targetMemory={memories.find((m) => m.id === selectedEdge.targetNumericId) ?? null}
+              linkType={selectedEdge.linkType}
+              strength={selectedEdge.strength}
+              onClose={() => { setSelectedEdge(null); setHighlightedPath(null); setDetailsOpen(false); }}
+              onNavigateMemory={(id) => { setSelectedEdge(null); setHighlightedPath(null); setSelectedMemoryId(id); }}
+              onNavigateEdge={(edge) => { setHighlightedPath(null); handleEdgeSelect(edge); setDetailsOpen(true); }}
+              onPathHighlight={setHighlightedPath}
+            />
+          ) : null}
         </div>
       )}
+
+      {/* Graph area */}
+      <div
+        ref={graphContainerRef}
+        className="flex-1 min-h-0 min-w-0 transition-all duration-300"
+      >
+        {graphSize.width > 0 && graphSize.height > 0 && (
+          <NeuralGraph
+            ref={neuralGraphRef}
+            onNodeSelect={handleNodeSelect}
+            selectedNodeId={selectedMemoryId}
+            memoryFilter={memoryFilter}
+            typeFilter={enabledTypes}
+            centerMode={centerMode}
+            width={graphSize.width}
+            height={graphSize.height}
+            autoRotate={autoRotate}
+            timelineCutoff={timelineCutoff}
+            hideEdges={timelineDragging}
+            selectedEdge={selectedEdge ? { sourceId: selectedEdge.sourceId, targetId: selectedEdge.targetId } : null}
+            highlightedPath={highlightedPath}
+            onEdgeSelect={handleEdgeSelect}
+            onBackgroundSelect={() => {
+              setSelectedMemoryId(null);
+              setSelectedEdge(null);
+              setHighlightedPath(null);
+              setDetailsOpen(false);
+              neuralGraphRef.current?.resetView();
+            }}
+          />
+        )}
+      </div>
+
 
       {/* Play/pause auto-rotation */}
       <button
@@ -664,11 +654,10 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
           border: "1px solid var(--border)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          ...(playBtnPos
-            ? { left: playBtnPos.x, top: playBtnPos.y }
-            : selectedEdge
-              ? { bottom: 64, left: "25%", transform: "translateX(-50%)" }
-              : { bottom: 64, left: "50%", transform: "translateX(-50%)" }),
+          ...(() => {
+                const panelPx = detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : filtersOpen ? "200px" : "0px";
+                return { bottom: 64, left: `calc(${panelPx} + (100% - ${panelPx}) / 2)`, transform: "translateX(-50%)" };
+              })(),
         }}
         title={autoRotate ? "Pause rotation" : "Resume rotation"}
       >
@@ -677,7 +666,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
       {/* Timeline bar — bottom */}
       {timeRange.min < timeRange.max && (
-        <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-4 pt-6" style={{ background: "linear-gradient(transparent, var(--bg))" }}>
+        <div className="absolute bottom-0 right-0 z-10 px-6 pb-4 pt-6" style={{ left: detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : filtersOpen ? "200px" : "0px", background: "linear-gradient(transparent, var(--bg))", transition: "left 0.3s" }}>
           {/* Track */}
           <div className="relative h-5 flex items-center">
             <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />
@@ -710,7 +699,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
             {Array.from({ length: 4 }, (_, i) => {
               const ts = timeRange.min + ((timeRange.max - timeRange.min) * i) / 3;
               return (
-                <span key={i} className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                <span key={i} className="t-micro" style={{ color: "var(--text-faint)" }}>
                   {formatTimelineTick(ts, timeRange.max - timeRange.min, false)}
                 </span>
               );
@@ -767,7 +756,7 @@ function FilterSection({
           <ChevronDown className="h-2 w-2 shrink-0" style={{ color: "var(--text-faint)" }} />
         )}
         {icon && <span style={{ color: "var(--text-faint)" }}>{icon}</span>}
-        <span className="text-[9px] font-medium" style={{ color: "var(--text-faint)" }}>
+        <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
           {title}
         </span>
       </button>

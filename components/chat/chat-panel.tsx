@@ -33,14 +33,9 @@ export function ChatPanel() {
     return convs;
   }, []);
 
-  // Load conversations and restore most recent on mount
+  // Load conversations on mount — start with a blank new chat
   useEffect(() => {
-    refreshConversations().then((convs) => {
-      if (convs.length > 0) {
-        setActiveId(convs[0].id);
-        setMessages(convs[0].messages);
-      }
-    });
+    refreshConversations();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToBottom = () => {
@@ -199,20 +194,8 @@ export function ChatPanel() {
       setMessages(finalMessages);
       await persistConversation(finalMessages, convId);
 
-      // Store assistant response as memory
-      if (fullContent) {
-        fetch("/api/memories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "semantic",
-            content: fullContent,
-            summary: fullContent.length > 100 ? fullContent.slice(0, 100) + "..." : fullContent,
-            tags: convId ? ["assistant-response", `conv:${convId}`] : ["assistant-response"],
-            importance: 0.4,
-          }),
-        }).catch(() => {});
-      }
+      // NOTE: assistant response memory is stored server-side in the chat route's TransformStream flush handler
+      // No need to store it again here — that caused duplicate memories.
 
       // Generate summary in background after first exchange
       if (finalMessages.length <= 3 && convId) {
@@ -259,10 +242,10 @@ export function ChatPanel() {
           <div className="flex h-full flex-col items-center justify-center gap-5 animate-fade-slide-up">
             <BrainScanline size={120} />
             <div className="text-center">
-              <p className="text-xs" style={{ color: "var(--text-muted)", letterSpacing: "0.02em" }}>
-                Start a conversation
+              <p className="t-small" style={{ color: "var(--text-muted)" }}>
+                Start a new chat
               </p>
-              <p className="mt-1.5 text-[10px]" style={{ color: "var(--text-faint)" }}>
+              <p className="mt-1.5 t-small" style={{ color: "var(--text-faint)" }}>
                 Messages become memories in the neural map
               </p>
             </div>
@@ -285,7 +268,7 @@ export function ChatPanel() {
                   color: "var(--text)",
                 }}
               >
-                <p className="whitespace-pre-wrap text-xs leading-relaxed">
+                <p className="whitespace-pre-wrap leading-relaxed">
                   {msg.content}
                   {streaming &&
                     i === messages.length - 1 &&
@@ -312,7 +295,7 @@ export function ChatPanel() {
               e.key === "Enter" && !e.shiftKey && sendMessage()
             }
             placeholder="Type a message..."
-            className="flex-1 bg-transparent text-xs outline-none"
+            className="flex-1 bg-transparent outline-none"
             style={{ color: "var(--text)" }}
             disabled={streaming}
           />

@@ -7,6 +7,40 @@ import { TYPE_COLORS, LINK_TYPE_COLORS, LINK_TYPE_LABELS } from "@/lib/types";
 import type { ViewMode, MemoryType } from "@/lib/types";
 import * as THREE from "three";
 
+// Polyfill THREE.Clock for Three.js r183+ where it was deprecated
+// react-force-graph-3d (via three-render-objects) still depends on it
+if (typeof window !== "undefined" && !(THREE as any).Clock) {
+  (THREE as any).Clock = class Clock {
+    autoStart: boolean;
+    startTime: number;
+    oldTime: number;
+    elapsedTime: number;
+    running: boolean;
+    constructor(autoStart = true) {
+      this.autoStart = autoStart;
+      this.startTime = 0;
+      this.oldTime = 0;
+      this.elapsedTime = 0;
+      this.running = false;
+    }
+    start() { this.startTime = this.now(); this.oldTime = this.startTime; this.elapsedTime = 0; this.running = true; }
+    stop() { this.getElapsedTime(); this.running = false; }
+    getElapsedTime() { this.getDelta(); return this.elapsedTime; }
+    getDelta() {
+      let diff = 0;
+      if (this.autoStart && !this.running) { this.start(); return 0; }
+      if (this.running) {
+        const newTime = this.now();
+        diff = (newTime - this.oldTime) / 1000;
+        this.oldTime = newTime;
+        this.elapsedTime += diff;
+      }
+      return diff;
+    }
+    now() { return performance.now(); }
+  };
+}
+
 const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
   ssr: false,
 });
@@ -62,20 +96,37 @@ interface NeuralGraphProps {
   selectedEdge?: { sourceId: string; targetId: string } | null;
   highlightedPath?: Set<string> | null;
   onPinnedContentChange?: (content: any | null) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
+  onBackgroundSelect?: () => void;
+  onEdgeSelect?: (edge: SelectedEdgeInfo) => void;
 }
 
 export interface NeuralGraphHandle {
   zoomIn: () => void;
   zoomOut: () => void;
   clearPinned: () => void;
+  resetView: () => void;
 }
 
-export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(function NeuralGraph({ onNodeSelect, selectedNodeId, memoryFilter = "all", typeFilter, centerMode = "reinforced", width, height, autoRotate = true, timelineCutoff = Infinity, hideEdges = false, selectedEdge = null, highlightedPath = null, onPinnedContentChange }, ref) {
+export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(function NeuralGraph({ onNodeSelect, selectedNodeId, memoryFilter = "all", typeFilter, centerMode = "reinforced", width, height, autoRotate = true, timelineCutoff = Infinity, hideEdges = false, selectedEdge = null, highlightedPath = null, onPinnedContentChange, onBackgroundSelect, onEdgeSelect }, ref) {
   const { knowledgeGraph, memories, fetchMemoryLinks } = useMemory();
   // Derive viewMode from centerMode: reinforced → hebbian links, retrieved → retrieval similarity
   const viewMode: ViewMode = centerMode === "retrieved" ? "retrieved" : "hebbian";
   const graphRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
   const forcesRegistered = useRef(false);
+  // Dispose the Three.js renderer on unmount to prevent stale animation loops
+  useEffect(() => {
+    return () => {
+      const fg = graphRef.current;
+      if (fg) {
+        try {
+          const renderer = fg.renderer?.();
+          renderer?.dispose?.();
+          renderer?.forceContextLoss?.();
+        } catch { /* silent */ }
+        graphRef.current = null;
+      }
+    };
+  }, []);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [pinnedNodeId, setPinnedNodeId] = useState<string | null>(null);
   const [pinnedLinkKey, setPinnedLinkKey] = useState<string | null>(null); // "srcId|tgtId"
@@ -106,6 +157,13 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
     clearPinned: () => {
       setPinnedNodeId(null);
       setPinnedLinkKey(null);
+    },
+    resetView: () => {
+      const fg = graphRef.current;
+      if (!fg) return;
+      fg.cameraPosition({ x: 0, y: 0, z: 300 }, { x: 0, y: 0, z: 0 }, 800);
+      // Reheat the force simulation so nodes re-settle
+      try { fg.d3ReheatSimulation?.(); } catch { /* silent */ }
     },
   }), []);
 
@@ -825,6 +883,8 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
 
   // Refs for rAF orbit tick (avoids stale closures)
   const hoveredLinkRef = useRef<boolean>(false);
+  const hoveredNodeIdRef = useRef(hoveredNodeId);
+  hoveredNodeIdRef.current = hoveredNodeId;
   const selectedEdgeRef = useRef(selectedEdge);
   selectedEdgeRef.current = selectedEdge;
   const dataRef = useRef(data);
@@ -859,7 +919,8 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
       }
 
       // Auto-rotate: orbit camera around the gravity center in the XZ plane
-      if (autoRotateRef.current) {
+      // Pause rotation when hovering over a node or link
+      if (autoRotateRef.current && !hoveredNodeIdRef.current && !hoveredLinkRef.current) {
         const cam = fg.camera?.();
         if (cam) {
           angle += 0.003;
@@ -1014,9 +1075,11 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
   const handleNodeClick = useCallback(
     (node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       setPinnedLinkKey(null);
-      setPinnedNodeId((prev) => prev === node.id ? null : node.id);
+      setPinnedNodeId(null);
+      // Zoom camera to node — use numericId directly from node data
+      if (node.numericId != null) onNodeSelect?.(node.numericId);
     },
-    []
+    [onNodeSelect]
   );
 
   // Focus camera on selected node when it changes (e.g. from card navigation)
@@ -1118,12 +1181,23 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
   const handleLinkClick = useCallback(
     (link: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       setPinnedNodeId(null);
+      setPinnedLinkKey(null);
       const srcId = typeof link.source === "object" ? link.source.id : link.source;
       const tgtId = typeof link.target === "object" ? link.target.id : link.target;
-      const key = `${srcId}|${tgtId}`;
-      setPinnedLinkKey((prev) => prev === key ? null : key);
+      const srcNumeric = nodeNumericIdMap.get(srcId);
+      const tgtNumeric = nodeNumericIdMap.get(tgtId);
+      if (srcNumeric != null && tgtNumeric != null) {
+        onEdgeSelect?.({
+          sourceId: srcId,
+          targetId: tgtId,
+          sourceNumericId: srcNumeric,
+          targetNumericId: tgtNumeric,
+          linkType: link.linkType || "relates",
+          strength: typeof link.value === "number" ? link.value : 0,
+        });
+      }
     },
-    []
+    [nodeNumericIdMap, onEdgeSelect]
   );
 
   // Build pinned card content
@@ -1167,8 +1241,8 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
     return (
       <div className="flex h-full items-center justify-center" style={{ color: "var(--text-faint)" }}>
         <div className="text-center">
-          <p className="heading">No memories yet</p>
-          <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>Chat to create your first memories</p>
+          <p className="t-heading">No memories yet</p>
+          <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>Chat to create your first memories</p>
         </div>
       </div>
     );
@@ -1186,15 +1260,15 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
       height={height}
       nodeLabel={(node: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         if (node.id === pinnedNodeId) return ""; // don't show hover tooltip for pinned node
-        const cardStyle = "font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-width:240px;backdrop-filter:blur(12px);box-shadow:none";
+        const cardStyle = "font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-width:240px;backdrop-filter:blur(12px);box-shadow:none";
         const dimStyle = "color:rgba(0,0,0,0.35);font-size:8px";
         const valStyle = "color:rgba(0,0,0,0.6);font-size:8px;font-variant-numeric:tabular-nums";
 
         if (node.isEntity) {
-          const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px";
+          const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.01em;margin-bottom:5px";
           return `<div style="${cardStyle}">
             <div style="${titleStyle}">Entity</div>
-            <div style="color:${ENTITY_COLORS[node.type] || DEFAULT_ENTITY_COLOR};font-size:8px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">entity · ${node.type}</div>
+            <div style="color:${ENTITY_COLORS[node.type] || DEFAULT_ENTITY_COLOR};font-size:8px;text-transform:uppercase;letter-spacing:0.01em;font-weight:500">entity · ${node.type}</div>
             <div style="color:rgba(0,0,0,0.75);font-size:10px;margin-top:3px;line-height:1.4">${node.name}</div>
           </div>`;
         }
@@ -1214,13 +1288,13 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
           ? `<div style="display:flex;justify-content:space-between;gap:12px"><span style="${dimStyle}">${viewMode === "retrieved" ? "relevance" : "hebbian"}</span><span style="${valStyle}">${Math.round(strength * 100)}%${linkType ? ` · ${linkType}` : ""}</span></div>`
           : "";
 
-        const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px";
+        const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.01em;margin-bottom:5px";
 
         return `<div style="${cardStyle}">
           <div style="${titleStyle}">Memory</div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <div style="width:5px;height:5px;border-radius:50%;background:${TYPE_COLORS[mem.memory_type]};flex-shrink:0"></div>
-            <span style="color:rgba(0,0,0,0.4);font-size:8px;text-transform:uppercase;letter-spacing:0.05em">${mem.memory_type.replace("_", " ")}</span>
+            <span style="color:rgba(0,0,0,0.4);font-size:8px;text-transform:uppercase;letter-spacing:0.01em">${mem.memory_type.replace("_", " ")}</span>
           </div>
           <div style="color:rgba(0,0,0,0.8);font-size:10px;line-height:1.4;margin-bottom:6px">${mem.summary}</div>
           <div style="display:flex;flex-direction:column;gap:2px;border-top:1px solid rgba(0,0,0,0.06);padding-top:5px">
@@ -1234,7 +1308,7 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
       nodeThreeObject={nodeThreeObject}
       onNodeHover={handleNodeHover}
       onLinkHover={handleLinkHover}
-      linkHoverPrecision={6}
+      linkHoverPrecision={16}
       linkLabel={(link: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         const linkType = link.linkType || "relates";
         const color = LINK_TYPE_COLORS[linkType] || "#6b7280";
@@ -1246,17 +1320,17 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
         const srcName = src?.name || src?.id || "?";
         const tgtName = tgt?.name || tgt?.id || "?";
 
-        const cardStyle = "font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-width:240px;backdrop-filter:blur(12px);box-shadow:none";
+        const cardStyle = "font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-width:240px;backdrop-filter:blur(12px);box-shadow:none";
         const dimStyle = "color:rgba(0,0,0,0.35);font-size:8px";
         const valStyle = "color:rgba(0,0,0,0.6);font-size:8px;font-variant-numeric:tabular-nums";
 
-        const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:5px";
+        const titleStyle = "color:rgba(0,0,0,0.25);font-size:7px;text-transform:uppercase;letter-spacing:0.01em;margin-bottom:5px";
 
         return `<div style="${cardStyle}">
           <div style="${titleStyle}">Edge</div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
             <div style="width:8px;height:3px;border-radius:1px;background:${color};flex-shrink:0"></div>
-            <span style="color:${color};font-size:8px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600">${label}</span>
+            <span style="color:${color};font-size:8px;text-transform:uppercase;letter-spacing:0.01em;font-weight:500">${label}</span>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;border-top:1px solid rgba(0,0,0,0.06);padding-top:5px">
             <div style="display:flex;justify-content:space-between;gap:12px"><span style="${dimStyle}">from</span><span style="${valStyle};max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${srcName}</span></div>
@@ -1275,7 +1349,7 @@ export const NeuralGraph = forwardRef<NeuralGraphHandle, NeuralGraphProps>(funct
       backgroundColor="rgba(0,0,0,0)"
       onNodeClick={handleNodeClick}
       onLinkClick={handleLinkClick}
-      onBackgroundClick={() => { setPinnedNodeId(null); setPinnedLinkKey(null); }}
+      onBackgroundClick={() => { setPinnedNodeId(null); setPinnedLinkKey(null); onBackgroundSelect?.(); }}
       onEngineStop={onEngineStop}
       enableNodeDrag={true}
       warmupTicks={100}
@@ -1300,7 +1374,7 @@ export interface SelectedEdgeInfo {
 export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: { content: any; onOpenMemory?: (id: number) => void; onOpenEdge?: (edge: SelectedEdgeInfo) => void; onClose: () => void }) {
   const dim = { color: "rgba(0,0,0,0.35)", fontSize: 8 };
   const val = { color: "rgba(0,0,0,0.6)", fontSize: 8 };
-  const title = { color: "rgba(0,0,0,0.25)", fontSize: 7, textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 5 };
+  const title = { color: "rgba(0,0,0,0.25)", fontSize: 7, textTransform: "uppercase" as const, letterSpacing: "0.01em", marginBottom: 5 };
   const closeBtn = (
     <button
       onClick={onClose}
@@ -1316,7 +1390,7 @@ export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: {
       <>
         {closeBtn}
         <div style={title}>Entity</div>
-        <div style={{ color: ENTITY_COLORS[content.node.type] || DEFAULT_ENTITY_COLOR, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>entity · {content.node.type}</div>
+        <div style={{ color: ENTITY_COLORS[content.node.type] || DEFAULT_ENTITY_COLOR, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.01em", fontWeight: 500 }}>entity · {content.node.type}</div>
         <div style={{ color: "rgba(0,0,0,0.75)", fontSize: 10, marginTop: 3, lineHeight: 1.4 }}>{content.node.name}</div>
       </>
     );
@@ -1330,7 +1404,7 @@ export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: {
         <div style={title}>Memory</div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <div style={{ width: 5, height: 5, borderRadius: "50%", background: TYPE_COLORS[mem.memory_type], flexShrink: 0 }} />
-          <span style={{ color: "rgba(0,0,0,0.4)", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{mem.memory_type.replace("_", " ")}</span>
+          <span style={{ color: "rgba(0,0,0,0.4)", fontSize: 8, textTransform: "uppercase", letterSpacing: "0.01em" }}>{mem.memory_type.replace("_", " ")}</span>
         </div>
         <div style={{ color: "rgba(0,0,0,0.8)", fontSize: 10, lineHeight: 1.4, marginBottom: 6 }}>{mem.summary}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 5 }}>
@@ -1340,7 +1414,7 @@ export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: {
         </div>
         <button
           onClick={() => { if (mem.id != null) onOpenMemory?.(mem.id); }}
-          style={{ marginTop: 6, width: "100%", padding: "3px 0", borderRadius: 4, border: "1px solid rgba(0,0,0,0.08)", background: "transparent", color: "var(--accent)", fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.05em" }}
+          style={{ marginTop: 6, width: "100%", padding: "3px 0", borderRadius: 4, border: "1px solid rgba(0,0,0,0.08)", background: "transparent", color: "var(--accent)", fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.01em" }}
         >
           Open Memory
         </button>
@@ -1360,7 +1434,7 @@ export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: {
         <div style={title}>Edge</div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
           <div style={{ width: 8, height: 3, borderRadius: 1, background: color, flexShrink: 0 }} />
-          <span style={{ color, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>{label}</span>
+          <span style={{ color, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.01em", fontWeight: 500 }}>{label}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 5 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><span style={dim}>from</span><span style={{ ...val, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{src?.name || "?"}</span></div>
@@ -1380,7 +1454,7 @@ export function PinnedCardBody({ content, onOpenMemory, onOpenEdge, onClose }: {
               });
             }
           }}
-          style={{ marginTop: 6, width: "100%", padding: "3px 0", borderRadius: 4, border: "1px solid rgba(0,0,0,0.08)", background: "transparent", color: "var(--accent)", fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.05em" }}
+          style={{ marginTop: 6, width: "100%", padding: "3px 0", borderRadius: 4, border: "1px solid rgba(0,0,0,0.08)", background: "transparent", color: "var(--accent)", fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.01em" }}
         >
           Open Path
         </button>

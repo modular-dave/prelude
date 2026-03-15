@@ -35,16 +35,16 @@ function MemoryItem({
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <TypeBadge type={memory.memory_type} />
-            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+            <span className="t-small" style={{ color: "var(--text-faint)" }}>
               {timeAgo(memory.created_at)}
             </span>
           </div>
-          <p className="mt-2 text-sm" style={{ color: "var(--text)" }}>{memory.summary}</p>
+          <p className="mt-2 t-small" style={{ color: "var(--text)" }}>{memory.summary}</p>
           <div className="mt-2 w-32">
             <ImportanceBar value={memory.importance} />
           </div>
         </div>
-        <div className="text-right text-[10px] space-y-0.5" style={{ color: "var(--text-faint)" }}>
+        <div className="text-right t-small space-y-0.5" style={{ color: "var(--text-faint)" }}>
           <div>decay: {Math.round((memory.decay_factor || 1) * 100)}%</div>
           <div>recalls: {memory.access_count || 0}</div>
           <div className="text-amber-500">
@@ -55,7 +55,7 @@ function MemoryItem({
 
       {expanded && (
         <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p className="t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {memory.content}
           </p>
           {memory.tags?.length > 0 && (
@@ -63,7 +63,7 @@ function MemoryItem({
               {memory.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-[3px] px-1.5 py-0.5 text-[10px]"
+                  className="rounded-[3px] px-1.5 py-0.5 t-small"
                   style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
                 >
                   {tag}
@@ -72,13 +72,13 @@ function MemoryItem({
             </div>
           )}
           {memory.emotional_valence !== undefined && (
-            <div className="mt-2 text-[10px]" style={{ color: "var(--text-faint)" }}>
+            <div className="mt-2 t-small" style={{ color: "var(--text-faint)" }}>
               valence: {memory.emotional_valence > 0 ? "+" : ""}
               {memory.emotional_valence.toFixed(2)}
             </div>
           )}
           {/* Hebbian reinforcement info */}
-          <div className="mt-2 rounded-[3px] px-2 py-1.5 text-[10px]" style={{ background: "var(--surface-dimmer)" }}>
+          <div className="mt-2 rounded-[3px] px-2 py-1.5 t-small" style={{ background: "var(--surface-dimmer)" }}>
             <span style={{ color: "var(--text-faint)" }}>Hebbian: </span>
             <span className="text-amber-500">
               {memory.access_count || 0} recalls
@@ -108,7 +108,7 @@ export function MemoryTimeline() {
 
   if (sorted.length === 0) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm" style={{ color: "var(--text-faint)" }}>
+      <div className="flex h-40 items-center justify-center t-small" style={{ color: "var(--text-faint)" }}>
         No memories yet. Start chatting to create some.
       </div>
     );

@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
       messages: row.messages,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      source: row.source ?? "internal",
     }));
 
     return NextResponse.json(conversations);
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, title, summary, messages, createdAt, updatedAt } = body;
+    const { id, title, summary, messages, createdAt, updatedAt, source } = body;
 
     const row: Record<string, unknown> = {
       title: title ?? "New conversation",
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
     if (summary) row.summary = summary;
     if (createdAt) row.created_at = createdAt;
     if (updatedAt) row.updated_at = updatedAt;
+    if (source) row.source = source;
 
     const { data, error } = await supabase
       .from("conversations")
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
       messages: data.messages,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
+      source: data.source ?? "internal",
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
