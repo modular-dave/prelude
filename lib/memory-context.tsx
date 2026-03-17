@@ -125,7 +125,14 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
       ]);
       const memData = await memRes.json();
       const statsData = await statsRes.json();
-      setMemories(Array.isArray(memData) ? memData : []);
+      const nextMems = Array.isArray(memData) ? memData : [];
+      // Only update if content actually changed — prevents downstream re-renders
+      setMemories(prev => {
+        if (prev.length !== nextMems.length) return nextMems;
+        const prevFp = prev.map((m: Memory) => `${m.id}:${m.access_count ?? 0}`).join(",");
+        const nextFp = nextMems.map((m: Memory) => `${m.id}:${m.access_count ?? 0}`).join(",");
+        return prevFp === nextFp ? prev : nextMems;
+      });
       setStats(statsData);
     } catch {
       // ignore
@@ -134,36 +141,64 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ── Knowledge graph refresh (every 30s) ───────────────────
+  // ── Knowledge graph refresh (every 30s) — bundled single-request ───
+
+  const graphInitializedRef = useRef(false);
+
+  // Hydrate from sessionStorage on mount for instant first paint
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem("prelude:graph-bundle");
+      if (cached) {
+        const { graph, stats: gs } = JSON.parse(cached);
+        if (graph?.nodes) setKnowledgeGraph(graph);
+        if (gs?.entityCount !== undefined) setGraphStats(gs);
+        graphInitializedRef.current = true;
+      }
+    } catch { /* ignore corrupt cache */ }
+  }, []);
+
+  const mergeGraphLinks = useCallback((kgData: any, linksData: any[]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (kgData.nodes && Array.isArray(linksData)) {
+      const memoryLinkEdges = linksData.map((l: { source_id: number; target_id: number; link_type: string; strength: number }) => ({
+        source: `m_${l.source_id}`,
+        target: `m_${l.target_id}`,
+        type: l.link_type,
+        weight: l.strength,
+      }));
+      kgData.edges = [...(kgData.edges || []), ...memoryLinkEdges];
+    }
+    return kgData;
+  }, []);
 
   const refreshGraph = useCallback(async () => {
     try {
-      const [kgRes, gsRes, linksRes] = await Promise.all([
-        fetch("/api/graph?includeMemories=true&limit=10000"),
-        fetch("/api/graph/stats"),
-        fetch("/api/graph/links?limit=10000"),
-      ]);
-      const kgData = await kgRes.json();
-      const gsData = await gsRes.json();
-      const linksData = await linksRes.json();
+      const res = await fetch("/api/graph?includeMemories=true&bundle=true");
+      const bundle = await res.json();
+      const { graph: kgData, stats: gsData, links: linksData } = bundle;
 
-      // Merge memory_links as edges into the knowledge graph
-      if (kgData.nodes && Array.isArray(linksData)) {
-        const memoryLinkEdges = linksData.map((l: { source_id: number; target_id: number; link_type: string; strength: number }) => ({
-          source: `m_${l.source_id}`,
-          target: `m_${l.target_id}`,
-          type: l.link_type,
-          weight: l.strength,
-        }));
-        kgData.edges = [...(kgData.edges || []), ...memoryLinkEdges];
+      // Merge memory_links as edges
+      mergeGraphLinks(kgData, linksData);
+
+      if (kgData.nodes) {
+        // Only update if content changed — prevents downstream re-renders
+        setKnowledgeGraph(prev => {
+          const prevFp = `${prev.nodes.length}|${prev.edges.length}`;
+          const nextFp = `${kgData.nodes.length}|${kgData.edges?.length ?? 0}`;
+          if (prevFp !== nextFp) return kgData;
+          const prevNodeIds = prev.nodes.map((n: { id: string }) => n.id).sort().join(",");
+          const nextNodeIds = kgData.nodes.map((n: { id: string }) => n.id).sort().join(",");
+          return prevNodeIds === nextNodeIds ? prev : kgData;
+        });
       }
+      if (gsData?.entityCount !== undefined) setGraphStats(gsData);
 
-      if (kgData.nodes) setKnowledgeGraph(kgData);
-      if (gsData.entityCount !== undefined) setGraphStats(gsData);
+      // Cache for instant hydration on next page load
+      try { sessionStorage.setItem("prelude:graph-bundle", JSON.stringify({ graph: kgData, stats: gsData })); } catch { /* quota */ }
     } catch {
       // ignore
     }
-  }, []);
+  }, [mergeGraphLinks]);
 
   // ── Consolidated refresh ──────────────────────────────────
 

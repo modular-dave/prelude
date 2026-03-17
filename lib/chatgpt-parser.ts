@@ -40,7 +40,7 @@ function extractThread(
   let nodeId: string | null = currentNode;
 
   while (nodeId) {
-    const node = mapping[nodeId];
+    const node: any = mapping[nodeId]; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!node) break;
 
     if (
@@ -49,7 +49,7 @@ function extractThread(
       node.message.content?.parts
     ) {
       const text = node.message.content.parts
-        .filter((p): p is string => typeof p === "string" && p.length > 0)
+        .filter((p: any): p is string => typeof p === "string" && p.length > 0) // eslint-disable-line @typescript-eslint/no-explicit-any
         .join("\n");
 
       if (text.trim()) {

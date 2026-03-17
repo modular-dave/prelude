@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Seeds 100 conversations via the Prelude chat API.
+ * Seeds 50 conversations via the Prelude chat API.
  * Each conversation is a single user message + assistant response.
- * Memories are created server-side (user msg) and via POST (assistant response).
+ * Runs an introspection (reflect) cycle every 5 chats and a dream cycle every 10.
  * Outputs a JSON file to inject into localStorage.
  */
 
-const BASE = process.env.API_URL || "http://localhost:58165";
+const BASE = process.env.API_URL || "http://localhost:3000";
 const CHAT_API = `${BASE}/api/chat`;
 const MEM_API = `${BASE}/api/memories`;
+const REFLECT_API = `${BASE}/api/reflect`;
+const DREAM_API = `${BASE}/api/dream`;
 
 const TOPICS = [
   "What's the difference between TCP and UDP?",
@@ -61,56 +63,6 @@ const TOPICS = [
   "Explain container orchestration basics",
   "How does git rebase differ from merge?",
   "What is the circuit breaker pattern?",
-  "Explain how service workers cache assets",
-  "How do column-oriented databases work?",
-  "What is the mediator pattern?",
-  "Explain zero-downtime deployment strategies",
-  "How does the Raft consensus algorithm work?",
-  "What are monorepo tools like Turborepo?",
-  "Explain functional reactive programming",
-  "How do browser extensions communicate internally?",
-  "What is domain-driven design?",
-  "Explain how map-reduce works",
-  "How does prefetching improve web performance?",
-  "What is the command pattern?",
-  "Explain microservice communication patterns",
-  "How do reactive streams work?",
-  "What are compile-time guarantees in Rust?",
-  "Explain tree shaking in bundlers",
-  "How does connection pooling work?",
-  "What is property-based testing?",
-  "Explain the saga pattern for distributed transactions",
-  "How do CSS container queries work?",
-  "What is the hexagonal architecture?",
-  "Explain how load balancers distribute traffic",
-  "How does copy-on-write work?",
-  "What are phantom types?",
-  "Explain the flyweight pattern",
-  "How does browser cookie management work?",
-  "What is the strangler fig pattern for migrations?",
-  "Explain how async iterators work in JS",
-  "How do Kubernetes pods communicate?",
-  "What is data locality and why does it matter?",
-  "Explain the concept of backpressure",
-  "How does image lazy loading work?",
-  "What are ADTs in functional programming?",
-  "Explain the outbox pattern",
-  "How do skip lists work?",
-  "What is blue-green deployment?",
-  "Explain how Promises chain internally",
-  "How does request coalescing work?",
-  "What is structural typing vs nominal typing?",
-  "Explain how rollback works in databases",
-  "How do compression algorithms like gzip work?",
-  "What is the repository pattern?",
-  "Explain resource hints like preconnect and prefetch",
-  "How does optimistic locking work?",
-  "What are coroutines?",
-  "Explain the concept of idempotency in APIs",
-  "How do CSS transitions vs animations differ?",
-  "What is a write-ahead log?",
-  "Explain how memory-mapped files work",
-  "How do GraphQL subscriptions work?",
 ];
 
 async function sendMessage(content, conversationId) {
@@ -160,12 +112,57 @@ async function storeAssistantMemory(content, conversationId) {
   });
 }
 
+async function runReflect() {
+  console.log("\n  🔍 Running introspection (reflect) cycle...");
+  try {
+    const res = await fetch(REFLECT_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log(`  ✅ Reflect complete: ${data.journal ? "journal created" : "no output"}`);
+    } else {
+      const text = await res.text();
+      console.log(`  ⚠️  Reflect returned ${res.status}: ${text.slice(0, 120)}`);
+    }
+  } catch (err) {
+    console.log(`  ❌ Reflect error: ${err.message}`);
+  }
+}
+
+async function runDream() {
+  console.log("\n  💭 Running dream cycle...");
+  try {
+    const res = await fetch(DREAM_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log(`  ✅ Dream complete: ${data.stats?.totalPhases || 0} phases, ${data.stats?.totalNewMemories || 0} new memories`);
+      if (data.emergence) {
+        console.log(`  💡 Emergence: ${data.emergence.slice(0, 100)}...`);
+      }
+    } else {
+      const text = await res.text();
+      console.log(`  ⚠️  Dream returned ${res.status}: ${text.slice(0, 120)}`);
+    }
+  } catch (err) {
+    console.log(`  ❌ Dream error: ${err.message}`);
+  }
+}
+
 async function main() {
-  const CONCURRENCY = 5;
+  const CONCURRENCY = 3;
   const conversations = [];
   const baseTime = new Date("2026-03-01T08:00:00Z");
+  let chatsDone = 0;
 
-  console.log(`Seeding ${TOPICS.length} conversations (${CONCURRENCY} concurrent)...\n`);
+  console.log(`Seeding ${TOPICS.length} conversations (${CONCURRENCY} concurrent)...`);
+  console.log(`  Reflect every 5 chats, Dream every 10 chats\n`);
 
   for (let batch = 0; batch < TOPICS.length; batch += CONCURRENCY) {
     const slice = TOPICS.slice(batch, batch + CONCURRENCY);
@@ -195,13 +192,24 @@ async function main() {
 
     const results = await Promise.all(promises);
     conversations.push(...results);
+    chatsDone += results.length;
+
+    // Run introspection every 5 chats
+    if (chatsDone % 5 === 0 && chatsDone > 0) {
+      await runReflect();
+    }
+
+    // Run dream cycle every 10 chats
+    if (chatsDone % 10 === 0 && chatsDone > 0) {
+      await runDream();
+    }
   }
 
   conversations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const { writeFileSync } = await import("fs");
-  writeFileSync("/tmp/prelude_100.json", JSON.stringify(conversations, null, 2));
-  console.log(`\nDone! ${conversations.length} conversations written to /tmp/prelude_100.json`);
+  writeFileSync("/tmp/prelude_50.json", JSON.stringify(conversations, null, 2));
+  console.log(`\nDone! ${conversations.length} conversations written to /tmp/prelude_50.json`);
   console.log("Inject into localStorage with:");
   console.log('  localStorage.setItem("prelude:conversations", JSON.stringify(data))');
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ChevronDown, ChevronUp, Loader2, Search, Send, MessageSquare, Bot, User } from "lucide-react";
+import { X, Loader2, Search, Send, MessageSquare, Bot, User } from "lucide-react";
 import { useMemory, type MemoryLink } from "@/lib/memory-context";
 import {
   TYPE_COLORS,
@@ -25,10 +25,12 @@ export function MemoryNodeDetail({
   memory,
   onClose,
   onNavigate,
+  traceData: externalTraceData,
 }: {
   memory: Memory;
   onClose: () => void;
   onNavigate?: (memoryId: number) => void;
+  traceData?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }) {
   const { memories, fetchMemoryLinks } = useMemory();
 
@@ -39,11 +41,33 @@ export function MemoryNodeDetail({
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [loadingEntities, setLoadingEntities] = useState(true);
 
-  // Trace state
-  const [traceOpen, setTraceOpen] = useState(false);
-  const [traceData, setTraceData] = useState<TraceData | null>(null);
+  // Trace state — use external data from brain-view when available
+  const [internalTraceData, setInternalTraceData] = useState<TraceData | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | null>(null);
+
+  // Prefer external trace data (already fetched by brain-view for path controls)
+  const traceData = externalTraceData ?? internalTraceData;
+
+  // Auto-fetch trace data when no external data is provided
+  useEffect(() => {
+    if (externalTraceData) return; // brain-view provides it
+    if (internalTraceData) return; // already fetched
+    let cancelled = false;
+    setTraceLoading(true);
+    setTraceError(null);
+    fetch(`/api/trace?memoryId=${memory.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          if (data.error) setTraceError(data.error);
+          else setInternalTraceData(data);
+        }
+      })
+      .catch((err) => { if (!cancelled) setTraceError(String(err)); })
+      .finally(() => { if (!cancelled) setTraceLoading(false); });
+    return () => { cancelled = true; };
+  }, [memory.id, externalTraceData, internalTraceData]);
 
   // Conversation pair state
   const [convPair, setConvPair] = useState<Memory[]>([]);
@@ -53,30 +77,6 @@ export function MemoryNodeDetail({
   const [explainQuestion, setExplainQuestion] = useState("");
   const [explainAnswer, setExplainAnswer] = useState<string | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
-
-  const fetchTrace = async () => {
-    if (traceData) {
-      // Already fetched, just toggle visibility
-      setTraceOpen((v) => !v);
-      return;
-    }
-    setTraceOpen(true);
-    setTraceLoading(true);
-    setTraceError(null);
-    try {
-      const res = await fetch(`/api/trace?memoryId=${memory.id}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setTraceError(data.error || "Failed to fetch trace");
-      } else {
-        setTraceData(data);
-      }
-    } catch (err) {
-      setTraceError(String(err));
-    } finally {
-      setTraceLoading(false);
-    }
-  };
 
   const submitExplain = async () => {
     if (!explainQuestion.trim()) return;
@@ -642,22 +642,12 @@ export function MemoryNodeDetail({
           </div>
         </div>
 
-        {/* Trace / Provenance */}
+        {/* Trace / Provenance — always visible, auto-loads */}
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
-          <button
-            onClick={fetchTrace}
-            className="flex w-full items-center justify-between text-left"
-          >
-            <h4 className="flex items-center gap-1.5 t-label text-cyan-500">
-              <Search className="h-3 w-3" />
-              Memory Trace / Provenance
-            </h4>
-            {traceOpen ? (
-              <ChevronUp className="h-3.5 w-3.5" style={{ color: "var(--text-faint)" }} />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--text-faint)" }} />
-            )}
-          </button>
+          <h4 className="flex items-center gap-1.5 t-label text-cyan-500">
+            <Search className="h-3 w-3" />
+            Memory Trace / Provenance
+          </h4>
 
           {traceLoading && (
             <div className="mt-2 flex items-center gap-1.5 t-small" style={{ color: "var(--text-faint)" }}>
@@ -670,7 +660,7 @@ export function MemoryNodeDetail({
             <p className="mt-2 t-small text-red-500">{traceError}</p>
           )}
 
-          {traceOpen && traceData && (
+          {traceData && (
             <div className="mt-3 space-y-3">
               {/* Time span */}
               {traceData.timeSpan && (
@@ -689,7 +679,7 @@ export function MemoryNodeDetail({
                     Link Types
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {traceData.linkTypes?.map((lt) => (
+                    {traceData.linkTypes?.map((lt: string) => (
                       <span
                         key={lt}
                         className="rounded-[3px] px-1.5 py-0.5 t-tiny"
@@ -712,7 +702,7 @@ export function MemoryNodeDetail({
                     Ancestors ({(traceData.ancestors?.length ?? 0)})
                   </p>
                   <div className="mt-1 space-y-1">
-                    {traceData.ancestors?.map((a) => (
+                    {traceData.ancestors?.map((a: any) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
                       <div
                         key={a.id}
                         className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
@@ -742,7 +732,7 @@ export function MemoryNodeDetail({
                     Descendants ({(traceData.descendants?.length ?? 0)})
                   </p>
                   <div className="mt-1 space-y-1">
-                    {traceData.descendants?.map((d) => (
+                    {traceData.descendants?.map((d: any) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
                       <div
                         key={d.id}
                         className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
@@ -772,7 +762,7 @@ export function MemoryNodeDetail({
                     Related ({(traceData.related?.length ?? 0)})
                   </p>
                   <div className="mt-1 space-y-1">
-                    {traceData.related?.map((r) => (
+                    {traceData.related?.map((r: any) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
                       <div
                         key={r.id}
                         className="flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 cursor-pointer hover:scale-[1.01] transition-all duration-150"
@@ -804,7 +794,7 @@ export function MemoryNodeDetail({
                     Traced Entities ({(traceData.entities?.length ?? 0)})
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {traceData.entities?.map((e, i) => (
+                    {traceData.entities?.map((e: any, i: number) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
                       <span
                         key={`${e.name}-${i}`}
                         className="rounded-[3px] px-1.5 py-0.5 t-tiny"

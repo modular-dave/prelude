@@ -9,7 +9,6 @@ import { Logo } from "@/components/ui/logo";
 type Route = "chat" | "brain" | "dreams" | "journal" | "history" | "stats";
 
 const NAV_ITEMS: { label: string; href: string; route: Route }[] = [
-  { label: "Chat", href: "/chat/new", route: "chat" },
   { label: "Journal", href: "/journal", route: "journal" },
   { label: "Dreams", href: "/dreams", route: "dreams" },
   { label: "Brain", href: "/brain", route: "brain" },
@@ -23,7 +22,7 @@ export function FloatNav({ route }: { route: Route }) {
       <div className="pointer-events-none absolute inset-0 z-40">
         {/* Top left: Logo */}
         <div className="absolute top-5 left-5 pointer-events-auto">
-          <a href="/chat/new" style={{ textDecoration: "none" }}>
+          <a href="/brain" style={{ textDecoration: "none" }}>
             <Logo />
           </a>
         </div>
