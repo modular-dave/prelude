@@ -9,7 +9,7 @@ import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType, type FilterBag } from "@/lib/types";
 import { ALL_MEMORY_TYPES } from "@/lib/retrieval-settings";
-import { Target, Link2, Layers, SlidersHorizontal, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, Info, Send, PenSquare, MessageSquare, Clock, Trash2 } from "lucide-react";
+import { Target, Link2, Layers, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, Info, Send, MessageSquare, Clock, Trash2 } from "lucide-react";
 import {
   loadConversations,
   saveConversation,
@@ -76,19 +76,17 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [enabledDreamSources, setEnabledDreamSources] = useState<string[]>([...DREAM_SOURCES]);
   const [selectedDream, setSelectedDream] = useState<number | null>(null); // null = all
   const [centerMode, setCenterMode] = useState<CenterMode>("combined");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dreamSessions, setDreamSessions] = useState<DreamSession[]>([]);
   const [timelineCutoff, setTimelineCutoff] = useState(Infinity); // Infinity = "now", no cutoff
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [statusCardCollapsed, setStatusCardCollapsed] = useState(false);
-  const [vizMode, setVizMode] = useState<"hero" | "cluster" | "zero">("hero");
+  const [vizMode, setVizMode] = useState<"hero" | "cluster">("hero");
   const [edgeFocus, setEdgeFocus] = useState(false);
   const [showClock, setShowClock] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatBtnsOpen, setChatBtnsOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatStreaming, setChatStreaming] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -635,64 +633,131 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     <div ref={containerRef} className="relative flex h-full flex-row overflow-hidden" style={{ background: "var(--bg)" }}>
       {/* Top bar: filter (left) · Now (center) · status (right) */}
       <div className="absolute top-16 left-4 right-4 z-30 flex items-start justify-between pointer-events-none">
-        {/* Left buttons */}
-        <div className="flex flex-col gap-1.5 pointer-events-auto">
-          {/* Row 1: filter + details */}
-          <div className="flex flex-row gap-1.5">
-            <button
-              onClick={() => { setFiltersOpen((v) => !v); if (!filtersOpen) { setDetailsOpen(false); setChatOpen(false); setHistoryOpen(false); } }}
-              className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-              style={{ color: filtersOpen ? "var(--accent)" : "var(--text-faint)" }}
-              title={filtersOpen ? "Hide filters" : "Show filters"}
-            >
-              <SlidersHorizontal className="h-3 w-3" />
+        {/* Left: filter card + details button */}
+        <div className="flex flex-col gap-1.5 pointer-events-auto select-none">
+          <div className="space-y-0.5">
+            <button onClick={() => toggleSection("filters")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--accent)" }}>
+              Filters {(collapsed.filters ?? false) ? "+" : "−"}
             </button>
-            {(selectedMemoryId || selectedEdge) && (
-              <button
-                onClick={() => { setDetailsOpen((v) => !v); if (!detailsOpen) { setFiltersOpen(false); setChatOpen(false); setHistoryOpen(false); } }}
-                className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-                style={{ color: detailsOpen ? "var(--accent)" : "var(--text-faint)" }}
-                title={detailsOpen ? "Hide details" : "See details"}
-              >
-                <Info className="h-3 w-3" />
+            {!(collapsed.filters ?? false) && (
+            <div className="flex flex-col gap-0.5">
+            {/* Viz — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("viz")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                viz {(collapsed.viz ?? true) ? "+" : "−"}
               </button>
+              {!(collapsed.viz ?? true) && (["hero", "cluster"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setVizMode(m)}
+                  className="font-mono transition active:scale-95 text-left pl-2"
+                  style={{ color: vizMode === m ? "var(--accent)" : "var(--text-faint)" }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            {/* Focus — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("focus")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                focus {(collapsed.focus ?? true) ? "+" : "−"}
+              </button>
+              {!(collapsed.focus ?? true) && (["memories", "edges"] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setEdgeFocus(m === "edges")}
+                  className="font-mono transition active:scale-95 text-left pl-2"
+                  style={{ color: (m === "edges") === edgeFocus ? "var(--accent)" : "var(--text-faint)" }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            {/* Mode — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("mode")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                mode {(collapsed.mode ?? true) ? "+" : "−"}
+              </button>
+              {!(collapsed.mode ?? true) && ([["combined", "combined"], ["reinforced", "reinforced"], ["retrieved", "retrieval"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setCenterMode(key)}
+                  className="font-mono transition active:scale-95 text-left pl-2"
+                  style={{ color: centerMode === key ? "var(--accent)" : "var(--text-faint)" }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Signals — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("signals")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                signals {(collapsed.signals ?? true) ? "+" : "−"}
+              </button>
+              {!(collapsed.signals ?? true) && ([["all", "all"], ["inputs", "external"], ["outputs", "internal"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setMemoryFilter(key)}
+                  className="font-mono transition active:scale-95 text-left pl-2"
+                  style={{ color: memoryFilter === key ? "var(--accent)" : "var(--text-faint)" }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Memory Types — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("types")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                types {(collapsed.types ?? true) ? "+" : "−"}
+              </button>
+              {!(collapsed.types ?? true) && ALL_MEMORY_TYPES.map((type) => {
+                const active = enabledTypes.includes(type);
+                const count = typeCounts[type] || 0;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => toggleType(type)}
+                    className="font-mono transition active:scale-95 text-left pl-2"
+                    style={{ color: active ? TYPE_COLORS[type] : "var(--text-faint)" }}
+                  >
+                    {type.replace("_", " ")} {count}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Edges — collapsible */}
+            <div className="flex flex-col gap-0.5">
+              <button onClick={() => toggleSection("edges")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                edges {(collapsed.edges ?? true) ? "+" : "−"}
+              </button>
+              {!(collapsed.edges ?? true) && Object.entries(LINK_TYPE_COLORS).map(([type, color]) => {
+                const active = enabledLinkTypes.includes(type);
+                return (
+                  <button
+                    key={type}
+                    onClick={() => toggleLinkType(type)}
+                    className="font-mono transition active:scale-95 text-left pl-2"
+                    style={{ color: active ? color : "var(--text-faint)" }}
+                  >
+                    {type}
+                  </button>
+                );
+              })}
+            </div>
+            </div>
             )}
           </div>
-          {/* Row 2: chat + sub-buttons */}
-          <div className="flex flex-row gap-1.5">
+          {/* Details button — only when something is selected */}
+          {(selectedMemoryId || selectedEdge) && (
             <button
-              onClick={() => {
-                const opening = !chatBtnsOpen;
-                setChatBtnsOpen(opening);
-                if (!opening) setChatOpen(false);
-              }}
+              onClick={() => { setDetailsOpen((v) => !v); if (!detailsOpen) { setChatOpen(false); setHistoryOpen(false); } }}
               className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-              style={{ color: chatOpen || chatBtnsOpen ? "var(--accent)" : "var(--text-faint)" }}
-              title="Brain chat"
+              style={{ color: detailsOpen ? "var(--accent)" : "var(--text-faint)" }}
+              title={detailsOpen ? "Hide details" : "See details"}
             >
-              <MessageSquare className="h-3 w-3" />
+              <Info className="h-3 w-3" />
             </button>
-            {chatBtnsOpen && (
-              <>
-                <button
-                  onClick={() => { handleNewBrainChat(); setChatOpen(true); setFiltersOpen(false); setDetailsOpen(false); setHistoryOpen(false); }}
-                  className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-                  style={{ color: "var(--text-faint)" }}
-                  title="New chat"
-                >
-                  <PenSquare className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={() => { setHistoryOpen((v) => !v); setChatOpen(false); setFiltersOpen(false); setDetailsOpen(false); }}
-                  className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-                  style={{ color: historyOpen ? "var(--accent)" : "var(--text-faint)" }}
-                  title="Chat history"
-                >
-                  <Clock className="h-3 w-3" />
-                </button>
-              </>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Now / timeline date — true center, click to toggle clock */}
@@ -736,32 +801,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                 </span>
               </div>
               <div className="mt-1 space-y-0.5">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>viz</span>
-                    {(["hero", "cluster", "zero"] as const).map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setVizMode(m)}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: vizMode === m ? "var(--accent)" : "var(--text-faint)" }}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>focus</span>
-                    {(["memories", "edges"] as const).map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setEdgeFocus(m === "edges")}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: (m === "edges") === edgeFocus ? "var(--accent)" : "var(--text-faint)" }}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
                   <div className="flex items-center gap-1.5 justify-end">
                     <span className="font-mono" style={{ color: "var(--text-faint)" }}>model</span>
                     <span className="font-mono" style={{ color: modelActive ? "var(--accent)" : "var(--text-faint)" }}>
@@ -950,170 +989,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         </div>
       )}
 
-      {/* Left side panel: filters only — overlay, doesn't affect graph width */}
-      {filtersOpen && (
-        <div className="absolute z-30 overflow-y-auto px-4 pb-4 pt-12 space-y-3" style={{ top: 64, left: 0, bottom: 0, width: 200, background: "color-mix(in srgb, var(--bg) 85%, transparent)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRight: "1px solid var(--border)" }}>
-            <div className="space-y-1">
-              {/* Mode section */}
-              <FilterSection title="Mode" sectionKey="mode" collapsed={collapsed} onToggle={toggleSection}>
-                {([["combined", "Combined", Layers], ["reinforced", "Reinforcement", Link2], ["retrieved", "Retrieval", Target]] as const).map(([key, label, Icon]) => (
-                  <button
-                    key={key}
-                    onClick={() => setCenterMode(key)}
-                    className="flex items-center gap-1.5 text-left transition-all duration-200"
-                    style={{ opacity: centerMode === key ? 1 : 0.3 }}
-                  >
-                    <Icon className="h-2.5 w-2.5 shrink-0" style={{ color: centerMode === key ? "var(--accent)" : "var(--text-faint)" }} />
-                    <span className="t-tiny" style={{ color: centerMode === key ? "var(--text-muted)" : "var(--text-faint)" }}>
-                      {label}
-                    </span>
-                  </button>
-                ))}
-              </FilterSection>
-
-              {/* Signals section */}
-              <FilterSection title="Signals" sectionKey="signals" collapsed={collapsed} onToggle={toggleSection}>
-                {([["all", "All"], ["inputs", "External"], ["outputs", "Internal"]] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setMemoryFilter(key)}
-                    className="flex items-center gap-1.5 text-left transition-all duration-200"
-                    style={{ opacity: memoryFilter === key ? 1 : 0.3 }}
-                  >
-                    <div
-                      className="h-[6px] w-[6px] rounded-sm shrink-0"
-                      style={{ backgroundColor: memoryFilter === key ? "var(--accent)" : "var(--text-faint)" }}
-                    />
-                    <span className="t-tiny" style={{ color: memoryFilter === key ? "var(--text-muted)" : "var(--text-faint)" }}>
-                      {label}
-                    </span>
-                  </button>
-                ))}
-              </FilterSection>
-
-              {/* Memory Types section */}
-              <FilterSection title="Memory Types" sectionKey="nodes" collapsed={collapsed} onToggle={toggleSection}>
-                {ALL_MEMORY_TYPES.map((type) => {
-                  const active = enabledTypes.includes(type);
-                  const color = TYPE_COLORS[type];
-                  const count = typeCounts[type] || 0;
-                  return (
-                    <button
-                      key={type}
-                      onClick={() => toggleType(type)}
-                      className="flex items-center gap-1.5 text-left transition-all duration-200"
-                      style={{ opacity: active ? 1 : 0.3 }}
-                    >
-                      <div
-                        className="h-[6px] w-[6px] rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
-                        {TYPE_LABELS[type]} {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </FilterSection>
-
-              {/* Dream — parent section wrapping sub-sections */}
-              <FilterSection title="Dream" sectionKey="dream" collapsed={collapsed} onToggle={toggleSection} icon={<Moon className="h-2 w-2" />}>
-                <div className="space-y-1 pl-1">
-                  {/* Dream # sub-section */}
-                  <FilterSection title={selectedDream !== null ? `#${selectedDream}` : `Cycle (${dreamSessions.length})`} sectionKey="dreamCycle" collapsed={collapsed} onToggle={toggleSection}>
-                    <div className="flex flex-col gap-0.5 max-h-[120px] overflow-y-auto">
-                      <button
-                        onClick={() => setSelectedDream(null)}
-                        className="flex items-center gap-1.5 text-left t-tiny transition-all duration-200"
-                        style={{ color: selectedDream === null ? "var(--text-muted)" : "var(--text-faint)" }}
-                      >
-                        <Check className="h-2.5 w-2.5 shrink-0" style={{ opacity: selectedDream === null ? 1 : 0, color: "var(--accent)" }} />
-                        All
-                      </button>
-                      {dreamSessions.map((s) => (
-                        <button
-                          key={s.index}
-                          onClick={() => setSelectedDream(s.index === selectedDream ? null : s.index)}
-                          className="flex items-center gap-1.5 text-left t-tiny transition-all duration-200"
-                          style={{ color: selectedDream === s.index ? "var(--text-muted)" : "var(--text-faint)" }}
-                        >
-                          <Check className="h-2.5 w-2.5 shrink-0" style={{ opacity: selectedDream === s.index ? 1 : 0, color: "var(--accent)" }} />
-                          #{s.index}
-                        </button>
-                      ))}
-                    </div>
-                  </FilterSection>
-
-                  {/* Dream Source sub-section */}
-                  <FilterSection title="Source" sectionKey="dreamSource" collapsed={collapsed} onToggle={toggleSection}>
-                    {DREAM_SOURCES.map((src) => {
-                      const active = enabledDreamSources.includes(src);
-                      const color = DREAM_SOURCE_COLORS[src] || "var(--text-faint)";
-                      const count = dreamSourceCounts[src] || 0;
-                      return (
-                        <button
-                          key={src}
-                          onClick={() => toggleDreamSource(src)}
-                          className="flex items-center gap-1.5 text-left transition-all duration-200"
-                          style={{ opacity: active ? 1 : 0.3 }}
-                        >
-                          <div
-                            className="h-[6px] w-[6px] rounded-full shrink-0"
-                            style={{ backgroundColor: color }}
-                          />
-                          <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
-                            {DREAM_SOURCE_LABELS[src] || src} {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </FilterSection>
-
-                  {/* Dream Created sub-section */}
-                  <FilterSection title="Created" sectionKey="dreamCreated" collapsed={collapsed} onToggle={toggleSection}>
-                    {selectedDream !== null && dreamSessions.find((s) => s.index === selectedDream) ? (
-                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
-                        {new Date(dreamSessions.find((s) => s.index === selectedDream)!.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                      </span>
-                    ) : dreamSessions.length > 0 ? (
-                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
-                        {new Date(dreamSessions[0].timestamp).toLocaleString(undefined, { month: "short", day: "numeric" })}
-                        {" – "}
-                        {new Date(dreamSessions[dreamSessions.length - 1].timestamp).toLocaleString(undefined, { month: "short", day: "numeric" })}
-                        {` · ${dreamSessions.length} sessions`}
-                      </span>
-                    ) : (
-                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>No dream data</span>
-                    )}
-                  </FilterSection>
-                </div>
-              </FilterSection>
-
-              {/* Edges section */}
-              <FilterSection title="Edges" sectionKey="edges" collapsed={collapsed} onToggle={toggleSection}>
-                {Object.entries(LINK_TYPE_COLORS).map(([type, color]) => {
-                  const active = enabledLinkTypes.includes(type);
-                  return (
-                    <button
-                      key={type}
-                      onClick={() => toggleLinkType(type)}
-                      className="flex items-center gap-1.5 text-left transition-all duration-200"
-                      style={{ opacity: active ? 1 : 0.3 }}
-                    >
-                      <div
-                        className="h-[1.5px] w-[8px] shrink-0 rounded-full"
-                        style={{ backgroundColor: color }}
-                      />
-                      <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
-                        {LINK_TYPE_LABELS[type] || type}
-                      </span>
-                    </button>
-                  );
-                })}
-              </FilterSection>
-            </div>
-        </div>
-      )}
 
       {/* Left side panel: details */}
       {detailsOpen && (selectedMemory || selectedEdge) && (
