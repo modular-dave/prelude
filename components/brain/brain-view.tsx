@@ -7,7 +7,7 @@ import { MemoryNodeDetail } from "@/components/brain/memory-node-detail";
 import { EdgePathDetail } from "@/components/brain/edge-path-detail";
 import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
-import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType } from "@/lib/types";
+import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType, type FilterBag } from "@/lib/types";
 import { ALL_MEMORY_TYPES } from "@/lib/retrieval-settings";
 import { Target, Link2, Layers, SlidersHorizontal, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, Info, Send, PenSquare, MessageSquare, Clock, Trash2 } from "lucide-react";
 import {
@@ -24,6 +24,7 @@ import type { Conversation, ChatMessage } from "@/lib/chat-store";
 
 type MemoryFilter = "all" | "inputs" | "outputs";
 type CenterMode = "combined" | "reinforced" | "retrieved";
+
 
 const DREAM_SOURCE_LABELS: Record<string, string> = {
   consolidation: "Consolidation",
@@ -71,6 +72,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [highlightedLinks, setHighlightedLinks] = useState<Set<string> | null>(null);
   const [memoryFilter, setMemoryFilter] = useState<MemoryFilter>("all");
   const [enabledTypes, setEnabledTypes] = useState<MemoryType[]>([...ALL_MEMORY_TYPES]);
+  const [enabledLinkTypes, setEnabledLinkTypes] = useState<string[]>(Object.keys(LINK_TYPE_COLORS));
   const [enabledDreamSources, setEnabledDreamSources] = useState<string[]>([...DREAM_SOURCES]);
   const [selectedDream, setSelectedDream] = useState<number | null>(null); // null = all
   const [centerMode, setCenterMode] = useState<CenterMode>("combined");
@@ -106,6 +108,34 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const neuralGraphRef = useRef<NeuralGraphHandle>(null);
   const graphSize = useContainerSize(graphContainerRef);
+
+  // ── Filter bag: all filter values in a stable ref, read by NeuralGraph tick loop ──
+  const visibleMemoryIds = useMemo(() => {
+    const hasMetaFilter = memoryFilter !== "all";
+    const hasTypeFilter = enabledTypes.length < ALL_MEMORY_TYPES.length;
+    const hasTimeFilter = timelineCutoff !== Infinity;
+    if (!hasMetaFilter && !hasTypeFilter && !hasTimeFilter) return null;
+    return new Set(
+      memories
+        .filter((m) => {
+          if (hasTimeFilter && new Date(m.created_at).getTime() > timelineCutoff) return false;
+          if (!enabledTypes.includes(m.memory_type)) return false;
+          if (memoryFilter === "inputs" && !(m.tags || []).includes("user-message")) return false;
+          if (memoryFilter === "outputs" && !(m.tags || []).includes("assistant-response")) return false;
+          return true;
+        })
+        .map((m) => m.id)
+    );
+  }, [memories, memoryFilter, enabledTypes, timelineCutoff]);
+
+  const filterBagRef = useRef<FilterBag>({
+    memoryFilter, typeFilter: enabledTypes, centerMode, edgeFocus, linkTypeFilter: enabledLinkTypes,
+    timelineCutoff, visibleMemoryIds,
+  });
+  filterBagRef.current = {
+    memoryFilter, typeFilter: enabledTypes, centerMode, edgeFocus, linkTypeFilter: enabledLinkTypes,
+    timelineCutoff, visibleMemoryIds,
+  };
 
   // The memory ID to trace from — edge source or selected node
   const traceMemoryId = selectedEdge
@@ -362,6 +392,16 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   const toggleType = useCallback((type: MemoryType) => {
     setEnabledTypes((prev) => {
+      if (prev.includes(type)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((t) => t !== type);
+      }
+      return [...prev, type];
+    });
+  }, []);
+
+  const toggleLinkType = useCallback((type: string) => {
+    setEnabledLinkTypes((prev) => {
       if (prev.includes(type)) {
         if (prev.length <= 1) return prev;
         return prev.filter((t) => t !== type);
@@ -814,7 +854,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
           style={{
             bottom: 80,
             left: (() => {
-              const panelPx = detailsOpen && (selectedMemoryId || selectedEdge) ? 280 : filtersOpen ? 200 : 0;
+              const panelPx = detailsOpen && (selectedMemoryId || selectedEdge) ? 280 : 0;
               return `${panelPx + 16}px`;
             })(),
             transition: "left 0.3s ease",
@@ -910,9 +950,9 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         </div>
       )}
 
-      {/* Left side panel: filters only */}
+      {/* Left side panel: filters only — overlay, doesn't affect graph width */}
       {filtersOpen && (
-        <div className="w-[200px] relative z-10 shrink-0 overflow-y-auto px-4 pb-4 pt-12 space-y-3 transition-all duration-300" style={{ borderRight: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
+        <div className="absolute z-30 overflow-y-auto px-4 pb-4 pt-12 space-y-3" style={{ top: 64, left: 0, bottom: 0, width: 200, background: "color-mix(in srgb, var(--bg) 85%, transparent)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderRight: "1px solid var(--border)" }}>
             <div className="space-y-1">
               {/* Mode section */}
               <FilterSection title="Mode" sectionKey="mode" collapsed={collapsed} onToggle={toggleSection}>
@@ -1051,17 +1091,25 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
               {/* Edges section */}
               <FilterSection title="Edges" sectionKey="edges" collapsed={collapsed} onToggle={toggleSection}>
-                {Object.entries(LINK_TYPE_COLORS).map(([type, color]) => (
-                  <div key={type} className="flex items-center gap-1.5">
-                    <div
-                      className="h-[1.5px] w-[8px] shrink-0 rounded-full"
-                      style={{ backgroundColor: color }}
-                    />
-                    <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
-                      {LINK_TYPE_LABELS[type] || type}
-                    </span>
-                  </div>
-                ))}
+                {Object.entries(LINK_TYPE_COLORS).map(([type, color]) => {
+                  const active = enabledLinkTypes.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => toggleLinkType(type)}
+                      className="flex items-center gap-1.5 text-left transition-all duration-200"
+                      style={{ opacity: active ? 1 : 0.3 }}
+                    >
+                      <div
+                        className="h-[1.5px] w-[8px] shrink-0 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <span className="t-tiny" style={{ color: active ? "var(--text-muted)" : "var(--text-faint)" }}>
+                        {LINK_TYPE_LABELS[type] || type}
+                      </span>
+                    </button>
+                  );
+                })}
               </FilterSection>
             </div>
         </div>
@@ -1252,21 +1300,15 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
               ref={neuralGraphRef}
               onNodeSelect={handleNodeSelect}
               selectedNodeId={selectedMemoryId}
-              memoryFilter={memoryFilter}
-              typeFilter={enabledTypes}
-              centerMode={centerMode}
+              filterBagRef={filterBagRef}
               vizMode={vizMode}
-              edgeFocus={edgeFocus}
               width={graphSize.width}
               height={graphSize.height}
               autoRotate={autoRotate}
               onAutoRotateChange={setAutoRotate}
-              timelineCutoff={timelineCutoff}
               hideEdges={timelineDragging}
               selectedEdge={selectedEdge ? { sourceId: selectedEdge.sourceId, targetId: selectedEdge.targetId } : null}
               highlightedPath={highlightedPath}
-              highlightedLinks={highlightedLinks}
-              traceNodeDepths={traceNodeDepths}
               onEdgeSelect={handleEdgeSelect}
               onReady={() => setGraphReady(true)}
               onBackgroundSelect={() => {
@@ -1295,7 +1337,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
             ...(() => {
-                  const panelPx = chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : filtersOpen ? "200px" : "0px";
+                  const panelPx = chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px";
                   return { bottom: 64, left: `calc(${panelPx} + (100% - ${panelPx}) / 2)`, transform: "translateX(-50%)" };
                 })(),
           }}
@@ -1307,7 +1349,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
       {/* Timeline bar — bottom */}
       {graphReady && timeRange.min < timeRange.max && (
-        <div className="absolute bottom-0 right-0 z-10 px-6 pb-4 pt-6" style={{ left: chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : filtersOpen ? "200px" : "0px", background: "linear-gradient(transparent, var(--bg))", transition: "left 0.3s" }}>
+        <div className="absolute bottom-0 right-0 z-10 px-6 pb-4 pt-6" style={{ left: chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px", background: "linear-gradient(transparent, var(--bg))", transition: "left 0.3s" }}>
           {/* Track */}
           <div className="relative h-5 flex items-center">
             <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />

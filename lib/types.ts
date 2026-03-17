@@ -85,3 +85,14 @@ export interface GraphStats {
 }
 
 export type ViewMode = "hebbian" | "retrieved";
+
+/** Filter state passed to NeuralGraph via a stable ref — avoids React re-renders on filter changes */
+export interface FilterBag {
+  memoryFilter: "all" | "inputs" | "outputs";
+  typeFilter: MemoryType[];
+  centerMode: "combined" | "reinforced" | "retrieved";
+  edgeFocus: boolean;
+  linkTypeFilter: string[];
+  timelineCutoff: number;
+  visibleMemoryIds: Set<number> | null; // null = show all
+}
