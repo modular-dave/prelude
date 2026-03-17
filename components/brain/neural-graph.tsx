@@ -1,60 +1,14 @@
 "use client";
 
-import React, { useCallback, useRef, useMemo, useEffect, forwardRef, useImperativeHandle } from "react";
-import dynamic from "next/dynamic";
-import { useMemory } from "@/lib/memory-context";
-import type { ViewMode, FilterBag } from "@/lib/types";
+import React, { useRef, useEffect, forwardRef, useImperativeHandle, useCallback, useState } from "react";
 import * as THREE from "three";
-import { VIZ_CONFIGS } from "@/lib/3d-graph/constants";
-import { nodeRadius, computeZoomBounds } from "@/lib/3d-graph/utils";
-import type { CameraState } from "@/lib/3d-graph/types";
-
-// Subsystem hooks
-import { useMaterialPool } from "./graph/use-material-pool";
-import { useGraphData } from "./graph/use-graph-data";
-import { useEdgeRenderer } from "./graph/use-edge-renderer";
-import { useGraphInteractions } from "./graph/use-graph-interactions";
-import { useForceSimulation } from "./graph/use-force-simulation";
-import { useCameraController } from "./graph/use-camera-controller";
-import { useNodeRenderer } from "./graph/use-node-renderer";
-
-// Polyfill THREE.Clock for Three.js r183+ where it was deprecated
-// react-force-graph-3d (via three-render-objects) still depends on it
-if (typeof window !== "undefined" && !(THREE as any).Clock) {
-  (THREE as any).Clock = class Clock {
-    autoStart: boolean;
-    startTime: number;
-    oldTime: number;
-    elapsedTime: number;
-    running: boolean;
-    constructor(autoStart = true) {
-      this.autoStart = autoStart;
-      this.startTime = 0;
-      this.oldTime = 0;
-      this.elapsedTime = 0;
-      this.running = false;
-    }
-    start() { this.startTime = this.now(); this.oldTime = this.startTime; this.elapsedTime = 0; this.running = true; }
-    stop() { this.getElapsedTime(); this.running = false; }
-    getElapsedTime() { this.getDelta(); return this.elapsedTime; }
-    getDelta() {
-      let diff = 0;
-      if (this.autoStart && !this.running) { this.start(); return 0; }
-      if (this.running) {
-        const newTime = this.now();
-        diff = (newTime - this.oldTime) / 1000;
-        this.oldTime = newTime;
-        this.elapsedTime += diff;
-      }
-      return diff;
-    }
-    now() { return performance.now(); }
-  };
-}
-
-const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
-  ssr: false,
-});
+import type { FilterBag } from "@/lib/types";
+import type { Lens } from "@/lib/3d-graph/runtime/types";
+import { useWorldSession } from "./graph/use-world-session";
+import { SceneManager } from "./graph/renderer/scene-manager";
+import { NodeInstances } from "./graph/renderer/node-instances";
+import { EdgeInstances } from "./graph/renderer/edge-instances";
+import { EdgeClassifier } from "./graph/renderer/edge-classifier";
 
 // ── Props & Handle ────────────────────────────────────────────────────
 
@@ -92,6 +46,17 @@ export interface SelectedEdgeInfo {
   strength: number;
 }
 
+// ── vizMode → Lens mapping ──────────────────────────────────────────
+
+function vizModeToLens(vizMode: string): Lens {
+  switch (vizMode) {
+    case "hero": return "hero";
+    case "cluster": return "cluster";
+    case "zero": return "zeroG";
+    default: return "hero";
+  }
+}
+
 // ── Orchestrator Component ────────────────────────────────────────────
 
 const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(function NeuralGraph({
@@ -100,273 +65,295 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
   highlightedPath = null, onPinnedContentChange, onBackgroundSelect,
   onEdgeSelect, onReady, onAutoRotateChange, vizMode = "hero",
 }, ref) {
-  const { knowledgeGraph, memories, fetchMemoryLinks } = useMemory();
-  const graphRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sceneManagerRef = useRef<SceneManager | null>(null);
+  const nodeInstancesRef = useRef<NodeInstances | null>(null);
+  const edgeInstancesRef = useRef<EdgeInstances | null>(null);
+  const edgeClassifierRef = useRef<EdgeClassifier | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const readyFired = useRef(false);
 
-  // Derived values from filterBagRef
-  const centerMode = filterBagRef.current!.centerMode;
-  const viewMode: ViewMode = centerMode === "retrieved" ? "retrieved" : "hebbian";
-
+  const lens = vizModeToLens(vizMode);
   const selectedGraphId = selectedNodeId != null ? `m_${selectedNodeId}` : null;
 
-  // Ref mirrors for vizMode
-  const vizModeRef = useRef(vizMode);
-  vizModeRef.current = vizMode;
-  const hideEdgesRef = useRef(hideEdges);
-  hideEdgesRef.current = hideEdges;
+  // ── World session (compiler + runtime) ──
+  const session = useWorldSession(lens);
 
-  // Shared nodeObjectCache ref — created here so both camera + nodeRenderer can access
-  const nodeObjectCache = useRef(new Map<string, THREE.Group>());
+  // ── Refs to mirror session values for the tick closure ──
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
-  // ── Subsystem hooks ──
-
-  const { materialPoolRef, getMaterial, getHaloMaterial, disposeMaterials } = useMaterialPool();
-
-  const {
-    data, dataRef, degreeCentrality, retrievalCentrality,
-    anchorNodeId, anchorRef, centralityRef, retrievalCentralityRef,
-    nodeNumericIdMap, maxLinkValue, optimalK, optimalKRef,
-    bubbleRadius, bubbleRadiusRef, linkVisibility: rawLinkVisibility,
-    connectionMap, asyncLinkTypes,
-  } = useGraphData({
-    memories, knowledgeGraph, fetchMemoryLinks, filterBagRef, vizMode,
-    selectedNodeId: selectedNodeId ?? null, selectedGraphId, viewMode,
-  });
-
-  // Wrap linkVisibility to also check hideEdges
-  const linkVisibility = useCallback((link: any) => {
-    if (hideEdgesRef.current) return false;
-    return rawLinkVisibility(link);
-  }, [rawLinkVisibility]);
-
-  const {
-    handleNodeClick, handleNodeHover, handleLinkHover, handleLinkClick,
-    stableBackgroundClick, stableNodeLabel, stableLinkLabel,
-    hoveredNodeId, pinnedNodeId, pinnedCardContent,
-    hoveredNodeIdRef, hoveredLinkRef,
-    setPinnedNodeId, setPinnedLinkKey,
-  } = useGraphInteractions({
-    data, memories, nodeNumericIdMap, connectionMap, asyncLinkTypes,
-    selectedGraphId, filterBagRef, viewMode,
-    onNodeSelect, onEdgeSelect, onBackgroundSelect, onPinnedContentChange,
-  });
-
-  const camera = useCameraController({
-    graphRef, filterBagRef, dataRef, bubbleRadiusRef, optimalKRef,
-    vizMode, vizModeRef, width, height, selectedEdge, selectedGraphId,
-    highlightedPath, nodeObjectCache,
-    autoRotate, onAutoRotateChange, onReady,
-    hoveredNodeIdRef, hoveredLinkRef, data,
-  });
-
-  const {
-    nodeThreeObject, tickVisibility,
-  } = useNodeRenderer({
-    data, dataRef, selectedGraphId, selectedEdge, connectionMap,
-    filterBagRef, vizModeRef, optimalKRef, lodLevelRef: camera.lodLevelRef,
-    zoomLevelRef: camera.zoomLevelRef, frustumRef: camera.frustumRef,
-    getMaterial, getHaloMaterial, highlightedPath,
-    highlightedPathRef: camera.highlightedPathRef,
-    hoveredNodeId, hoveredNodeIdRef, pinnedNodeId,
-    centralityRef, retrievalCentralityRef, anchorRef,
-    prevNodeScaleRef: camera.prevNodeScaleRef,
-    nodeObjectCache,
-  });
-
-  const { setupForces } = useForceSimulation({
-    graphRef, filterBagRef, optimalKRef, vizModeRef, bubbleRadiusRef,
-    centralityRef, retrievalCentralityRef, anchorRef, vizMode,
-  });
-
-  const {
-    getLinkColor, getLinkWidth, getLinkParticles, getLinkParticleColor,
-  } = useEdgeRenderer({
-    selectedGraphId, selectedEdge, connectionMap, maxLinkValue,
-    filterBagRef, zoomLevelRef: camera.zoomLevelRef, vizModeRef,
-    retrievalCentralityRef, highlightedPathRef: camera.highlightedPathRef,
-  });
-
-  // ── Renderer disposal on unmount ──
+  // ── Props → ViewState sync ──
   useEffect(() => {
-    return () => {
-      const fg = graphRef.current;
-      if (fg) {
-        try {
-          const renderer = fg.renderer?.();
-          renderer?.dispose?.();
-          renderer?.forceContextLoss?.();
-        } catch { /* silent */ }
-        disposeMaterials();
-        graphRef.current = null;
+    if (!session.isReady) return;
+
+    if (selectedGraphId) {
+      const entity = session.entityById.get(selectedGraphId);
+      if (entity) {
+        session.viewState.setFocus({
+          targetId: selectedGraphId,
+          targetType: "node",
+          anchor: entity.cartesian,
+          radius: 100,
+        });
+        session.viewState.setTopology({ mode: "single", neighborhoodDepth: 2 });
       }
+    } else if (selectedEdge) {
+      const src = session.entityById.get(selectedEdge.sourceId);
+      const tgt = session.entityById.get(selectedEdge.targetId);
+      if (src && tgt) {
+        session.viewState.setFocus({
+          targetType: "path",
+          anchor: {
+            x: (src.cartesian.x + tgt.cartesian.x) / 2,
+            y: (src.cartesian.y + tgt.cartesian.y) / 2,
+            z: (src.cartesian.z + tgt.cartesian.z) / 2,
+          },
+          radius: 150,
+        });
+      }
+    } else {
+      session.viewState.clearFocus();
+    }
+  }, [selectedGraphId, selectedEdge, session.isReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (highlightedPath && highlightedPath.size > 0) {
+      session.viewState.setTopology({
+        pinnedPathIds: [...highlightedPath],
+      });
+    }
+  }, [highlightedPath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Initialize Three.js scene ──
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !width || !height) return;
+
+    const sceneManager = new SceneManager(container, width, height, sessionRef.current.bubbleRadius);
+    sceneManagerRef.current = sceneManager;
+
+    const nodeInstances = new NodeInstances();
+    nodeInstancesRef.current = nodeInstances;
+    nodeInstances.addToScene(sceneManager.scene);
+
+    const edgeInstances = new EdgeInstances();
+    edgeInstancesRef.current = edgeInstances;
+    edgeInstances.addToScene(sceneManager.scene);
+
+    const edgeClassifier = new EdgeClassifier();
+    edgeClassifierRef.current = edgeClassifier;
+
+    // Tick callback: update ViewState + renderers each frame
+    sceneManager.onTick((dt) => {
+      const s = sessionRef.current;
+      if (!s.isReady || !s.tileCache) return;
+
+      const filters = filterBagRef.current;
+
+      // 1. Update ViewState from camera
+      const pos = sceneManager.getCameraPosition();
+      const dir = sceneManager.getCameraDirection();
+      const zoom = sceneManager.getCameraZoom();
+      s.viewState.updateCamera(pos, dir, zoom);
+
+      // 2. Run residency engine
+      s.tileCache.update(s.viewState.current);
+
+      // 3. Sync renderers from cache
+      const hotTiles = s.tileCache.hotTiles();
+      nodeInstances.syncFromTiles(hotTiles);
+
+      // 4. Compute degree centrality + apply node filters
+      const hotChunks = s.tileCache.hotTopologyChunks();
+      nodeInstances.updateDegree(hotChunks);
+      if (filters) {
+        nodeInstances.applyFilters(filters, s.viewState.current.lens, s.entityById, s.bubbleRadius);
+      }
+
+      // 5. Classify and render edges
+      if (!hideEdges) {
+        const linkTypeFilter = filters?.linkTypeFilter;
+        const visibleEntityIds = filters ? nodeInstances.getVisibleEntityIds(filters) : undefined;
+        edgeClassifier.classify(s.viewState.current, hotTiles, hotChunks, highlightedPath, linkTypeFilter, visibleEntityIds);
+        edgeInstances.syncFromEdges(edgeClassifier.getEdges(), nodeInstances, !!filters?.edgeFocus);
+        edgeInstances.setVisible(true);
+      } else {
+        edgeInstances.setVisible(false);
+      }
+
+      // 6. Update highlights
+      nodeInstances.updateHighlights({
+        selectedId: selectedGraphId,
+        hoveredId,
+      });
+    });
+
+    // Auto-rotate
+    if (autoRotate) {
+      let angle = 0;
+      sceneManager.onTick((dt) => {
+        if (!autoRotate) return;
+        angle += dt * 0.3;
+        const dist = sceneManager.camera.position.length();
+        sceneManager.camera.position.x = Math.sin(angle) * dist;
+        sceneManager.camera.position.z = Math.cos(angle) * dist;
+        sceneManager.camera.lookAt(0, 0, 0);
+      });
+    }
+
+    sceneManager.start();
+
+    return () => {
+      nodeInstances.dispose();
+      edgeInstances.dispose();
+      sceneManager.dispose();
+      sceneManagerRef.current = null;
     };
-  }, [disposeMaterials]);
+  }, [width, height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When session becomes ready, reposition camera to fit the bubble
+  useEffect(() => {
+    if (session.isReady && sceneManagerRef.current) {
+      const sm = sceneManagerRef.current;
+      const camDist = session.bubbleRadius * 2.5;
+      sm.camera.position.set(0, 0, camDist);
+      sm.camera.far = camDist * 5;
+      sm.camera.updateProjectionMatrix();
+      sm.controls.maxDistance = camDist * 2;
+      sm.controls.minDistance = session.bubbleRadius * 0.1;
+    }
+    if (session.isReady && !readyFired.current) {
+      readyFired.current = true;
+      onReady?.();
+    }
+  }, [session.isReady, session.bubbleRadius, onReady]);
+
+  // ── Resize handling ──
+  useEffect(() => {
+    if (sceneManagerRef.current && width && height) {
+      sceneManagerRef.current.resize(width, height);
+    }
+  }, [width, height]);
+
+  // ── Click handling ──
+  const raycaster = useRef(new THREE.Raycaster());
+  const mouse = useRef(new THREE.Vector2());
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (!sceneManagerRef.current || !nodeInstancesRef.current) return;
+
+    const rect = sceneManagerRef.current.canvas.getBoundingClientRect();
+    mouse.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.current.setFromCamera(mouse.current, sceneManagerRef.current.camera);
+    const nodeInstances = nodeInstancesRef.current;
+
+    // Test all instanced meshes
+    const meshes = [nodeInstances.memorySpheres, nodeInstances.entityOctahedra, nodeInstances.clusterSpheres];
+    let closestHit: { entityId: string; distance: number } | null = null;
+
+    for (const mesh of meshes) {
+      const intersects = raycaster.current.intersectObject(mesh);
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        const entityId = nodeInstances.entityIdAtInstance(mesh, intersects[0].instanceId);
+        if (entityId && (!closestHit || intersects[0].distance < closestHit.distance)) {
+          closestHit = { entityId, distance: intersects[0].distance };
+        }
+      }
+    }
+
+    if (closestHit) {
+      const numericId = session.nodeNumericIdMap.get(closestHit.entityId);
+      if (numericId != null) {
+        onNodeSelect?.(numericId);
+      }
+    } else {
+      onBackgroundSelect?.();
+    }
+  }, [session.nodeNumericIdMap, onNodeSelect, onBackgroundSelect]);
+
+  // ── Hover handling ──
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!sceneManagerRef.current || !nodeInstancesRef.current) return;
+
+    const rect = sceneManagerRef.current.canvas.getBoundingClientRect();
+    mouse.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.current.setFromCamera(mouse.current, sceneManagerRef.current.camera);
+    const nodeInstances = nodeInstancesRef.current;
+
+    const meshes = [nodeInstances.memorySpheres, nodeInstances.entityOctahedra, nodeInstances.clusterSpheres];
+    let hit: string | null = null;
+
+    for (const mesh of meshes) {
+      const intersects = raycaster.current.intersectObject(mesh);
+      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+        const entityId = nodeInstances.entityIdAtInstance(mesh, intersects[0].instanceId);
+        if (entityId) { hit = entityId; break; }
+      }
+    }
+
+    setHoveredId(hit);
+    if (containerRef.current) {
+      containerRef.current.style.cursor = hit ? "pointer" : "default";
+    }
+  }, []);
 
   // ── Imperative handle ──
   useImperativeHandle(ref, () => ({
     zoomIn: () => {
-      const fg = graphRef.current;
-      if (!fg) return;
-      const cam = fg.camera?.();
-      const controls = fg.controls?.();
-      if (!cam) return;
-      const navAnchor = camera.navAnchorRef.current.clone();
-      const dir = cam.position.clone().sub(navAnchor).normalize();
-      const dist = cam.position.distanceTo(navAnchor);
-      const newDist = Math.max(controls?.minDistance || 20, dist * 0.75);
-      const newPos = navAnchor.clone().addScaledVector(dir, newDist);
-      const inSubView = selectedEdge || selectedGraphId;
-      camera.requestCameraFlyTo(
-        { pos: { x: newPos.x, y: newPos.y, z: newPos.z }, lookAt: { x: navAnchor.x, y: navAnchor.y, z: navAnchor.z } },
-        300, inSubView ? "SETTLED" : "ORBIT"
-      );
+      const sm = sceneManagerRef.current;
+      if (!sm) return;
+      const dist = sm.camera.position.length();
+      const newDist = Math.max(50, dist * 0.75);
+      const dir = sm.camera.position.clone().normalize();
+      sm.flyTo(dir.multiplyScalar(newDist), 300);
     },
     zoomOut: () => {
-      const fg = graphRef.current;
-      if (!fg) return;
-      const cam = fg.camera?.();
-      const controls = fg.controls?.();
-      if (!cam) return;
-      const navAnchor = camera.navAnchorRef.current.clone();
-      const dir = cam.position.clone().sub(navAnchor).normalize();
-      const dist = cam.position.distanceTo(navAnchor);
-      const newDist = Math.min(controls?.maxDistance || 5000, dist * 1.33);
-      const newPos = navAnchor.clone().addScaledVector(dir, newDist);
-      const inSubView = selectedEdge || selectedGraphId;
-      camera.requestCameraFlyTo(
-        { pos: { x: newPos.x, y: newPos.y, z: newPos.z }, lookAt: { x: navAnchor.x, y: navAnchor.y, z: navAnchor.z } },
-        300, inSubView ? "SETTLED" : "ORBIT"
-      );
+      const sm = sceneManagerRef.current;
+      if (!sm) return;
+      const dist = sm.camera.position.length();
+      const maxDist = (sessionRef.current.bubbleRadius || 400) * 5;
+      const newDist = Math.min(maxDist, dist * 1.33);
+      const dir = sm.camera.position.clone().normalize();
+      sm.flyTo(dir.multiplyScalar(newDist), 300);
     },
     clearPinned: () => {
-      setPinnedNodeId(null);
-      setPinnedLinkKey(null);
+      // No-op for now — pinned state managed by brain-view
     },
     resetView: () => {
-      const dist = camera.adaptiveCamDistRef.current || camera.defaultCamDistRef.current;
-      camera.requestCameraFlyTo(
-        { pos: { x: 0, y: 0, z: dist }, lookAt: { x: 0, y: 0, z: 0 } },
-        800, "ORBIT"
-      );
-      try { graphRef.current?.d3ReheatSimulation?.(); } catch { /* silent */ }
+      const sm = sceneManagerRef.current;
+      if (!sm) return;
+      const camDist = (sessionRef.current.bubbleRadius || 400) * 2.5;
+      sm.flyTo(new THREE.Vector3(0, 0, camDist), 800);
     },
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  }), []);
 
-  // ── Graph ref callback: wire forces + camera ──
-  const graphRefCallback = useCallback((fg: any) => {
-    graphRef.current = fg;
-    if (!fg) return;
-    setupForces(fg);
-    camera.setupCameraControls(fg);
-  }, [setupForces, camera.setupCameraControls]);
-
-  // ── Tick loop pipeline (CesiumJS Scene.render() pattern) ──
-  const vizConfigRef = useRef(VIZ_CONFIGS[vizMode]);
-  vizConfigRef.current = VIZ_CONFIGS[vizMode];
-
-  useEffect(() => {
-    let raf: number;
-    let stopped = false;
-    const angleRef = { value: 0 };
-
-    const tick = () => {
-      if (stopped) return;
-      const fg = graphRef.current;
-      if (!fg) { raf = requestAnimationFrame(tick); return; }
-
-      const cam = fg.camera?.();
-      const controls = fg.controls?.();
-      const config = vizConfigRef.current;
-      const state = camera.cameraStateRef.current;
-
-      // Phase 1: Zoom level + LOD measurement
-      camera.tickZoomAndLOD(cam, controls, config);
-      // Phase 2: Frustum update
-      camera.tickFrustum(cam);
-      // Phase 3: Node visibility + filter-driven resizing
-      tickVisibility(cam);
-      // Phase 4: Zoom limits + elastic spring
-      camera.tickZoomLimits(cam, controls, state);
-      // Phase 5: Camera state machine (FLY_TO / ORBIT / SETTLED)
-      camera.tickStateMachine(cam, controls, state, config, angleRef);
-      // Phase 6: Zoom inertia (Cesium-style momentum)
-      camera.tickZoomInertia(cam, controls);
-      // Phase 7: Adaptive quality (LOD during interaction)
-      camera.tickAdaptiveQuality(state);
-
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
-    return () => { stopped = true; cancelAnimationFrame(raf); camera.wheelCleanupRef.current?.(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Force node object refresh on structural changes
-  useEffect(() => {
-    if (graphRef.current) {
-      graphRef.current.refresh();
-    }
-  }, [selectedGraphId, selectedEdge, connectionMap]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Active config for ForceGraph3D props
-  const activeConfig = VIZ_CONFIGS[vizMode];
-
-  // Memoize ForceGraph3D element
-  const forceGraphElement = useMemo(() => ( // eslint-disable-line react-hooks/exhaustive-deps
-    <ForceGraph3D
-      controlType="orbit"
-      ref={graphRefCallback as any} // eslint-disable-line @typescript-eslint/no-explicit-any
-      graphData={data}
-      linkId="id"
-      linkVisibility={linkVisibility}
-      width={width}
-      height={height}
-      nodeLabel={stableNodeLabel}
-      nodeThreeObject={nodeThreeObject}
-      onNodeHover={handleNodeHover}
-      onLinkHover={handleLinkHover}
-      linkHoverPrecision={16}
-      linkLabel={stableLinkLabel}
-      linkColor={getLinkColor}
-      linkWidth={getLinkWidth}
-      linkOpacity={1}
-      linkDirectionalParticles={getLinkParticles}
-      linkDirectionalParticleSpeed={0.006}
-      linkDirectionalParticleWidth={1.5}
-      linkDirectionalParticleColor={getLinkParticleColor}
-      backgroundColor="rgba(0,0,0,0)"
-      onNodeClick={handleNodeClick}
-      onLinkClick={handleLinkClick}
-      onBackgroundClick={stableBackgroundClick}
-      onEngineStop={camera.onEngineStop}
-      enableNodeDrag={false}
-      warmupTicks={activeConfig.warmupTicks}
-      cooldownTicks={120}
-      cooldownTime={activeConfig.cooldownTime}
-      d3AlphaDecay={activeConfig.alphaDecay}
-      d3VelocityDecay={activeConfig.velocityDecay}
-    />
-  ), [data, width, height, nodeThreeObject, getLinkColor, getLinkWidth, getLinkParticles, getLinkParticleColor, activeConfig]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (data.nodes.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center" style={{ color: "var(--text-faint)" }}>
-        <div className="text-center">
-          <p className="t-heading">No memories yet</p>
-          <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>Chat to create your first memories</p>
-        </div>
-      </div>
-    );
-  }
+  const showEmptyState = session.isReady && session.allEntities.length === 0;
 
   return (
-    <div className="relative" style={{ width, height }}>
-    {forceGraphElement}
+    <div
+      ref={containerRef}
+      className="relative"
+      style={{ width, height }}
+      onClick={handleClick}
+      onMouseMove={handleMouseMove}
+    >
+      {showEmptyState && (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ color: "var(--text-faint)", pointerEvents: "none" }}>
+          <div className="text-center">
+            <p className="t-heading">No memories yet</p>
+            <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>Chat to create your first memories</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
 
 export const NeuralGraph = NeuralGraphInner;
 
-// PinnedCardBody extracted to ./pinned-card-body.tsx
 export { PinnedCardBody } from "./pinned-card-body";
