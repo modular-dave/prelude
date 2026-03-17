@@ -27,7 +27,7 @@ export function useGraphData({
       id: `m_${m.id}`,
       name: m.summary?.slice(0, 40) || "memory",
       val: Math.max(4, (m.importance || 0.5) * 20),
-      color: TYPE_COLORS[m.memory_type] || "#666",
+      color: TYPE_COLORS[m.memory_type as keyof typeof TYPE_COLORS] || "#666",
       type: m.memory_type,
       importance: m.importance,
       isEntity: false,

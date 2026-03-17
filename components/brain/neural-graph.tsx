@@ -167,16 +167,21 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
       // 4. Compute degree centrality + apply node filters
       const hotChunks = s.tileCache.hotTopologyChunks();
       nodeInstances.updateDegree(hotChunks);
+      const focusMode = filters?.focus ?? "memories";
+
       if (filters) {
         nodeInstances.applyFilters(filters, s.viewState.current.lens, s.entityById, s.bubbleRadius);
       }
 
-      // 5. Classify and render edges
-      if (!hideEdges) {
+      // All focus modes show nodes (scaling handles emphasis)
+      nodeInstances.setVisible(true);
+
+      // Edge focus → show edges; memory/entity focus → hide edges
+      if (focusMode === "edges" && !hideEdges) {
         const linkTypeFilter = filters?.linkTypeFilter;
         const visibleEntityIds = filters ? nodeInstances.getVisibleEntityIds(filters) : undefined;
         edgeClassifier.classify(s.viewState.current, hotTiles, hotChunks, highlightedPath, linkTypeFilter, visibleEntityIds);
-        edgeInstances.syncFromEdges(edgeClassifier.getEdges(), nodeInstances, !!filters?.edgeFocus);
+        edgeInstances.syncFromEdges(edgeClassifier.getEdges(), nodeInstances, true);
         edgeInstances.setVisible(true);
       } else {
         edgeInstances.setVisible(false);
@@ -300,7 +305,38 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
     if (containerRef.current) {
       containerRef.current.style.cursor = hit ? "pointer" : "default";
     }
-  }, []);
+
+    // Build pinned content for hover card
+    if (hit && onPinnedContentChange) {
+      const s = sessionRef.current;
+      const entity = s.entityById.get(hit);
+      if (entity) {
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        // Count links from topology chunks
+        let linkCount = 0;
+        const hotChunks = s.tileCache?.hotTopologyChunks() || [];
+        for (const chunk of hotChunks) {
+          if (!chunk.data) continue;
+          for (const edge of chunk.data.edges) {
+            if (edge.source === hit || edge.target === hit) linkCount++;
+          }
+        }
+        onPinnedContentChange({
+          type: entity.nodeCategory === "entity" ? "entity" : "memory",
+          name: entity.label,
+          memoryType: entity.memoryType || entity.type,
+          importance: entity.importance,
+          accessCount: entity.accessCount,
+          linkCount,
+          decayFactor: entity.decayFactor,
+          position: { x: mouseX, y: mouseY },
+        });
+      }
+    } else if (!hit && onPinnedContentChange) {
+      onPinnedContentChange(null);
+    }
+  }, [onPinnedContentChange]);
 
   // ── Imperative handle ──
   useImperativeHandle(ref, () => ({

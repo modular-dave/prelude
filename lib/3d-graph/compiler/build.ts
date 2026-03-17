@@ -108,6 +108,7 @@ export function memoryContextToRawGraph(
     isEntity: false,
     numericId: m.id,
     accessCount: m.access_count ?? 0,
+    decayFactor: m.decay_factor ?? 1,
   }));
 
   const entityNodes: RawGraphNode[] = knowledgeGraph.nodes.map((e) => ({
@@ -120,6 +121,7 @@ export function memoryContextToRawGraph(
     isEntity: true,
     numericId: null,
     accessCount: 0,
+    decayFactor: 1,
   }));
 
   const nodes = [...memoryNodes, ...entityNodes];

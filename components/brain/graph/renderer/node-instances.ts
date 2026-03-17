@@ -150,16 +150,30 @@ export class NodeInstances {
   // Cached per-frame to avoid recomputation
 
   private degreeMap = new Map<string, number>();
+  private adjacencyMap = new Map<string, Set<string>>();
   private maxDegree = 1;
   private maxAccessCount = 1;
 
+  /** Degree (link count) for a given entity id */
+  getDegree(id: string): number { return this.degreeMap.get(id) || 0; }
+
   updateDegree(topologyChunks: ResidentTopologyChunk[]): void {
     this.degreeMap.clear();
+    this.adjacencyMap.clear();
     for (const rc of topologyChunks) {
       if (!rc.data) continue;
       for (const edge of rc.data.edges) {
         this.degreeMap.set(edge.source, (this.degreeMap.get(edge.source) || 0) + 1);
         this.degreeMap.set(edge.target, (this.degreeMap.get(edge.target) || 0) + 1);
+
+        // Build adjacency map (bidirectional)
+        let srcNeighbors = this.adjacencyMap.get(edge.source);
+        if (!srcNeighbors) { srcNeighbors = new Set(); this.adjacencyMap.set(edge.source, srcNeighbors); }
+        srcNeighbors.add(edge.target);
+
+        let tgtNeighbors = this.adjacencyMap.get(edge.target);
+        if (!tgtNeighbors) { tgtNeighbors = new Set(); this.adjacencyMap.set(edge.target, tgtNeighbors); }
+        tgtNeighbors.add(edge.source);
       }
     }
     this.maxDegree = 1;
@@ -177,8 +191,12 @@ export class NodeInstances {
   // ── Filter application ─────────────────────────────────────────
 
   applyFilters(filterBag: FilterBag, lens: Lens, entityById?: Map<string, CanonicalEntity>, bubbleRadius?: number): void {
-    const { visibleMemoryIds, edgeFocus, centerMode } = filterBag;
-    const scaleFactor = edgeFocus ? 0.35 : 1.0;
+    const { visibleMemoryIds, focus, centerMode, decayCutoff } = filterBag;
+    // In memory focus: memories full, entities/edges small
+    // In edge focus: everything small (edges shown separately)
+    // In entity focus: entities full, memories small
+    const memoryScale = focus === "memories" ? 1.0 : 0.35;
+    const entityScale = focus === "entities" ? 1.0 : (focus === "memories" ? 0.6 : 0.35);
     const totalNodes = this.memoryCount + this.entityCount;
     const df = densityFactor(totalNodes);
     const minSize = BASE_MIN_SIZE * df;
@@ -198,7 +216,7 @@ export class NodeInstances {
         positionMap = computeHeroLayout(
           this.memoryEntityData, this.entityEntityData,
           this.degreeMap, this.maxDegree, this.maxAccessCount,
-          filterBag, R,
+          filterBag, R, this.adjacencyMap,
         );
       } else if (lens === "cluster" && entityById) {
         positionMap = computeClusterLayout(
@@ -218,11 +236,12 @@ export class NodeInstances {
     for (let i = 0; i < this.memoryEntityData.length && i < this.memoryCount; i++) {
       const e = this.memoryEntityData[i];
 
-      // Visibility: check visibleMemoryIds
+      // Visibility: check visibleMemoryIds + decay cutoff
       let visible = true;
       if (visibleMemoryIds && e.numericId != null) {
         visible = visibleMemoryIds.has(e.numericId);
       }
+      if (decayCutoff > 0 && e.decayFactor <= decayCutoff) visible = false;
 
       // Compute normalized scores [0, 1]
       const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
@@ -236,7 +255,7 @@ export class NodeInstances {
       // Linear interpolation: minSize → heroSize (density-scaled)
       let s = minSize + heroScore * (heroSize - minSize);
 
-      s *= scaleFactor;
+      s *= memoryScale;
       if (!visible) s = 0;
 
       // Position from viz layout or fallback to canonical
@@ -252,13 +271,14 @@ export class NodeInstances {
       this.memorySpheres.setMatrixAt(i, _matrix);
     }
     this.memorySpheres.instanceMatrix.needsUpdate = true;
+    this.memorySpheres.boundingSphere = null; // invalidate for raycasting
 
-    // Apply to entity octahedra (entities always visible, apply edgeFocus scaling)
+    // Apply to entity octahedra
     for (let i = 0; i < this.entityEntityData.length && i < this.entityCount; i++) {
       const e = this.entityEntityData[i];
       const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
       let s = minSize + degScore * (heroSize - minSize) * 0.6;
-      s *= scaleFactor;
+      s *= entityScale;
 
       // Position from viz layout or fallback to canonical
       const pos = positionMap?.get(e.id);
@@ -273,6 +293,7 @@ export class NodeInstances {
       this.entityOctahedra.setMatrixAt(i, _matrix);
     }
     this.entityOctahedra.instanceMatrix.needsUpdate = true;
+    this.entityOctahedra.boundingSphere = null; // invalidate for raycasting
   }
 
   /** Returns the set of currently visible entity IDs (for edge filtering) */
@@ -327,6 +348,7 @@ export class NodeInstances {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.boundingSphere = null; // invalidate for raycasting
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     setCount(count);
   }
@@ -458,6 +480,13 @@ export class NodeInstances {
     return this.memoryIndex.has(entityId) ||
       this.entityIndex.has(entityId) ||
       this.clusterIndex.has(entityId);
+  }
+
+  // ── Visibility ────────────────────────────────────────────────
+
+  setVisible(visible: boolean): void {
+    this.memorySpheres.visible = visible;
+    this.entityOctahedra.visible = visible;
   }
 
   // ── Cleanup ───────────────────────────────────────────────────

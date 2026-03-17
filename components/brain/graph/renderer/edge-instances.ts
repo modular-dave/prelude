@@ -64,44 +64,48 @@ export class EdgeInstances {
     const positions = this.positionAttr.array as Float32Array;
     const colors = this.colorAttr.array as Float32Array;
 
-    // In node-focus mode, edges are faint background context.
-    // In edge-focus mode, edges are the primary visual element.
-    const globalOpacity = edgeFocus ? 1.0 : 0.12;
     const mat = this.lines.material as THREE.LineBasicMaterial;
-    mat.opacity = edgeFocus ? 0.9 : 0.3;
 
-    for (const edge of edges) {
-      if (this.edgeCount >= MAX_EDGE_INSTANCES) break;
+    if (!edgeFocus) {
+      // Memory-focus mode: all edges rendered, minimal opacity
+      mat.opacity = 0.015;
+      for (const edge of edges) {
+        if (this.edgeCount >= MAX_EDGE_INSTANCES) break;
+        const srcPos = nodeInstances.getEntityPosition(edge.source);
+        const tgtPos = nodeInstances.getEntityPosition(edge.target);
+        if (!srcPos || !tgtPos) continue;
 
-      const srcPos = nodeInstances.getEntityPosition(edge.source);
-      const tgtPos = nodeInstances.getEntityPosition(edge.target);
-      if (!srcPos || !tgtPos) continue;
+        const i = this.edgeCount * 6;
+        positions[i] = srcPos.x; positions[i + 1] = srcPos.y; positions[i + 2] = srcPos.z;
+        positions[i + 3] = tgtPos.x; positions[i + 4] = tgtPos.y; positions[i + 5] = tgtPos.z;
+        colors[i] = 0.08; colors[i + 1] = 0.08; colors[i + 2] = 0.08;
+        colors[i + 3] = 0.08; colors[i + 4] = 0.08; colors[i + 5] = 0.08;
+        this.edgeCount++;
+      }
+    } else {
+      // Edge-focus mode: full color per link type, full visibility.
+      mat.opacity = 0.9;
+      for (const edge of edges) {
+        if (this.edgeCount >= MAX_EDGE_INSTANCES) break;
+        const srcPos = nodeInstances.getEntityPosition(edge.source);
+        const tgtPos = nodeInstances.getEntityPosition(edge.target);
+        if (!srcPos || !tgtPos) continue;
 
-      const linkColor = LINK_TYPE_COLORS[edge.linkType] || FALLBACK_EDGE_COLOR;
-      const classOpacity = EDGE_CLASS_OPACITY[edge.edgeClass];
-      const opacity = classOpacity * globalOpacity;
-      const color = new THREE.Color(linkColor);
+        const linkColor = LINK_TYPE_COLORS[edge.linkType] || FALLBACK_EDGE_COLOR;
+        const classOpacity = EDGE_CLASS_OPACITY[edge.edgeClass];
+        const color = new THREE.Color(linkColor);
 
-      const i = this.edgeCount * 6;
+        const i = this.edgeCount * 6;
+        positions[i] = srcPos.x; positions[i + 1] = srcPos.y; positions[i + 2] = srcPos.z;
+        positions[i + 3] = tgtPos.x; positions[i + 4] = tgtPos.y; positions[i + 5] = tgtPos.z;
 
-      // Start vertex
-      positions[i] = srcPos.x;
-      positions[i + 1] = srcPos.y;
-      positions[i + 2] = srcPos.z;
-
-      // End vertex
-      positions[i + 3] = tgtPos.x;
-      positions[i + 4] = tgtPos.y;
-      positions[i + 5] = tgtPos.z;
-
-      // Colors (with opacity baked into brightness)
-      const r = color.r * opacity;
-      const g = color.g * opacity;
-      const b = color.b * opacity;
-      colors[i] = r; colors[i + 1] = g; colors[i + 2] = b;
-      colors[i + 3] = r; colors[i + 4] = g; colors[i + 5] = b;
-
-      this.edgeCount++;
+        const r = color.r * classOpacity;
+        const g = color.g * classOpacity;
+        const b = color.b * classOpacity;
+        colors[i] = r; colors[i + 1] = g; colors[i + 2] = b;
+        colors[i + 3] = r; colors[i + 4] = g; colors[i + 5] = b;
+        this.edgeCount++;
+      }
     }
 
     // Update draw range

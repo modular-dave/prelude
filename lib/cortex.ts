@@ -3,6 +3,24 @@ import { Cortex } from "clude-bot";
 let brain: Cortex | null = null;
 let initialized = false;
 
+/**
+ * Swap the Venice client's model at runtime (for per-function model assignments).
+ * This mutates the module-level config in clude-bot's venice-client so the next
+ * dream/reflect call uses the specified model.
+ */
+export function swapVeniceModel(model: string): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { initVenice } = require("clude-bot/dist/core/venice-client");
+    initVenice({
+      apiKey: process.env.VENICE_API_KEY || "local",
+      model,
+    });
+  } catch {
+    // SDK internal — non-critical if not available
+  }
+}
+
 export async function ensureCortex(): Promise<Cortex> {
   if (!brain) {
     brain = new Cortex({
