@@ -25,10 +25,10 @@ export function NeuroSlider({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+        <span className="t-small" style={{ color: "var(--text-muted)" }}>
           {label}
         </span>
-        <span className="text-[10px] font-mono" style={{ color: "var(--accent)" }}>
+        <span className="t-small font-mono" style={{ color: "var(--accent)" }}>
           {display}
         </span>
       </div>

@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Moon, Loader2, CheckCircle2, Circle, Sparkles, Calendar, Play,
   Layers, Eye, AlertTriangle, ChevronDown, ChevronRight,
-  Clock, MemoryStick, ArrowRight,
+  Clock, MemoryStick, ArrowRight, Trash2,
 } from "lucide-react";
 import { useMemory } from "@/lib/memory-context";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ── Phase metadata ──────────────────────────────────────────
 
@@ -168,6 +169,36 @@ export function DreamCycleDisplay() {
     }
   };
 
+  const [clearing, setClearing] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [confirmSessionDelete, setConfirmSessionDelete] = useState<number[] | null>(null);
+
+  const clearDreams = async () => {
+    setClearing(true);
+    try {
+      await fetch("/api/dream", { method: "DELETE" });
+      setResult(null);
+      await refresh();
+      await loadHistory();
+    } catch {
+      setError("Failed to clear dreams");
+    } finally {
+      setClearing(false);
+      setConfirmClearAll(false);
+    }
+  };
+
+  const deleteSession = async (logIds: number[]) => {
+    await fetch("/api/dream", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logIds }),
+    });
+    await refresh();
+    await loadHistory();
+    setConfirmSessionDelete(null);
+  };
+
   // Group history by dream session (group consecutive logs within 15 min)
   const dreamSessions = groupIntoSessions(history);
 
@@ -176,19 +207,36 @@ export function DreamCycleDisplay() {
       {/* Header + actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+          <h2 className="flex items-center gap-2 t-heading font-mono" style={{ color: "var(--text)" }}>
             <Moon className="h-4 w-4" />
             Dream Cycle
           </h2>
-          <p className="mt-0.5 text-xs" style={{ color: "var(--text-faint)" }}>
+          <p className="mt-0.5 t-small" style={{ color: "var(--text-faint)" }}>
             5-phase LLM-powered memory consolidation via Cortex
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {dreamSessions.length > 0 && (
+            <button
+              onClick={() => setConfirmClearAll(true)}
+              disabled={clearing}
+              className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
+              style={{ color: "#ef4444" }}
+            >
+              {clearing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Trash2 className="h-3 w-3" />
+                  Clear Dreams
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={toggleDreamSchedule}
             disabled={scheduleLoading}
-            className="rounded-[6px] px-3 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-40 glass"
+            className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
             style={{
               color: dreamScheduleActive ? "#22c55e" : "var(--text)",
               borderWidth: 1,
@@ -208,7 +256,7 @@ export function DreamCycleDisplay() {
           <button
             onClick={runDream}
             disabled={running || memories.length === 0}
-            className="rounded-[6px] px-4 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-40 glass"
+            className="rounded-[6px] px-4 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
             style={{ color: "var(--text)" }}
           >
             {running ? (
@@ -249,7 +297,7 @@ export function DreamCycleDisplay() {
               }}
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold" style={{ color: phase.color, opacity: 0.6 }}>
+                <span className="t-small" style={{ color: phase.color, opacity: 0.6 }}>
                   {phase.roman}
                 </span>
                 <Icon
@@ -257,19 +305,19 @@ export function DreamCycleDisplay() {
                   style={!running && !isComplete ? { color: "var(--text-faint)" } : undefined}
                 />
               </div>
-              <p className="mt-2 text-[11px] font-semibold" style={{ color: "var(--text)" }}>
+              <p className="mt-2" style={{ color: "var(--text)" }}>
                 {phase.name}
               </p>
-              <p className="mt-1 text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              <p className="mt-1 t-tiny leading-relaxed" style={{ color: "var(--text-faint)" }}>
                 {phase.desc}
               </p>
               {phaseResult && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[9px] font-medium" style={{ color: phase.color }}>
+                  <span className="t-tiny" style={{ color: phase.color }}>
                     {phaseResult.inputCount} in
                   </span>
                   <ArrowRight className="h-2 w-2" style={{ color: "var(--text-faint)" }} />
-                  <span className="text-[9px] font-medium" style={{ color: phase.color }}>
+                  <span className="t-tiny" style={{ color: phase.color }}>
                     {phaseResult.newMemoryIds.length} out
                   </span>
                 </div>
@@ -298,15 +346,15 @@ export function DreamCycleDisplay() {
           >
             <div className="flex items-center gap-2 mb-3">
               <meta.icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
-              <h3 className="text-xs font-semibold" style={{ color: meta.color }}>{meta.name}</h3>
-              <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+              <h3 className="t-heading" style={{ color: meta.color }}>{meta.name}</h3>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 {phaseResult.inputCount} memories analyzed
               </span>
             </div>
 
             {/* Phase output */}
             <div className="rounded-[6px] p-3 mb-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
-              <p className="text-[10px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
+              <p className="t-small leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
                 {phaseResult.output}
               </p>
             </div>
@@ -314,7 +362,7 @@ export function DreamCycleDisplay() {
             {/* New memories created */}
             {phaseMemories.length > 0 && (
               <div>
-                <p className="text-[9px] font-medium mb-2" style={{ color: "var(--text-faint)" }}>
+                <p className="t-tiny mb-2" style={{ color: "var(--text-faint)" }}>
                   {phaseMemories.length} memories created
                 </p>
                 <div className="space-y-1.5">
@@ -329,18 +377,18 @@ export function DreamCycleDisplay() {
                         style={{ backgroundColor: TYPE_COLORS[m.type] || "var(--text-faint)" }}
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] leading-relaxed" style={{ color: "var(--text)" }}>
+                        <p className="t-small leading-relaxed" style={{ color: "var(--text)" }}>
                           {m.summary}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[8px]" style={{ color: TYPE_COLORS[m.type] || "var(--text-faint)" }}>
+                          <span className="t-micro" style={{ color: TYPE_COLORS[m.type] || "var(--text-faint)" }}>
                             {m.type}
                           </span>
-                          <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                          <span className="t-micro" style={{ color: "var(--text-faint)" }}>
                             imp: {m.importance.toFixed(2)}
                           </span>
                           {m.tags.slice(0, 3).map((t) => (
-                            <span key={t} className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                            <span key={t} className="t-micro" style={{ color: "var(--text-faint)" }}>
                               #{t}
                             </span>
                           ))}
@@ -358,7 +406,7 @@ export function DreamCycleDisplay() {
       {/* Error */}
       {error && (
         <div className="rounded-[8px] p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
-          <p className="text-xs text-red-500">{error}</p>
+          <p className="t-small text-red-500">{error}</p>
         </div>
       )}
 
@@ -376,9 +424,9 @@ export function DreamCycleDisplay() {
         >
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="h-3.5 w-3.5 text-rose-500" />
-            <h3 className="text-xs font-semibold text-rose-500">Emergence</h3>
+            <h3 className="t-heading text-rose-500">Emergence</h3>
           </div>
-          <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p className="leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {result.emergence}
           </p>
         </div>
@@ -395,7 +443,7 @@ export function DreamCycleDisplay() {
 
       {/* Dream history */}
       <div>
-        <h3 className="text-[11px] font-semibold mb-3" style={{ color: "var(--text)" }}>
+        <h3 className="t-heading mb-3" style={{ color: "var(--text)" }}>
           Dream History{" "}
           {dreamSessions.length > 0 && (
             <span style={{ color: "var(--text-faint)" }}>({dreamSessions.length})</span>
@@ -404,20 +452,44 @@ export function DreamCycleDisplay() {
         {historyLoading ? (
           <div className="flex items-center gap-2 py-4">
             <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-faint)" }} />
-            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>Loading...</span>
+            <span className="t-small" style={{ color: "var(--text-faint)" }}>Loading...</span>
           </div>
         ) : dreamSessions.length === 0 ? (
-          <p className="text-[10px] py-4" style={{ color: "var(--text-faint)" }}>
+          <p className="t-small py-4" style={{ color: "var(--text-faint)" }}>
             No dream cycles recorded yet. Run your first dream cycle above.
           </p>
         ) : (
           <div className="space-y-2">
             {dreamSessions.map((session) => (
-              <DreamSessionCard key={session.id} session={session} />
+              <DreamSessionCard
+                key={session.id}
+                session={session}
+                onDelete={(logIds) => setConfirmSessionDelete(logIds)}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* Confirm dialogs */}
+      {confirmClearAll && (
+        <ConfirmDialog
+          title="Clear all dreams?"
+          message="This will delete all dream logs and dream-generated memories. This cannot be undone."
+          confirmLabel="Clear All"
+          onConfirm={clearDreams}
+          onCancel={() => setConfirmClearAll(false)}
+        />
+      )}
+      {confirmSessionDelete && (
+        <ConfirmDialog
+          title="Delete this dream session?"
+          message="This will delete the dream logs and any memories created during this session."
+          confirmLabel="Delete"
+          onConfirm={() => deleteSession(confirmSessionDelete)}
+          onCancel={() => setConfirmSessionDelete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -427,8 +499,8 @@ export function DreamCycleDisplay() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p className="text-[16px] font-semibold" style={{ color: "var(--text)" }}>{value}</p>
-      <p className="text-[9px]" style={{ color: "var(--text-faint)" }}>{label}</p>
+      <p className="t-title" style={{ color: "var(--text)" }}>{value}</p>
+      <p className="t-tiny" style={{ color: "var(--text-faint)" }}>{label}</p>
     </div>
   );
 }
@@ -439,60 +511,75 @@ interface DreamSession {
   logs: DreamLog[];
 }
 
-function DreamSessionCard({ session }: { session: DreamSession }) {
+function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDelete?: (logIds: number[]) => void }) {
   const [open, setOpen] = useState(false);
   const totalIn = session.logs.reduce((s, l) => s + (l.input_memory_ids?.length || 0), 0);
   const totalOut = session.logs.reduce((s, l) => s + (l.new_memories_created?.length || 0), 0);
   const hasEmergence = session.logs.some((l) => l.session_type === "emergence" && l.output);
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.(session.logs.map((l) => l.id));
+  };
 
   return (
     <div
       className="rounded-[6px] overflow-hidden"
       style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
     >
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-3 p-3 text-left transition-colors duration-150"
-      >
-        {open ? (
-          <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <Clock className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
-            <span className="text-[10px] font-medium" style={{ color: "var(--text)" }}>
-              {new Date(session.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-            </span>
-            <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
-              {timeAgo(session.timestamp)}
-            </span>
-          </div>
-          <div className="flex items-center gap-3 mt-1">
-            {/* Phase dots */}
-            <div className="flex items-center gap-1">
-              {session.logs.map((l) => {
-                const meta = phaseMeta(l.session_type);
-                return (
-                  <div
-                    key={l.id}
-                    className="h-[5px] w-[5px] rounded-full"
-                    style={{ backgroundColor: meta.color }}
-                    title={meta.name}
-                  />
-                );
-              })}
+      <div className="flex items-center">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex-1 flex items-center gap-3 p-3 text-left transition-colors duration-150"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Clock className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
+              <span className="t-small" style={{ color: "var(--text)" }}>
+                {new Date(session.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+                {timeAgo(session.timestamp)}
+              </span>
             </div>
-            <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
-              {totalIn} in → {totalOut} out
-            </span>
-            {hasEmergence && (
-              <Sparkles className="h-2.5 w-2.5 text-rose-500" />
-            )}
+            <div className="flex items-center gap-3 mt-1">
+              {/* Phase dots */}
+              <div className="flex items-center gap-1">
+                {session.logs.map((l) => {
+                  const meta = phaseMeta(l.session_type);
+                  return (
+                    <div
+                      key={l.id}
+                      className="h-[5px] w-[5px] rounded-full"
+                      style={{ backgroundColor: meta.color }}
+                      title={meta.name}
+                    />
+                  );
+                })}
+              </div>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+                {totalIn} in &rarr; {totalOut} out
+              </span>
+              {hasEmergence && (
+                <Sparkles className="h-2.5 w-2.5 text-rose-500" />
+              )}
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        <button
+          onClick={handleDelete}
+          className="p-3 transition-opacity opacity-30 hover:opacity-80"
+          style={{ color: "var(--text-faint)" }}
+          title="Delete this dream session"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
 
       {open && (
         <div className="px-3 pb-3 space-y-2" style={{ borderTop: "1px solid var(--border)" }}>
@@ -502,12 +589,12 @@ function DreamSessionCard({ session }: { session: DreamSession }) {
               <div key={log.id} className="pt-2">
                 <div className="flex items-center gap-1.5 mb-1">
                   <div className="h-[5px] w-[5px] rounded-full" style={{ backgroundColor: meta.color }} />
-                  <span className="text-[9px] font-semibold" style={{ color: meta.color }}>{meta.name}</span>
-                  <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>
+                  <span className="t-tiny" style={{ color: meta.color }}>{meta.name}</span>
+                  <span className="t-micro" style={{ color: "var(--text-faint)" }}>
                     {(log.input_memory_ids?.length || 0)} in → {(log.new_memories_created?.length || 0)} out
                   </span>
                 </div>
-                <p className="text-[9px] leading-relaxed whitespace-pre-wrap pl-3" style={{ color: "var(--text-muted)" }}>
+                <p className="t-tiny leading-relaxed whitespace-pre-wrap pl-3" style={{ color: "var(--text-muted)" }}>
                   {log.output.length > 400 ? log.output.slice(0, 400) + "…" : log.output}
                 </p>
               </div>

@@ -86,9 +86,9 @@ export function StatsGrid() {
                   className="h-4 w-4"
                   style={{ color: card.color }}
                 />
-                <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{card.label}</span>
+                <span style={{ color: "var(--text-faint)" }}>{card.label}</span>
               </div>
-              <div className="mt-2 text-xl font-bold" style={{ color: "var(--text)" }}>
+              <div className="mt-2 t-stat" style={{ color: "var(--text)" }}>
                 {card.value}
               </div>
             </div>
@@ -105,15 +105,15 @@ export function StatsGrid() {
         >
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4" style={{ color: "#06b6d4" }} />
-            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>Most Accessed Memory</span>
+            <span style={{ color: "var(--text-faint)" }}>Most Accessed Memory</span>
             <span
-              className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-medium"
+              className="ml-auto rounded-full px-2 py-0.5 t-small"
               style={{ background: "rgba(6, 182, 212, 0.1)", color: "#06b6d4" }}
             >
               {mostAccessed.access_count}x recalled
             </span>
           </div>
-          <p className="mt-2 text-sm font-medium truncate" style={{ color: "var(--text)" }}>
+          <p className="mt-2 t-heading truncate" style={{ color: "var(--text)" }}>
             {mostAccessed.summary}
           </p>
           <div className="mt-1.5 flex items-center gap-2">
@@ -121,10 +121,10 @@ export function StatsGrid() {
               className="h-[6px] w-[6px] rounded-full"
               style={{ backgroundColor: TYPE_COLORS[mostAccessed.memory_type as MemoryType] }}
             />
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            <span className="t-small" style={{ color: "var(--text-muted)" }}>
               {mostAccessed.memory_type}
             </span>
-            <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
+            <span className="t-small" style={{ color: "var(--text-faint)" }}>
               imp: {Math.round(mostAccessed.importance * 100)}%
             </span>
           </div>
@@ -136,9 +136,9 @@ export function StatsGrid() {
         >
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4" style={{ color: "#06b6d4" }} />
-            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>Most Accessed Memory</span>
+            <span style={{ color: "var(--text-faint)" }}>Most Accessed Memory</span>
           </div>
-          <div className="mt-2 text-sm" style={{ color: "var(--text-faint)" }}>
+          <div className="mt-2 t-small" style={{ color: "var(--text-faint)" }}>
             No recalls yet
           </div>
         </div>

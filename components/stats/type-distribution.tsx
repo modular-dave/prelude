@@ -25,7 +25,7 @@ export function TypeDistribution() {
       {counts.map(({ type, count }) => (
         <div key={type} className="flex items-center gap-3">
           <span
-            className="w-20 text-right text-[11px] font-medium"
+            className="w-20 text-right t-btn"
             style={{ color: TYPE_COLORS[type] }}
           >
             {TYPE_LABELS[type]}
@@ -40,7 +40,7 @@ export function TypeDistribution() {
               }}
             />
           </div>
-          <span className="w-8 text-[11px] tabular-nums" style={{ color: "var(--text-faint)" }}>
+          <span className="w-8 tabular-nums" style={{ color: "var(--text-faint)" }}>
             {count}
           </span>
         </div>

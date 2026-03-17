@@ -34,8 +34,12 @@ export async function POST(req: NextRequest) {
       minDecay: minDecay || undefined,
       types,
     });
-    if (memories.length > 0) {
-      context = await formatContext(memories);
+    // Filter out memories from the current conversation — they're already in the message history
+    const filtered = conversationId
+      ? memories.filter((m: any) => !m.tags?.includes(`conv:${conversationId}`))
+      : memories;
+    if (filtered.length > 0) {
+      context = await formatContext(filtered);
     }
   }
 
@@ -125,21 +129,22 @@ export async function POST(req: NextRequest) {
       }
     },
     async flush() {
-      // Stream is done — store assistant response as memory
-      if (fullText.trim()) {
+      // Stream is done — store assistant response as memory (skip trivially short/generic responses)
+      if (fullText.trim() && fullText.trim().length > 50) {
         try {
+          const importance = await scoreImportance(fullText).catch(() => 0.3);
           const summary =
             fullText.length > 100
               ? fullText.slice(0, 100) + "..."
               : fullText;
           const memId = await storeMemory({
-            type: "episodic",
+            type: "semantic",
             content: fullText,
             summary,
             tags: conversationId
               ? ["assistant-response", `conv:${conversationId}`]
               : ["assistant-response"],
-            importance: 0.3,
+            importance,
           });
           if (memId) {
             await extractEntities(memId, fullText, summary).catch(() => {});

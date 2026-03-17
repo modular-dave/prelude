@@ -47,8 +47,66 @@ export async function DELETE(req: NextRequest) {
     const body = await req.json();
     const db = supabase();
 
+    // ── Scoped deletion by memory origin ──
+    if (body.scope) {
+      let error: { message: string } | null = null;
+
+      switch (body.scope) {
+        case "chat": {
+          // Chat memories: tagged user-message or assistant-response
+          // Two-step: select IDs then delete (Supabase doesn't support NOT + OR in one delete)
+          const { data: chatMems } = await db
+            .from("memories")
+            .select("id")
+            .or("tags.cs.{user-message},tags.cs.{assistant-response}");
+          if (chatMems?.length) {
+            const { error: e } = await db
+              .from("memories")
+              .delete()
+              .in("id", chatMems.map((m: { id: number }) => m.id));
+            error = e;
+          }
+          break;
+        }
+        case "dream": {
+          // Dream-generated memories: source is consolidation or emergence
+          const { error: e } = await db
+            .from("memories")
+            .delete()
+            .or("source.eq.consolidation,source.eq.emergence,tags.cs.{consolidation},tags.cs.{emergence}");
+          error = e;
+          break;
+        }
+        case "introspection": {
+          // Reflection/journal memories
+          const { error: e } = await db
+            .from("memories")
+            .delete()
+            .or("source.eq.reflection,tags.cs.{reflection}");
+          error = e;
+          break;
+        }
+        case "all": {
+          // Nuke everything: memories (cascades to memory_fragments + memory_links), dream_logs, conversations
+          await db.from("dream_logs").delete().gte("id", 0);
+          await db.from("conversations").delete().gte("created_at", "1970-01-01");
+          const { error: e } = await db.from("memories").delete().gte("id", 0);
+          error = e;
+          break;
+        }
+        default:
+          return NextResponse.json(
+            { error: `Unknown scope: ${body.scope}. Use chat|dream|introspection|all` },
+            { status: 400 }
+          );
+      }
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ deleted: body.scope });
+    }
+
     if (body.all) {
-      // Delete ALL memories
+      // Delete ALL memories (legacy, same as scope: "all")
       const { error } = await db.from("memories").delete().neq("id", 0);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ deleted: "all" });
@@ -75,7 +133,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ deleted: body.ids.length });
     }
 
-    return NextResponse.json({ error: "Provide 'all', 'tag', 'id', or 'ids'" }, { status: 400 });
+    return NextResponse.json({ error: "Provide 'scope', 'all', 'tag', 'id', or 'ids'" }, { status: 400 });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

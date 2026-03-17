@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Sliders, Cpu, Check, Trash2, Plus, Loader2, Moon, Brain, MessageSquare, Settings2, Clock, BarChart3 } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Sliders, Cpu, Check, Trash2, Plus, Loader2, Moon, Brain, MessageSquare, Settings2, Clock, BarChart3, Upload } from "lucide-react";
 import Link from "next/link";
+import { ImportOverlay } from "@/components/shell/import-overlay";
 import { NeuroSlider } from "@/components/ui/neuro-slider";
 import { TypeFilterToggles } from "@/components/ui/type-filter-toggles";
 import { useMemory } from "@/lib/memory-context";
@@ -44,6 +45,7 @@ export function SettingsSheet({
   const [reflectionScheduleLoading, setReflectionScheduleLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [cortexConfig, setCortexConfig] = useState<Record<string, any> | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Fetch real model state from backend
   const refreshModels = useCallback(async () => {
@@ -198,7 +200,7 @@ export function SettingsSheet({
       <div className="relative z-10 w-full sm:w-96 h-full overflow-y-auto glass-panel animate-slide-in-right">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between p-4 glass">
-          <h2 className="heading">Settings</h2>
+          <h2 className="t-heading" style={{ color: "var(--text)" }}>Settings</h2>
           <button
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-[6px] transition"
@@ -212,13 +214,13 @@ export function SettingsSheet({
           {/* System Prompt */}
           <button
             onClick={() => setPromptOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <MessageSquare className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">System Prompt</span>
+            <span className="flex-1">System Prompt</span>
             {systemPrompt.trim() && (
-              <span className="text-[9px]" style={{ color: "var(--accent)" }}>
+              <span className="t-tiny" style={{ color: "var(--accent)" }}>
                 Active
               </span>
             )}
@@ -226,8 +228,8 @@ export function SettingsSheet({
           </button>
           {promptOpen && (
             <div className="space-y-2 px-1 pb-2 animate-fade-slide-up">
-              <p className="text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-                Custom instructions prepended to every conversation.
+              <p className="t-tiny leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                Custom instructions prepended to every chat.
               </p>
               <textarea
                 value={systemPrompt}
@@ -239,7 +241,7 @@ export function SettingsSheet({
                 }}
                 placeholder="You are a helpful assistant..."
                 rows={4}
-                className="w-full resize-y rounded-[6px] px-2.5 py-2 text-[10px] leading-relaxed bg-transparent outline-none"
+                className="w-full resize-y rounded-[6px] px-2.5 py-2 t-small leading-relaxed bg-transparent outline-none"
                 style={{
                   border: "1px solid var(--border)",
                   color: "var(--text)",
@@ -250,7 +252,7 @@ export function SettingsSheet({
               {systemPrompt.trim() && (
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
-                  <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                  <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                     Custom prompt active
                   </span>
                 </div>
@@ -261,12 +263,12 @@ export function SettingsSheet({
           {/* Model */}
           <button
             onClick={() => setModelOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <Cpu className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Model</span>
-            <span className="truncate max-w-[120px] text-[9px]" style={{ color: "var(--text-faint)" }}>
+            <span className="flex-1">Model</span>
+            <span className="truncate max-w-[120px] t-tiny" style={{ color: "var(--text-faint)" }}>
               {activeModel ? modelDisplayName(activeModel) : "No model"}
             </span>
             {modelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -279,7 +281,7 @@ export function SettingsSheet({
                   className="h-1.5 w-1.5 rounded-full"
                   style={{ background: backendOnline === true ? "#22c55e" : backendOnline === false ? "#ef4444" : "var(--text-faint)" }}
                 />
-                <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>
+                <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                   {backendOnline === true ? "Backend connected" : backendOnline === false ? "Backend offline" : "Checking..."}
                 </span>
               </div>
@@ -287,7 +289,7 @@ export function SettingsSheet({
               {/* Error message */}
               {modelError && (
                 <div
-                  className="rounded-[6px] px-2.5 py-2 text-[10px]"
+                  className="rounded-[6px] px-2.5 py-2 t-small"
                   style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
                 >
                   {modelError}
@@ -318,18 +320,18 @@ export function SettingsSheet({
                         )}
                         <div className="flex-1 min-w-0">
                           <span
-                            className="block truncate text-[11px]"
+                            className="block truncate"
                             style={{ color: isActive ? "var(--accent)" : "var(--text)" }}
                           >
                             {modelDisplayName(model)}
                           </span>
                           {desc && (
-                            <span className="block truncate text-[9px]" style={{ color: "var(--text-faint)" }}>
+                            <span className="block truncate t-tiny" style={{ color: "var(--text-faint)" }}>
                               {desc}
                             </span>
                           )}
                           {isLoading && (
-                            <span className="block text-[9px]" style={{ color: "var(--accent)" }}>
+                            <span className="block t-tiny" style={{ color: "var(--accent)" }}>
                               Switching...
                             </span>
                           )}
@@ -372,16 +374,16 @@ export function SettingsSheet({
                           <Plus className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
                         )}
                         <div className="flex-1 min-w-0">
-                          <span className="block truncate text-[11px]" style={{ color: "var(--text)" }}>
+                          <span className="block truncate" style={{ color: "var(--text)" }}>
                             {modelDisplayName(model)}
                           </span>
                           {desc && (
-                            <span className="block truncate text-[9px]" style={{ color: "var(--text-faint)" }}>
+                            <span className="block truncate t-tiny" style={{ color: "var(--text-faint)" }}>
                               {desc}
                             </span>
                           )}
                           {isLoading && (
-                            <span className="block text-[9px]" style={{ color: "var(--accent)" }}>
+                            <span className="block t-tiny" style={{ color: "var(--accent)" }}>
                               Downloading...
                             </span>
                           )}
@@ -404,7 +406,7 @@ export function SettingsSheet({
                       if (e.key === "Enter") handleInstallModel(customModelInput);
                     }}
                     placeholder="mlx-community/model-name"
-                    className="flex-1 rounded-[6px] px-2.5 py-1.5 text-[10px] bg-transparent outline-none"
+                    className="flex-1 rounded-[6px] px-2.5 py-1.5 t-small bg-transparent outline-none"
                     style={{
                       border: "1px solid var(--border)",
                       color: "var(--text)",
@@ -413,7 +415,7 @@ export function SettingsSheet({
                   <button
                     onClick={() => handleInstallModel(customModelInput)}
                     disabled={!customModelInput.trim() || !!modelLoading}
-                    className="shrink-0 rounded-[6px] px-2.5 py-1.5 text-[10px] font-medium transition active:scale-95 disabled:opacity-30"
+                    className="shrink-0 rounded-[6px] px-2.5 py-1.5 t-small transition active:scale-95 disabled:opacity-30"
                     style={{ color: "var(--accent)" }}
                   >
                     <Plus className="h-3 w-3" />
@@ -426,11 +428,11 @@ export function SettingsSheet({
           {/* Retrieval Tuning */}
           <button
             onClick={() => setTuningOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <Sliders className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Retrieval Tuning</span>
+            <span className="flex-1">Retrieval Tuning</span>
             {!isDefault && (
               <span
                 className="h-1.5 w-1.5 rounded-full"
@@ -448,7 +450,7 @@ export function SettingsSheet({
                   {!isDefault && (
                     <button
                       onClick={() => updateRetrievalSettings({ ...DEFAULT_RETRIEVAL_SETTINGS })}
-                      className="text-[9px] font-medium transition"
+                      className="t-tiny transition"
                       style={{ color: "var(--accent)" }}
                     >
                       Reset
@@ -490,7 +492,7 @@ export function SettingsSheet({
               {/* Clinamen section */}
               <div className="space-y-3">
                 <h4 className="label">Clinamen (Divergent Recall)</h4>
-                <p className="text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
+                <p className="t-tiny leading-relaxed" style={{ color: "var(--text-faint)" }}>
                   Surfaces high-importance memories with low relevance to the current context — for creative synthesis.
                 </p>
                 <NeuroSlider
@@ -526,11 +528,11 @@ export function SettingsSheet({
           {/* Cortex Schedules */}
           <button
             onClick={() => setSchedulesOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <Moon className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Cortex Schedules</span>
+            <span className="flex-1">Cortex Schedules</span>
             {(s.dreamScheduleEnabled || s.reflectionScheduleEnabled) && (
               <span
                 className="h-1.5 w-1.5 rounded-full"
@@ -541,7 +543,7 @@ export function SettingsSheet({
           </button>
           {schedulesOpen && (
             <div className="space-y-3 px-1 pb-2 animate-fade-slide-up">
-              <p className="text-[9px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              <p className="t-tiny leading-relaxed" style={{ color: "var(--text-faint)" }}>
                 Automated background processes for memory consolidation and introspection.
               </p>
 
@@ -551,8 +553,8 @@ export function SettingsSheet({
                   <div className="flex items-center gap-2">
                     <Moon className="h-3 w-3" style={{ color: s.dreamScheduleEnabled ? "#22c55e" : "var(--text-faint)" }} />
                     <div>
-                      <span className="block text-[11px]" style={{ color: "var(--text)" }}>Dream Cycle</span>
-                      <span className="block text-[9px]" style={{ color: "var(--text-faint)" }}>Consolidate, compact, reflect, resolve, emerge</span>
+                      <span className="block" style={{ color: "var(--text)" }}>Dream Cycle</span>
+                      <span className="block t-tiny" style={{ color: "var(--text-faint)" }}>Consolidate, compact, reflect, resolve, emerge</span>
                     </div>
                   </div>
                   <button
@@ -567,7 +569,7 @@ export function SettingsSheet({
                         setDreamScheduleLoading(false);
                       }
                     }}
-                    className="rounded-full px-2.5 py-1 text-[9px] font-medium transition"
+                    className="rounded-full px-2.5 py-1 t-tiny transition"
                     style={{
                       background: s.dreamScheduleEnabled ? "rgba(34,197,94,0.15)" : "var(--surface)",
                       color: s.dreamScheduleEnabled ? "#22c55e" : "var(--text-faint)",
@@ -587,8 +589,8 @@ export function SettingsSheet({
                     { label: "Decay schedule", value: "Daily 3:00 AM UTC", mono: true },
                   ].map((p) => (
                     <div key={p.label} className="flex items-center justify-between">
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
-                      <span className={`text-[9px] ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className={`t-tiny ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
                     </div>
                   ))}
                   <h4 className="label pt-1" style={{ fontSize: "8px" }}>Event-Driven Triggers</h4>
@@ -597,8 +599,8 @@ export function SettingsSheet({
                     { label: "Min interval", value: "30 min between reflections" },
                   ].map((p) => (
                     <div key={p.label} className="flex items-center justify-between">
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
-                      <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-muted)" }}>{p.value}</span>
                     </div>
                   ))}
                   <h4 className="label pt-1" style={{ fontSize: "8px" }}>Decay Rates (per 24h)</h4>
@@ -611,8 +613,8 @@ export function SettingsSheet({
                       { type: "Introspective", rate: "0.98" },
                     ].map((d) => (
                       <div key={d.type} className="flex items-center justify-between">
-                        <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{d.type}</span>
-                        <span className="text-[9px] font-mono" style={{ color: "var(--text-muted)" }}>{d.rate}</span>
+                        <span className="t-tiny" style={{ color: "var(--text-faint)" }}>{d.type}</span>
+                        <span className="t-tiny font-mono" style={{ color: "var(--text-muted)" }}>{d.rate}</span>
                       </div>
                     ))}
                   </div>
@@ -625,8 +627,8 @@ export function SettingsSheet({
                   <div className="flex items-center gap-2">
                     <Brain className="h-3 w-3" style={{ color: s.reflectionScheduleEnabled ? "#22c55e" : "var(--text-faint)" }} />
                     <div>
-                      <span className="block text-[11px]" style={{ color: "var(--text)" }}>Active Reflection</span>
-                      <span className="block text-[9px]" style={{ color: "var(--text-faint)" }}>Journaling, introspection, self-model</span>
+                      <span className="block" style={{ color: "var(--text)" }}>Active Reflection</span>
+                      <span className="block t-tiny" style={{ color: "var(--text-faint)" }}>Journaling, introspection, self-model</span>
                     </div>
                   </div>
                   <button
@@ -645,7 +647,7 @@ export function SettingsSheet({
                         setReflectionScheduleLoading(false);
                       }
                     }}
-                    className="rounded-full px-2.5 py-1 text-[9px] font-medium transition"
+                    className="rounded-full px-2.5 py-1 t-tiny transition"
                     style={{
                       background: s.reflectionScheduleEnabled ? "rgba(34,197,94,0.15)" : "var(--surface)",
                       color: s.reflectionScheduleEnabled ? "#22c55e" : "var(--text-faint)",
@@ -666,8 +668,8 @@ export function SettingsSheet({
                     { label: "Quiet hours", value: "23:00 - 08:00 UTC" },
                   ].map((p) => (
                     <div key={p.label} className="flex items-center justify-between">
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
-                      <span className={`text-[9px] ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className={`t-tiny ${p.mono ? "font-mono" : ""}`} style={{ color: "var(--text-muted)" }}>{p.value}</span>
                     </div>
                   ))}
                   <h4 className="label pt-1" style={{ fontSize: "8px" }}>Reflection Constraints</h4>
@@ -678,8 +680,8 @@ export function SettingsSheet({
                     { label: "Importance", value: "0.8 (stored)" },
                   ].map((p) => (
                     <div key={p.label} className="flex items-center justify-between">
-                      <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>{p.label}</span>
-                      <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{p.value}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-faint)" }}>{p.label}</span>
+                      <span className="t-tiny" style={{ color: "var(--text-muted)" }}>{p.value}</span>
                     </div>
                   ))}
                   <h4 className="label pt-1" style={{ fontSize: "8px" }}>Seed Selection</h4>
@@ -692,7 +694,7 @@ export function SettingsSheet({
                     ].map((s) => (
                       <div key={s} className="flex items-center gap-1.5">
                         <span className="h-0.5 w-0.5 shrink-0 rounded-full" style={{ background: "var(--text-faint)" }} />
-                        <span className="text-[8px]" style={{ color: "var(--text-faint)" }}>{s}</span>
+                        <span className="t-micro" style={{ color: "var(--text-faint)" }}>{s}</span>
                       </div>
                     ))}
                   </div>
@@ -704,11 +706,11 @@ export function SettingsSheet({
           {/* Cortex Config */}
           <button
             onClick={() => setConfigOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <Settings2 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Cortex Status</span>
+            <span className="flex-1">Cortex Status</span>
             {configOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
           {configOpen && (
@@ -716,7 +718,7 @@ export function SettingsSheet({
               {!cortexConfig ? (
                 <div className="flex items-center gap-2 py-2">
                   <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />
-                  <span className="text-[9px]" style={{ color: "var(--text-faint)" }}>Loading config...</span>
+                  <span className="t-tiny" style={{ color: "var(--text-faint)" }}>Loading config...</span>
                 </div>
               ) : (
                 <>
@@ -733,9 +735,9 @@ export function SettingsSheet({
                           className="h-1.5 w-1.5 shrink-0 rounded-full"
                           style={{ background: svc.connected ? "#22c55e" : svc.required ? "#ef4444" : "var(--text-faint)" }}
                         />
-                        <span className="text-[10px]" style={{ color: "var(--text)" }}>{svc.name}</span>
+                        <span className="t-small" style={{ color: "var(--text)" }}>{svc.name}</span>
                         {svc.detail && (
-                          <span className="ml-auto truncate max-w-[140px] text-[9px]" style={{ color: "var(--text-faint)" }}>
+                          <span className="ml-auto truncate max-w-[140px] t-tiny" style={{ color: "var(--text-faint)" }}>
                             {svc.detail}
                           </span>
                         )}
@@ -744,8 +746,8 @@ export function SettingsSheet({
                     {cortexConfig.inference?.model && (
                       <div className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5" style={{ background: "var(--surface-dim)" }}>
                         <Cpu className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
-                        <span className="text-[10px]" style={{ color: "var(--text)" }}>Model</span>
-                        <span className="ml-auto truncate max-w-[160px] text-[9px]" style={{ color: "var(--text-faint)" }}>
+                        <span className="t-small" style={{ color: "var(--text)" }}>Model</span>
+                        <span className="ml-auto truncate max-w-[160px] t-tiny" style={{ color: "var(--text-faint)" }}>
                           {cortexConfig.inference.model}
                         </span>
                       </div>
@@ -766,7 +768,7 @@ export function SettingsSheet({
                             className="h-1 w-1 shrink-0 rounded-full"
                             style={{ background: enabled ? "#22c55e" : "var(--text-faint)" }}
                           />
-                          <span className="text-[9px] truncate" style={{ color: enabled ? "var(--text)" : "var(--text-faint)" }}>
+                          <span className="t-tiny truncate" style={{ color: enabled ? "var(--text)" : "var(--text-faint)" }}>
                             {key.replace(/([A-Z])/g, " $1").trim()}
                           </span>
                         </div>
@@ -778,7 +780,7 @@ export function SettingsSheet({
                   {cortexConfig.ownerWallet && (
                     <div className="space-y-1">
                       <h4 className="label">Owner Wallet</h4>
-                      <div className="rounded-[6px] px-2.5 py-1.5 font-mono text-[9px] truncate" style={{ background: "var(--surface-dim)", color: "var(--text-faint)" }}>
+                      <div className="rounded-[6px] px-2.5 py-1.5 font-mono t-tiny truncate" style={{ background: "var(--surface-dim)", color: "var(--text-faint)" }}>
                         {cortexConfig.ownerWallet}
                       </div>
                     </div>
@@ -792,26 +794,39 @@ export function SettingsSheet({
           <Link
             href="/stats"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <BarChart3 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Stats</span>
+            <span className="flex-1">Stats</span>
           </Link>
 
           {/* History link */}
           <Link
             href="/history"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left text-xs transition"
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
             <Clock className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
-            <span className="flex-1 font-medium">Memory History</span>
+            <span className="flex-1">Memory History</span>
           </Link>
+
+          {/* Import conversations */}
+          <button
+            onClick={() => setImportOpen(true)}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Upload className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
+            <span className="flex-1">Import Chats</span>
+          </button>
 
         </div>
       </div>
+
+      {/* Import overlay */}
+      {importOpen && <ImportOverlay onClose={() => setImportOpen(false)} />}
     </div>
   );
 }

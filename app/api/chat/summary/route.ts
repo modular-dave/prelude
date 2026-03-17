@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     {
       role: "user",
       content:
-        "Topic label for this conversation:\n" +
+        "Topic label for this chat:\n" +
         messages
           .filter((m) => m.role === "user")
           .map((m) => m.content)

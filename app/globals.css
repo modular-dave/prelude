@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
 
 /* === Design tokens === */
 :root {
@@ -25,29 +24,14 @@
   --introspective: #cc4444;
 }
 
-.dark {
-  --bg: #09090e;
-  --bg-warm: #0f0f16;
-  --surface: rgba(16, 16, 24, 0.92);
-  --surface-solid: #12121a;
-  --text: #e8e8e4;
-  --text-muted: #999;
-  --text-faint: #555;
-  --border: rgba(255, 255, 255, 0.06);
-  --accent: #5566ff;
-  --accent-light: #7788ff;
-  --surface-dim: rgba(255, 255, 255, 0.03);
-  --surface-dimmer: rgba(255, 255, 255, 0.05);
-  --bar-track: rgba(255, 255, 255, 0.08);
-  --hover: rgba(255, 255, 255, 0.04);
-}
-
 body {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-weight: 400;
+  font-size: 11px;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
-  transition: background 0.3s ease, color 0.3s ease;
+  letter-spacing: 0.01em;
 }
 
 /* === Keyframes === */
@@ -120,25 +104,16 @@ body {
   background: var(--hover);
   border-color: rgba(0, 0, 0, 0.12);
 }
-.dark .card:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-/* === Heading utility === */
-.heading {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text);
-}
-
-.label {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
+/* === Typography scale (anchored on 11px "Now" mono style) === */
+.t-title   { font-size: 16px; font-weight: 500; letter-spacing: 0.01em; }
+.t-heading { font-size: 13px; font-weight: 500; letter-spacing: 0.01em; }
+.t-body    { font-size: 11px; font-weight: 400; letter-spacing: 0.01em; }
+.t-small   { font-size: 10px; font-weight: 400; letter-spacing: 0.01em; }
+.t-tiny    { font-size: 9px;  font-weight: 400; letter-spacing: 0.01em; }
+.t-micro   { font-size: 8px;  font-weight: 400; letter-spacing: 0.01em; }
+.t-label   { font-size: 10px; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; }
+.t-stat    { font-size: 18px; font-weight: 500; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
+.t-btn     { font-size: 11px; font-weight: 500; letter-spacing: 0.01em; }
 
 /* === Force-graph tooltip wrapper reset === */
 .float-tooltip-kap {
@@ -156,9 +131,6 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.18); }
-.dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); }
-.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
-
 /* === Range slider === */
 .neuro-range {
   -webkit-appearance: none;

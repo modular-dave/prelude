@@ -22,7 +22,7 @@ export function TypeFilterToggles({ enabled, onChange }: TypeFilterTogglesProps)
 
   return (
     <div className="space-y-1.5">
-      <span className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>
+      <span className="t-small" style={{ color: "var(--text-muted)" }}>
         Memory Types
       </span>
       <div className="flex flex-wrap gap-1.5">
@@ -33,7 +33,7 @@ export function TypeFilterToggles({ enabled, onChange }: TypeFilterTogglesProps)
             <button
               key={type}
               onClick={() => toggle(type)}
-              className="rounded-full px-2.5 py-1 text-[9px] font-medium tracking-wide transition-all"
+              className="rounded-full px-2.5 py-1 t-tiny transition-all"
               style={
                 active
                   ? { background: color, color: "#fff", opacity: 1 }

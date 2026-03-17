@@ -13,7 +13,7 @@ export const PRESET_MODELS = [
 
 export const MODEL_DESCRIPTIONS: Record<string, string> = {
   "mlx-community/Qwen2.5-0.5B-Instruct-4bit": "Fast · best for quick replies",
-  "mlx-community/Qwen2.5-1.5B-Instruct-4bit": "Balanced · best for conversation",
+  "mlx-community/Qwen2.5-1.5B-Instruct-4bit": "Balanced · best for chat",
   "mlx-community/Llama-3.2-1B-Instruct-4bit": "Best for reasoning & follow-up",
   "mlx-community/SmolLM2-360M-Instruct-4bit": "Tiny · best for low-resource devices",
   "mlx-community/gemma-2-2b-it-4bit": "Largest · best for nuanced responses",

@@ -22,6 +22,53 @@ export async function GET(req: NextRequest) {
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  try {
+    let body: any = {};
+    try { body = await req.json(); } catch { /* empty body = clear all */ }
+
+    if (body.logIds && Array.isArray(body.logIds)) {
+      // Delete specific dream log entries + their created memories
+      const { data: logs } = await supabase
+        .from("dream_logs")
+        .select("id, new_memories_created")
+        .in("id", body.logIds);
+
+      const memIds = (logs || []).flatMap((l: any) => l.new_memories_created || []);
+
+      const { error: logErr } = await supabase
+        .from("dream_logs")
+        .delete()
+        .in("id", body.logIds);
+      if (logErr) return NextResponse.json({ error: logErr.message }, { status: 500 });
+
+      if (memIds.length > 0) {
+        await supabase.from("memories").delete().in("id", memIds);
+      }
+
+      return NextResponse.json({ deleted: body.logIds.length });
+    }
+
+    // Clear all dream logs
+    const { error: logErr } = await supabase
+      .from("dream_logs")
+      .delete()
+      .neq("id", 0);
+    if (logErr) return NextResponse.json({ error: logErr.message }, { status: 500 });
+
+    // Also clear dream-generated memories
+    const { error: memErr } = await supabase
+      .from("memories")
+      .delete()
+      .or("source.eq.consolidation,source.eq.emergence,tags.cs.{consolidation},tags.cs.{emergence}");
+    if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 });
+
+    return NextResponse.json({ deleted: "dreams" });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
 export async function POST() {
   try {
     const brain = await ensureCortex();
