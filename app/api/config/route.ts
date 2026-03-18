@@ -17,7 +17,29 @@ export async function GET() {
       provider: process.env.EMBEDDING_PROVIDER || null,
       model: process.env.EMBEDDING_MODEL || null,
       baseUrl: process.env.EMBEDDING_BASE_URL || null,
+      dimensions: process.env.EMBEDDING_DIMENSIONS ? parseInt(process.env.EMBEDDING_DIMENSIONS, 10) : null,
       connected: !!process.env.EMBEDDING_PROVIDER && !!(process.env.EMBEDDING_API_KEY || process.env.EMBEDDING_BASE_URL),
+    },
+    embeddingSlots: {
+      test: process.env.EMBEDDING_TEST_PROVIDER ? {
+        provider: process.env.EMBEDDING_TEST_PROVIDER,
+        model: process.env.EMBEDDING_TEST_MODEL || null,
+        baseUrl: process.env.EMBEDDING_TEST_BASE_URL || null,
+        dimensions: process.env.EMBEDDING_TEST_DIMENSIONS ? parseInt(process.env.EMBEDDING_TEST_DIMENSIONS, 10) : null,
+      } : null,
+      publish: process.env.EMBEDDING_PUBLISH_PROVIDER ? {
+        provider: process.env.EMBEDDING_PUBLISH_PROVIDER,
+        model: process.env.EMBEDDING_PUBLISH_MODEL || null,
+        baseUrl: process.env.EMBEDDING_PUBLISH_BASE_URL || null,
+        dimensions: process.env.EMBEDDING_PUBLISH_DIMENSIONS ? parseInt(process.env.EMBEDDING_PUBLISH_DIMENSIONS, 10) : null,
+      } : null,
+    },
+    embeddingKeys: {
+      openai: !!process.env.EMBEDDING_OPENAI_API_KEY,
+      voyage: !!process.env.EMBEDDING_VOYAGE_API_KEY,
+    },
+    inferenceKeys: {
+      saved: !!(process.env.VENICE_API_KEY && process.env.VENICE_API_KEY !== "local"),
     },
     ownerWallet: process.env.OWNER_WALLET || null,
     features: {

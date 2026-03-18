@@ -5,6 +5,16 @@ const MLX_SERVER = "/Users/dav/.pyenv/versions/lewagon/bin/mlx_lm.server";
 const PORT = 8899;
 const LLM_BASE = `http://127.0.0.1:${PORT}`;
 
+/** Check if mlx_lm is installed */
+export function isMLXInstalled(): boolean {
+  try {
+    execSync(`test -f "${MLX_SERVER}"`, { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Find PID of mlx_lm.server running on our port */
 export function findMLXProcess(): number | null {
   try {
@@ -70,16 +80,6 @@ export async function getActiveModel(): Promise<string | null> {
     const res = await fetch(`${LLM_BASE}/v1/models`);
     if (!res.ok) return null;
     const data = await res.json();
-    // The first model listed is typically the loaded one
-    // But we can also check process args
-    const pid = findMLXProcess();
-    if (pid) {
-      try {
-        const cmdline = execSync(`ps -p ${pid} -o args=`, { encoding: "utf-8" }).trim();
-        const match = cmdline.match(/--model\s+(\S+)/);
-        if (match) return match[1];
-      } catch {}
-    }
     return data.data?.[0]?.id ?? null;
   } catch {
     return null;

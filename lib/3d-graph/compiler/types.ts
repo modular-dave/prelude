@@ -45,6 +45,7 @@ export interface CanonicalEntity {
   memoryType?: string;         // e.g. "episodic", "semantic"
   entityType?: string;         // e.g. "person", "concept"
   accessCount: number;         // retrieval count (access_count from memory)
+  decayFactor: number;         // memory decay factor (1 = no decay, 0 = fully decayed)
   displayOffsets: DisplayOffsets | null; // per-lens position warps
 }
 
@@ -150,6 +151,7 @@ export interface RawGraphNode {
   type: string;                // memory_type or entity type
   val: number;                 // display value (size)
   accessCount: number;         // retrieval/access count
+  decayFactor: number;         // memory decay factor (1 = no decay)
 }
 
 export interface RawGraphData {

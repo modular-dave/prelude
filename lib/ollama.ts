@@ -1,5 +1,7 @@
-const LLM_BASE = process.env.LLM_BASE_URL || "http://127.0.0.1:8899";
-const DEFAULT_MODEL = process.env.LLM_MODEL || "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+import { getActiveModel, getAssignment } from "@/lib/active-model-store";
+
+const LLM_BASE = process.env.VENICE_BASE_URL || process.env.LLM_BASE_URL || "http://127.0.0.1:8899";
+const DEFAULT_MODEL = process.env.VENICE_MODEL || process.env.LLM_MODEL || "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
 
 // Models that don't support the system role — system messages get merged into the first user message
 const NO_SYSTEM_ROLE = new Set([
@@ -48,7 +50,7 @@ export async function streamChat(
   model?: string
 ): Promise<ReadableStream<Uint8Array>> {
   const url = `${LLM_BASE}/v1/chat/completions`;
-  const resolvedModel = model || DEFAULT_MODEL;
+  const resolvedModel = model || getAssignment("chat")?.model || getActiveModel() || DEFAULT_MODEL;
   const normalized = normalizeMessages(messages, resolvedModel);
   const res = await fetch(url, {
     method: "POST",
@@ -102,7 +104,7 @@ export async function streamChat(
 }
 
 export async function chat(messages: ChatMessage[], model?: string): Promise<string> {
-  const resolvedModel = model || DEFAULT_MODEL;
+  const resolvedModel = model || getAssignment("chat")?.model || getActiveModel() || DEFAULT_MODEL;
   const normalized = normalizeMessages(messages, resolvedModel);
   const res = await fetch(`${LLM_BASE}/v1/chat/completions`, {
     method: "POST",

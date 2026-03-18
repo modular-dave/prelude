@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Sliders, Cpu, Check, Trash2, Plus, Loader2, Moon, Brain, MessageSquare, Settings2, Clock, BarChart3, Upload } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Sliders, Cpu, Loader2, Moon, Brain, MessageSquare, Settings2, Clock, BarChart3, Upload } from "lucide-react";
 import Link from "next/link";
 import { ImportOverlay } from "@/components/shell/import-overlay";
 import { NeuroSlider } from "@/components/ui/neuro-slider";
@@ -9,14 +9,7 @@ import { TypeFilterToggles } from "@/components/ui/type-filter-toggles";
 import { useMemory } from "@/lib/memory-context";
 import { DEFAULT_RETRIEVAL_SETTINGS } from "@/lib/retrieval-settings";
 import { loadSystemPrompt, saveSystemPrompt } from "@/lib/system-prompt";
-import {
-  setActiveModel,
-  addKnownModel,
-  removeKnownModel,
-  modelDisplayName,
-  PRESET_MODELS,
-  MODEL_DESCRIPTIONS,
-} from "@/lib/model-settings";
+import { modelDisplayName } from "@/lib/model-settings";
 
 export function SettingsSheet({
   open,
@@ -26,18 +19,12 @@ export function SettingsSheet({
   onClose: () => void;
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
-  const [modelOpen, setModelOpen] = useState(true);
   const [tuningOpen, setTuningOpen] = useState(false);
 
   const { retrievalSettings, updateRetrievalSettings } = useMemory();
 
-  // Model management state
-  const [installedModels, setInstalledModels] = useState<string[]>([]);
+  // Model summary (just for the settings link label)
   const [activeModel, setActiveModelState] = useState<string | null>(null);
-  const [customModelInput, setCustomModelInput] = useState("");
-  const [modelLoading, setModelLoading] = useState<string | null>(null);
-  const [modelError, setModelError] = useState<string | null>(null);
-  const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [schedulesOpen, setSchedulesOpen] = useState(false);
@@ -47,23 +34,14 @@ export function SettingsSheet({
   const [cortexConfig, setCortexConfig] = useState<Record<string, any> | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
-  // Fetch real model state from backend
-  const refreshModels = useCallback(async () => {
+  // Fetch active model name for the link label
+  const refreshActiveModel = useCallback(async () => {
     try {
       const res = await fetch("/api/models");
       const data = await res.json();
-      if (data.error) {
-        setBackendOnline(false);
-        return;
-      }
-      setBackendOnline(data.running);
-      setInstalledModels(data.installed || []);
       setActiveModelState(data.active || null);
-      // Sync localStorage
-      if (data.active) setActiveModel(data.active);
-      for (const m of data.installed || []) addKnownModel(m);
     } catch {
-      setBackendOnline(false);
+      // ignore
     }
   }, []);
 
@@ -75,87 +53,15 @@ export function SettingsSheet({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !modelOpen) return;
-    refreshModels();
-  }, [open, modelOpen, refreshModels]);
+    if (!open) return;
+    refreshActiveModel();
+  }, [open, refreshActiveModel]);
 
   // Fetch Cortex config when section opens
   useEffect(() => {
     if (!configOpen || cortexConfig) return;
     fetch("/api/config").then((r) => r.json()).then(setCortexConfig).catch(() => {});
   }, [configOpen, cortexConfig]);
-
-  const handleSwitchModel = async (model: string) => {
-    if (model === activeModel) return;
-    setModelLoading(model);
-    setModelError(null);
-    try {
-      const res = await fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "switch", model }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setModelError(data.error || "Failed to switch model");
-        return;
-      }
-      await refreshModels();
-    } catch {
-      setModelError("Failed to connect to backend");
-    } finally {
-      setModelLoading(null);
-    }
-  };
-
-  const handleInstallModel = async (model: string) => {
-    const trimmed = model.trim();
-    if (!trimmed) return;
-    setModelLoading(trimmed);
-    setModelError(null);
-    setCustomModelInput("");
-    try {
-      const res = await fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "install", model: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setModelError(data.error || "Failed to install model");
-        return;
-      }
-      addKnownModel(trimmed);
-      await refreshModels();
-    } catch {
-      setModelError("Failed to connect to backend");
-    } finally {
-      setModelLoading(null);
-    }
-  };
-
-  const handleUninstallModel = async (model: string) => {
-    setModelLoading(model);
-    setModelError(null);
-    try {
-      const res = await fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "uninstall", model }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setModelError(data.error || "Failed to uninstall model");
-        return;
-      }
-      removeKnownModel(model);
-      await refreshModels();
-    } catch {
-      setModelError("Failed to connect to backend");
-    } finally {
-      setModelLoading(null);
-    }
-  };
 
   useEffect(() => {
     if (!open) return;
@@ -260,9 +166,10 @@ export function SettingsSheet({
             </div>
           )}
 
-          {/* Model */}
-          <button
-            onClick={() => setModelOpen((v) => !v)}
+          {/* Model — link to dedicated page */}
+          <Link
+            href="/models"
+            onClick={onClose}
             className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
             style={{ color: "var(--text-muted)" }}
           >
@@ -271,159 +178,8 @@ export function SettingsSheet({
             <span className="truncate max-w-[120px] t-tiny" style={{ color: "var(--text-faint)" }}>
               {activeModel ? modelDisplayName(activeModel) : "No model"}
             </span>
-            {modelOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
-          {modelOpen && (
-            <div className="space-y-4 px-1 pb-2 animate-fade-slide-up">
-              {/* Backend status */}
-              <div className="flex items-center gap-2">
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: backendOnline === true ? "#22c55e" : backendOnline === false ? "#ef4444" : "var(--text-faint)" }}
-                />
-                <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
-                  {backendOnline === true ? "Backend connected" : backendOnline === false ? "Backend offline" : "Checking..."}
-                </span>
-              </div>
-
-              {/* Error message */}
-              {modelError && (
-                <div
-                  className="rounded-[6px] px-2.5 py-2 t-small"
-                  style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
-                >
-                  {modelError}
-                </div>
-              )}
-
-              {/* Installed models */}
-              {installedModels.length > 0 && (
-                <div className="space-y-1">
-                  <h4 className="label">Installed</h4>
-                  {installedModels.map((model) => {
-                    const isActive = model === activeModel;
-                    const isLoading = model === modelLoading;
-                    const desc = MODEL_DESCRIPTIONS[model];
-                    return (
-                      <div
-                        key={model}
-                        className="group flex items-center gap-2 rounded-[6px] px-2.5 py-2 transition cursor-pointer"
-                        style={{ background: isActive ? "var(--surface-dim)" : "transparent" }}
-                        onClick={() => !isLoading && handleSwitchModel(model)}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-3 w-3 shrink-0 animate-spin" style={{ color: "var(--accent)" }} />
-                        ) : isActive ? (
-                          <Check className="h-3 w-3 shrink-0" style={{ color: "var(--accent)" }} />
-                        ) : (
-                          <span className="h-3 w-3 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <span
-                            className="block truncate"
-                            style={{ color: isActive ? "var(--accent)" : "var(--text)" }}
-                          >
-                            {modelDisplayName(model)}
-                          </span>
-                          {desc && (
-                            <span className="block truncate t-tiny" style={{ color: "var(--text-faint)" }}>
-                              {desc}
-                            </span>
-                          )}
-                          {isLoading && (
-                            <span className="block t-tiny" style={{ color: "var(--accent)" }}>
-                              Switching...
-                            </span>
-                          )}
-                        </div>
-                        {!isActive && !isLoading && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUninstallModel(model);
-                            }}
-                            className="shrink-0 opacity-0 group-hover:opacity-100 transition p-0.5"
-                            style={{ color: "var(--text-faint)" }}
-                          >
-                            <Trash2 className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Available (not yet installed) */}
-              {PRESET_MODELS.filter((p) => !installedModels.includes(p)).length > 0 && (
-                <div className="space-y-1">
-                  <h4 className="label">Available</h4>
-                  {PRESET_MODELS.filter((p) => !installedModels.includes(p)).map((model) => {
-                    const desc = MODEL_DESCRIPTIONS[model];
-                    const isLoading = model === modelLoading;
-                    return (
-                      <div
-                        key={model}
-                        className="group flex items-center gap-2 rounded-[6px] px-2.5 py-2 transition cursor-pointer"
-                        style={{ opacity: isLoading ? 1 : 0.6 }}
-                        onClick={() => !isLoading && handleInstallModel(model)}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-3 w-3 shrink-0 animate-spin" style={{ color: "var(--accent)" }} />
-                        ) : (
-                          <Plus className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <span className="block truncate" style={{ color: "var(--text)" }}>
-                            {modelDisplayName(model)}
-                          </span>
-                          {desc && (
-                            <span className="block truncate t-tiny" style={{ color: "var(--text-faint)" }}>
-                              {desc}
-                            </span>
-                          )}
-                          {isLoading && (
-                            <span className="block t-tiny" style={{ color: "var(--accent)" }}>
-                              Downloading...
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Custom model input */}
-              <div className="space-y-1.5">
-                <h4 className="label">Custom Model</h4>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={customModelInput}
-                    onChange={(e) => setCustomModelInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleInstallModel(customModelInput);
-                    }}
-                    placeholder="mlx-community/model-name"
-                    className="flex-1 rounded-[6px] px-2.5 py-1.5 t-small bg-transparent outline-none"
-                    style={{
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                  <button
-                    onClick={() => handleInstallModel(customModelInput)}
-                    disabled={!customModelInput.trim() || !!modelLoading}
-                    className="shrink-0 rounded-[6px] px-2.5 py-1.5 t-small transition active:scale-95 disabled:opacity-30"
-                    style={{ color: "var(--accent)" }}
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
 
           {/* Retrieval Tuning */}
           <button

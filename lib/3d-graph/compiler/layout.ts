@@ -135,6 +135,7 @@ export function computeLayout(
       nodeCategory: "cluster",
       numericId: null,
       accessCount: 0,
+      decayFactor: 1,
       displayOffsets: null,
     });
   }
@@ -189,6 +190,7 @@ export function computeLayout(
         nodeCategory: "cluster",
         numericId: null,
         accessCount: 0,
+        decayFactor: 1,
         displayOffsets: null,
       });
     }
@@ -245,6 +247,7 @@ export function computeLayout(
         nodeCategory: "cluster",
         numericId: null,
         accessCount: 0,
+        decayFactor: 1,
         displayOffsets: null,
       });
     }
@@ -316,6 +319,7 @@ export function computeLayout(
       memoryType: rawNode.isEntity ? undefined : rawNode.type,
       entityType: rawNode.isEntity ? rawNode.type : undefined,
       accessCount: rawNode.accessCount,
+      decayFactor: rawNode.decayFactor,
       displayOffsets: computeDisplayOffsets(canonical, importanceT, R),
     });
   }

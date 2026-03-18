@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureCortex } from "@/lib/cortex";
+import { ensureCortex, swapVeniceModel } from "@/lib/cortex";
+import { getAssignment } from "@/lib/active-model-store";
 import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -71,6 +72,17 @@ export async function DELETE(req: NextRequest) {
 
 export async function POST() {
   try {
+    if (!process.env.VENICE_BASE_URL) {
+      return NextResponse.json(
+        { error: "Dream cycles require an inference backend. Set VENICE_BASE_URL (and optionally VENICE_API_KEY / VENICE_MODEL) in your environment." },
+        { status: 400 }
+      );
+    }
+
+    // Swap to dream-assigned model if configured
+    const dreamAssign = getAssignment("dream");
+    if (dreamAssign) swapVeniceModel(dreamAssign.model);
+
     const brain = await ensureCortex();
     let emergenceThought: string | null = null;
 

@@ -2,12 +2,13 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { NeuralGraph, type NeuralGraphHandle, type SelectedEdgeInfo } from "@/components/brain/neural-graph";
+import { PinnedCardBody } from "@/components/brain/pinned-card-body";
 
 import { MemoryNodeDetail } from "@/components/brain/memory-node-detail";
 import { EdgePathDetail } from "@/components/brain/edge-path-detail";
 import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
-import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType, type FilterBag } from "@/lib/types";
+import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType, type FilterBag, type FocusMode } from "@/lib/types";
 import { ALL_MEMORY_TYPES } from "@/lib/retrieval-settings";
 import { Target, Link2, Layers, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, Info, Send, MessageSquare, Clock, Trash2 } from "lucide-react";
 import {
@@ -81,9 +82,10 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [dreamSessions, setDreamSessions] = useState<DreamSession[]>([]);
   const [timelineCutoff, setTimelineCutoff] = useState(Infinity); // Infinity = "now", no cutoff
   const [timelineDragging, setTimelineDragging] = useState(false);
+  const [decayCutoff, setDecayCutoff] = useState(0); // 0 = show all, 1 = only fresh
   const [statusCardCollapsed, setStatusCardCollapsed] = useState(false);
   const [vizMode, setVizMode] = useState<"hero" | "cluster">("hero");
-  const [edgeFocus, setEdgeFocus] = useState(false);
+  const [focus, setFocus] = useState<FocusMode>("memories");
   const [showClock, setShowClock] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -94,6 +96,8 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [graphReady, setGraphReady] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pinnedContent, setPinnedContent] = useState<{ content: any; position: { x: number; y: number } } | null>(null);
   // Path controls state (lifted from EdgePathDetail for floating card)
   const [pathDepth, setPathDepth] = useState(0);
   const [pathDirection, setPathDirection] = useState<"both" | "upstream" | "downstream">("both");
@@ -127,12 +131,12 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   }, [memories, memoryFilter, enabledTypes, timelineCutoff]);
 
   const filterBagRef = useRef<FilterBag>({
-    memoryFilter, typeFilter: enabledTypes, centerMode, edgeFocus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, visibleMemoryIds,
+    memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
+    timelineCutoff, decayCutoff, visibleMemoryIds,
   });
   filterBagRef.current = {
-    memoryFilter, typeFilter: enabledTypes, centerMode, edgeFocus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, visibleMemoryIds,
+    memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
+    timelineCutoff, decayCutoff, visibleMemoryIds,
   };
 
   // The memory ID to trace from — edge source or selected node
@@ -467,8 +471,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     setChatConvId(conv.id);
     setHistoryOpen(false);
     setChatOpen(true);
-    setChatBtnsOpen(true);
-    setFiltersOpen(false);
     setDetailsOpen(false);
   }, []);
 
@@ -636,43 +638,40 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         {/* Left: filter card + details button */}
         <div className="flex flex-col gap-1.5 pointer-events-auto select-none">
           <div className="space-y-0.5">
-            <button onClick={() => toggleSection("filters")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--accent)" }}>
-              Filters {(collapsed.filters ?? false) ? "+" : "−"}
-            </button>
-            {!(collapsed.filters ?? false) && (
-            <div className="flex flex-col gap-0.5">
-            {/* Viz — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("viz")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                viz {(collapsed.viz ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.viz ?? true) && (["hero", "cluster"] as const).map(m => (
+            {/* Viz — horizontal, always visible */}
+            <div className="flex flex-row gap-2 font-mono">
+              <span style={{ color: "var(--text-faint)" }}>viz</span>
+              {(["hero", "cluster"] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setVizMode(m)}
-                  className="font-mono transition active:scale-95 text-left pl-2"
+                  className="transition active:scale-95"
                   style={{ color: vizMode === m ? "var(--accent)" : "var(--text-faint)" }}
                 >
                   {m}
                 </button>
               ))}
             </div>
-            {/* Focus — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("focus")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                focus {(collapsed.focus ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.focus ?? true) && (["memories", "edges"] as const).map(m => (
+            {/* Focus — horizontal, always visible */}
+            <div className="flex flex-row gap-2 font-mono">
+              <span style={{ color: "var(--text-faint)" }}>focus</span>
+              {(["memories", "edges", "entities"] as const).map(m => (
                 <button
                   key={m}
-                  onClick={() => setEdgeFocus(m === "edges")}
-                  className="font-mono transition active:scale-95 text-left pl-2"
-                  style={{ color: (m === "edges") === edgeFocus ? "var(--accent)" : "var(--text-faint)" }}
+                  onClick={() => setFocus(m)}
+                  className="transition active:scale-95"
+                  style={{ color: focus === m ? "var(--accent)" : "var(--text-faint)" }}
                 >
                   {m}
                 </button>
               ))}
             </div>
+            {/* Filters — collapsible */}
+            <button onClick={() => toggleSection("filters")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--accent)" }}>
+              Filters {(collapsed.filters ?? true) ? "+" : "−"}
+            </button>
+            {!(collapsed.filters ?? true) && (
+            <div className="flex flex-col gap-0.5">
             {/* Mode — collapsible */}
             <div className="flex flex-col gap-0.5">
               <button onClick={() => toggleSection("mode")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
@@ -1163,6 +1162,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         </div>
         <div
           style={{
+            position: "relative",
             opacity: graphReady ? 1 : 0,
             transition: "opacity 600ms ease-out",
             pointerEvents: graphReady ? "auto" : "none",
@@ -1186,6 +1186,14 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
               highlightedPath={highlightedPath}
               onEdgeSelect={handleEdgeSelect}
               onReady={() => setGraphReady(true)}
+              onPinnedContentChange={(data) => {
+                if (data) {
+                  const { position, ...content } = data;
+                  setPinnedContent({ content, position });
+                } else {
+                  setPinnedContent(null);
+                }
+              }}
               onBackgroundSelect={() => {
                 setSelectedMemoryId(null);
                 setSelectedEdge(null);
@@ -1195,6 +1203,28 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                 neuralGraphRef.current?.resetView();
               }}
             />
+          )}
+
+          {/* Hover card */}
+          {pinnedContent && (
+            <div
+              style={{
+                position: "absolute",
+                left: pinnedContent.position.x + 12,
+                top: pinnedContent.position.y - 8,
+                zIndex: 50,
+                pointerEvents: "none",
+                background: "rgba(255,255,255,0.95)",
+                backdropFilter: "blur(8px)",
+                borderRadius: 8,
+                padding: "8px 10px",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                minWidth: 140,
+                maxWidth: 220,
+              }}
+            >
+              <PinnedCardBody content={pinnedContent.content} />
+            </div>
           )}
         </div>
       </div>
@@ -1220,6 +1250,40 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         >
           {autoRotate ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
         </button>
+      )}
+
+      {/* Decay filter — bottom-left, above timeline */}
+      {graphReady && (
+        <div className="absolute z-20" style={{
+          bottom: timeRange.min < timeRange.max ? 52 : 16,
+          left: chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px",
+          width: "25%",
+          paddingLeft: 24,
+          transition: "left 0.3s",
+        }}>
+          <div className="flex items-center gap-2">
+            <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap" }}>decay</span>
+            <div className="relative h-4 flex items-center flex-1">
+              <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+              <div
+                className="absolute left-0 h-[2px] rounded-full"
+                style={{ width: `${decayCutoff * 100}%`, background: "var(--accent)" }}
+              />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={decayCutoff * 100}
+                onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                className="neuro-range absolute inset-0 w-full cursor-pointer"
+              />
+            </div>
+            <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
+              {Math.round(decayCutoff * 100)}%
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Timeline bar — bottom */}
