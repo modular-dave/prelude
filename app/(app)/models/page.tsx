@@ -10,6 +10,7 @@ import {
   setAssignment as setLocalAssignment,
 } from "@/lib/model-settings";
 import type { CogFunc, Assignment } from "@/lib/active-model-store";
+import { FloatNav } from "@/components/shell/float-nav";
 
 // ── Provider Definitions ────────────────────────────────────────
 
@@ -19,7 +20,7 @@ interface ProviderDef {
   description: string;
   url: string;
   envVars: { key: string; label: string; required: boolean; placeholder: string }[];
-  models: { id: string; name: string; description: string; size?: string }[];
+  models: { id: string; name: string; description: string; size?: string; ram?: string }[];
 }
 
 const LOCAL_PROVIDERS: ProviderDef[] = [
@@ -34,13 +35,13 @@ const LOCAL_PROVIDERS: ProviderDef[] = [
       { key: "VENICE_MODEL", label: "Model", required: true, placeholder: "qwen2.5:0.5b" },
     ],
     models: [
-      { id: "qwen2.5:0.5b", name: "Qwen 2.5 0.5B", description: "Fast, lightweight", size: "400MB" },
-      { id: "llama3.2:1b", name: "Llama 3.2 1B", description: "Best for reasoning", size: "700MB" },
-      { id: "qwen2.5:1.5b", name: "Qwen 2.5 1.5B", description: "Balanced speed and quality", size: "1GB" },
-      { id: "gemma2:2b", name: "Gemma 2 2B", description: "Google, nuanced responses", size: "1.6GB" },
-      { id: "qwen2.5:3b", name: "Qwen 2.5 3B", description: "Good quality, moderate speed", size: "2GB" },
-      { id: "llama3.2:3b", name: "Llama 3.2 3B", description: "Strong reasoning, larger", size: "2GB" },
-      { id: "phi3:mini", name: "Phi-3 Mini", description: "Microsoft, 3.8B params", size: "2.3GB" },
+      { id: "qwen2.5:0.5b", name: "Qwen 2.5 0.5B", description: "Fast, lightweight", size: "400MB", ram: "1 GB" },
+      { id: "llama3.2:1b", name: "Llama 3.2 1B", description: "Best for reasoning", size: "700MB", ram: "1.5 GB" },
+      { id: "qwen2.5:1.5b", name: "Qwen 2.5 1.5B", description: "Balanced speed and quality", size: "1GB", ram: "2 GB" },
+      { id: "gemma2:2b", name: "Gemma 2 2B", description: "Google, nuanced responses", size: "1.6GB", ram: "2.5 GB" },
+      { id: "qwen2.5:3b", name: "Qwen 2.5 3B", description: "Good quality, moderate speed", size: "2GB", ram: "3 GB" },
+      { id: "llama3.2:3b", name: "Llama 3.2 3B", description: "Strong reasoning, larger", size: "2GB", ram: "3 GB" },
+      { id: "phi3:mini", name: "Phi-3 Mini", description: "Microsoft, 3.8B params", size: "2.3GB", ram: "3.5 GB" },
     ],
   },
   {
@@ -54,11 +55,11 @@ const LOCAL_PROVIDERS: ProviderDef[] = [
       { key: "VENICE_MODEL", label: "Model", required: true, placeholder: "mlx-community/Qwen2.5-1.5B-Instruct-4bit" },
     ],
     models: [
-      { id: "mlx-community/SmolLM2-360M-Instruct", name: "SmolLM2 360M", description: "Tiny, low-resource devices", size: "200MB" },
-      { id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit", name: "Qwen 2.5 0.5B", description: "Fast, best for quick replies", size: "280MB" },
-      { id: "mlx-community/Llama-3.2-1B-Instruct-4bit", name: "Llama 3.2 1B", description: "Best for reasoning", size: "680MB" },
-      { id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit", name: "Qwen 2.5 1.5B", description: "Balanced, best for chat", size: "840MB" },
-      { id: "mlx-community/gemma-2-2b-it-4bit", name: "Gemma 2 2B", description: "Largest, nuanced responses", size: "1.4GB" },
+      { id: "mlx-community/SmolLM2-360M-Instruct", name: "SmolLM2 360M", description: "Tiny, low-resource devices", size: "200MB", ram: "0.5 GB" },
+      { id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit", name: "Qwen 2.5 0.5B", description: "Fast, best for quick replies", size: "280MB", ram: "0.5 GB" },
+      { id: "mlx-community/Llama-3.2-1B-Instruct-4bit", name: "Llama 3.2 1B", description: "Best for reasoning", size: "680MB", ram: "1 GB" },
+      { id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit", name: "Qwen 2.5 1.5B", description: "Balanced, best for chat", size: "840MB", ram: "1.5 GB" },
+      { id: "mlx-community/gemma-2-2b-it-4bit", name: "Gemma 2 2B", description: "Largest, nuanced responses", size: "1.4GB", ram: "2 GB" },
     ],
   },
   {
@@ -236,7 +237,7 @@ function HostedConfigForm({
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
         <h4 className="label">
-          {connected ? "Connected" : "Connect"}
+          {connected ? "Saved" : "Credentials"}
         </h4>
         <a
           href={prov.url}
@@ -294,7 +295,7 @@ function HostedConfigForm({
         ) : connected ? (
           <Check className="h-3 w-3" />
         ) : null}
-        {submitting ? "Connecting…" : connected ? "Reconnect" : "Connect"}
+        {submitting ? "Saving…" : connected ? "Update" : "Save"}
       </button>
     </div>
   );
@@ -408,7 +409,7 @@ function ProviderSection({
                 className="rounded-full px-2 py-0.5 t-micro font-mono"
                 style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}
               >
-                connected
+                saved
               </span>
             )}
             {!isLocal && !hostedConnected && (
@@ -416,7 +417,7 @@ function ProviderSection({
                 className="rounded-full px-2 py-0.5 t-micro font-mono"
                 style={{ background: "rgba(107,114,128,0.15)", color: "#6b7280" }}
               >
-                not connected
+                not saved
               </span>
             )}
             {COG_FUNCS.filter((fn) => {
@@ -593,6 +594,7 @@ function ProviderSection({
                         <span className="block truncate t-micro" style={{ color: "var(--text-faint)" }}>
                           {modelId}
                           {knownModel?.size && ` · ${knownModel.size}`}
+                          {knownModel?.ram && ` ︱ ${knownModel.ram} RAM`}
                         </span>
                       </div>
                       {!isLoading && (
@@ -648,9 +650,11 @@ function ProviderSection({
                       className="group relative rounded-[6px] px-3 py-2 transition cursor-pointer"
                       style={{
                         background: funcTags.length > 0 ? "var(--surface-dim)" : "transparent",
+                        opacity: !isLocal && !hostedConnected && funcTags.length === 0 ? 0.5 : 1,
                       }}
                       onClick={() => {
                         if (isLoading) return;
+                        if (!isLocal && !hostedConnected) return;
                         if (!isLocal || isInstalled) {
                           setPickerModel(pickerModel === model.id ? null : model.id);
                         } else {
@@ -692,6 +696,7 @@ function ProviderSection({
                           <span className="block truncate t-micro" style={{ color: "var(--text-faint)" }}>
                             {model.description}
                             {model.size && ` · ${model.size}`}
+                            {model.ram && ` ︱ ${model.ram} RAM`}
                           </span>
                         </div>
                         {hasProgress && (
@@ -1033,16 +1038,8 @@ export default function ModelsPage() {
   };
 
   return (
-    <div className="relative h-full overflow-y-auto p-6 pt-16" style={{ background: "var(--bg)" }}>
-      {/* Back link */}
-      <Link
-        href="/brain"
-        className="inline-flex items-center gap-1 t-small mb-4 transition"
-        style={{ color: "var(--text-faint)" }}
-      >
-        <ChevronLeft className="h-3 w-3" />
-        Back
-      </Link>
+    <div className="relative h-full overflow-y-auto p-6 pt-20" style={{ background: "var(--bg)" }}>
+      <FloatNav route="brain" />
 
       <div className="animate-fade-slide-up">
         <div className="flex items-center gap-2">

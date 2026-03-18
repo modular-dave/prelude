@@ -1,6 +1,8 @@
 // ── Runtime provider config store ────────────────────────────────
 // Stores hosted provider credentials in memory (server-side) and
-// patches process.env so existing code picks them up automatically.
+// persists to .env.local so they survive restarts.
+
+import { persistEnv } from "@/lib/env-persist";
 
 export interface ProviderConfig {
   baseUrl?: string;
@@ -20,12 +22,13 @@ const ENV_MAP: Record<string, { baseUrl: string; apiKey: string; model: string }
 export function setProviderConfig(providerId: string, config: ProviderConfig): void {
   configs[providerId] = config;
 
-  // Patch process.env so existing code (cortex, ollama.ts) picks up the values
   const envKeys = ENV_MAP[providerId];
   if (envKeys) {
-    if (config.baseUrl) process.env[envKeys.baseUrl] = config.baseUrl;
-    if (config.apiKey) process.env[envKeys.apiKey] = config.apiKey;
-    if (config.model) process.env[envKeys.model] = config.model;
+    const entries: Record<string, string> = {};
+    if (config.baseUrl) entries[envKeys.baseUrl] = config.baseUrl;
+    if (config.apiKey) entries[envKeys.apiKey] = config.apiKey;
+    if (config.model) entries[envKeys.model] = config.model;
+    if (Object.keys(entries).length > 0) persistEnv(entries);
   }
 }
 

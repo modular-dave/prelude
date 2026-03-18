@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""Local OpenAI-compatible embedding server using fastembed (ONNX Runtime).
+"""Local OpenAI-compatible embedding server using MLX (Apple Silicon).
 
 Runs on port 11435 by default. Serves POST /v1/embeddings with the same
 request/response shape as OpenAI's API so the Cortex SDK can use it directly.
 
 Usage:
-    python scripts/embedding-server.py [--port 11435] [--model BAAI/bge-small-en-v1.5]
+    python scripts/embedding-server.py [--port 11435] [--model sentence-transformers/all-MiniLM-L6-v2]
 """
 
 import argparse
 import json
-import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from fastembed import TextEmbedding
 
-DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"  # 384 dims, fast, good quality
+import mlx.core as mx
+from mlx_embeddings import load as mlx_load
+
+DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # 384 dims, fast
 DEFAULT_PORT = 11435
 
 
 class EmbeddingHandler(BaseHTTPRequestHandler):
-    model: TextEmbedding = None  # type: ignore
+    model = None
+    tokenizer = None
     model_name: str = DEFAULT_MODEL
+    dims: int = 0
 
     def do_POST(self):
         if self.path != "/v1/embeddings":
@@ -34,7 +37,7 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
         if isinstance(text_input, str):
             text_input = [text_input]
 
-        embeddings = list(self.model.embed(text_input))
+        embeddings = self._embed(text_input)
 
         response = {
             "object": "list",
@@ -42,7 +45,7 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
                 {
                     "object": "embedding",
                     "index": i,
-                    "embedding": emb.tolist(),
+                    "embedding": emb,
                 }
                 for i, emb in enumerate(embeddings)
             ],
@@ -58,26 +61,80 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(response).encode())
 
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "ok",
+                "model": self.model_name,
+                "dimensions": self.dims,
+            }).encode())
+            return
+        self.send_error(404)
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        t = self.tokenizer._tokenizer
+        encoded = t(
+            texts,
+            return_tensors="np",
+            padding=True,
+            truncation=True,
+            max_length=512,
+        )
+        inputs = {k: mx.array(v) for k, v in encoded.items()}
+        output = self.model(**inputs)
+        hidden = output.last_hidden_state
+        mask = inputs["attention_mask"]
+        # Mean pooling
+        pooled = (hidden * mask[:, :, None]).sum(axis=1) / mask.sum(
+            axis=1, keepdims=True
+        )
+        mx.eval(pooled)
+        return [row.tolist() for row in pooled]
+
     def log_message(self, format, *args):
-        print(f"[embed] {args[0]}")
+        print(f"[mlx-embed] {args[0]}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local embedding server")
+    parser = argparse.ArgumentParser(description="MLX embedding server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL)
     args = parser.parse_args()
 
-    print(f"Loading model: {args.model} ...")
-    EmbeddingHandler.model = TextEmbedding(model_name=args.model)
+    print(f"Loading MLX model: {args.model} ...")
+    model, tokenizer = mlx_load(args.model)
+    EmbeddingHandler.model = model
+    EmbeddingHandler.tokenizer = tokenizer
     EmbeddingHandler.model_name = args.model
 
-    # Warm up
-    list(EmbeddingHandler.model.embed(["warmup"]))
-    print(f"Model ready. Dimensions: {list(EmbeddingHandler.model.embed(['test']))[0].shape[0]}")
+    # Warm up and detect dimensions
+    t = tokenizer._tokenizer
+    encoded = t(["warmup"], return_tensors="np", padding=True, truncation=True)
+    inputs = {k: mx.array(v) for k, v in encoded.items()}
+    output = model(**inputs)
+    hidden = output.last_hidden_state
+    mask = inputs["attention_mask"]
+    pooled = (hidden * mask[:, :, None]).sum(axis=1) / mask.sum(
+        axis=1, keepdims=True
+    )
+    mx.eval(pooled)
+    dims = pooled.shape[1]
+    EmbeddingHandler.dims = dims
+    print(f"Model ready. Dimensions: {dims}")
 
-    server = HTTPServer(("127.0.0.1", args.port), EmbeddingHandler)
-    print(f"Embedding server listening on http://127.0.0.1:{args.port}/v1/embeddings")
+    port = args.port
+    for attempt in range(10):
+        try:
+            server = HTTPServer(("127.0.0.1", port), EmbeddingHandler)
+            break
+        except OSError:
+            if attempt == 9:
+                raise
+            port += 1
+    print(f"Embedding server listening on http://127.0.0.1:{port}/v1/embeddings")
     server.serve_forever()
 
 
