@@ -62,11 +62,12 @@ export class NodeInstances {
   private clusterCount = 0;
   private haloCount = 0;
 
-  // Viz layout cache — recomputed only when lens/centerMode/entity count changes
+  // Viz layout cache — recomputed only when lens/centerMode/entity count/identity changes
   private cachedPositionMap: Map<string, Vec3> | null = null;
   private cachedLens: Lens | null = null;
   private cachedCenterMode: string | null = null;
   private cachedEntityCount = 0;
+  private cachedEntityFingerprint = "";
 
   // Hero map: "count:combined" → entityId for all 6 mode combos (for layout hero selection)
   heroMap = new Map<string, string>();
@@ -108,6 +109,7 @@ export class NodeInstances {
     this.haloMesh = new THREE.InstancedMesh(SHARED_GEO.haloHi, haloMat, 256);
     this.haloMesh.count = 0;
     this.haloMesh.frustumCulled = false;
+    this.haloMesh.renderOrder = -1; // render behind nodes to prevent viewport-filling blobs
   }
 
   // ── Add to scene ──────────────────────────────────────────────
@@ -385,13 +387,18 @@ export class NodeInstances {
     const heroSize = BASE_HERO_SIZE * df;
     const R = bubbleRadius ?? 400;
 
-    // Compute viz layout (cached — only recomputes when lens/centerMode/count changes)
+    // Compute viz layout (cached — only recomputes when lens/centerMode/count/identity changes)
     const currentEntityCount = this.memoryEntityData.length + this.entityEntityData.length;
     const cacheKey = `${centerMode}:${reorgMode}`;
+    // Fingerprint: detect tile swaps even when total count is unchanged
+    const entityFingerprint = this.memoryEntityData.length > 0
+      ? `${this.memoryEntityData[0].id}:${this.memoryEntityData[this.memoryEntityData.length - 1].id}`
+      : "";
     const needsRecompute =
       lens !== this.cachedLens ||
       cacheKey !== this.cachedCenterMode ||
-      currentEntityCount !== this.cachedEntityCount;
+      currentEntityCount !== this.cachedEntityCount ||
+      entityFingerprint !== this.cachedEntityFingerprint;
 
     let positionMap: Map<string, Vec3> | null = null;
     // Build diversity score map (cached — only rebuild when topology or mode changes)
@@ -433,6 +440,7 @@ export class NodeInstances {
       this.cachedLens = lens;
       this.cachedCenterMode = cacheKey;
       this.cachedEntityCount = currentEntityCount;
+      this.cachedEntityFingerprint = entityFingerprint;
       this.computeHeroMap();
     } else {
       positionMap = this.cachedPositionMap;
@@ -465,9 +473,10 @@ export class NodeInstances {
           : centerMode === "combined" ? Math.max(degScore, retScore)
           : degScore; // "reinforced"
       }
+      if (!isFinite(heroScore)) heroScore = 0; // guard against NaN/Infinity from division
 
       // Linear interpolation: minSize → heroSize (density-scaled)
-      let s = minSize + heroScore * (heroSize - minSize);
+      let s = Math.min(minSize + heroScore * (heroSize - minSize), heroSize);
 
       s *= memoryScale;
       if (!visible) s = 0;
@@ -478,8 +487,9 @@ export class NodeInstances {
       _color.set(e.color).multiplyScalar(brightness);
       this.memorySpheres.setColorAt(i, _color);
 
-      // Position from viz layout (origin fallback — no surface positions)
+      // Position from viz layout — hide nodes with no layout position instead of stacking at origin
       const pos = positionMap?.get(e.id);
+      if (!pos) s = 0;
       _position.set(pos?.x ?? 0, pos?.y ?? 0, pos?.z ?? 0);
 
       _scale.set(s, s, s);
@@ -509,8 +519,9 @@ export class NodeInstances {
       _color.set(e.color).multiplyScalar(brightness);
       this.entityOctahedra.setColorAt(i, _color);
 
-      // Position from viz layout (origin fallback — no surface positions)
+      // Position from viz layout — hide nodes with no layout position instead of stacking at origin
       const pos = positionMap?.get(e.id);
+      if (!pos) s = 0;
       _position.set(pos?.x ?? 0, pos?.y ?? 0, pos?.z ?? 0);
 
       _scale.set(s, s, s);
@@ -615,7 +626,7 @@ export class NodeInstances {
       if (!pos) continue;
 
       const baseScale = this.getEntityScale(entityId);
-      const s = baseScale * 1.5;
+      const s = Math.min(baseScale * 1.5, 80); // cap halo to prevent viewport-filling blobs
       _position.copy(pos);
       _scale.set(s, s, s);
       _matrix.compose(_position, _quaternion, _scale);
