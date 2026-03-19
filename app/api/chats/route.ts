@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { apiError, parseIntParam } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "100", 10);
+    const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 100, 1, 1000);
 
     const { data, error } = await supabase
       .from("conversations")
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(conversations);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -65,6 +66,6 @@ export async function POST(req: NextRequest) {
       source: data.source ?? "internal",
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

@@ -42,10 +42,10 @@ export function killMLXServer(): boolean {
       }
     }
     // Force kill if still alive
-    try { process.kill(pid, "SIGKILL"); } catch {}
+    try { process.kill(pid, "SIGKILL"); } catch { /* process already exited */ }
     return true;
   } catch {
-    return false;
+    return false; /* SIGTERM failed — process not found */
   }
 }
 
@@ -68,7 +68,7 @@ export async function waitForServer(timeout: number): Promise<boolean> {
     try {
       const res = await fetch(`${LLM_BASE}/v1/models`);
       if (res.ok) return true;
-    } catch {}
+    } catch { /* server not ready yet — expected during polling */ }
     await new Promise((r) => setTimeout(r, 500));
   }
   return false;
@@ -182,7 +182,7 @@ export function spawnInstallModel(
 
   return {
     abort: () => {
-      try { child.kill("SIGTERM"); } catch {}
+      try { child.kill("SIGTERM"); } catch { /* process already exited */ }
     },
   };
 }

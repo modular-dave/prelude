@@ -26,7 +26,7 @@ const STORAGE_KEY = "prelude:model-settings";
 
 const DEFAULT_SETTINGS: ModelSettings = {
   assignments: { chat: null, dream: null, reflect: null },
-  knownModels: ["mlx-community/Qwen2.5-0.5B-Instruct-4bit"],
+  knownModels: [],
 };
 
 export function loadModelSettings(): ModelSettings {
@@ -80,7 +80,7 @@ export function setAssignment(fn: CogFunc, model: string, provider: string): voi
 
 export function getActiveModel(): string {
   const settings = loadModelSettings();
-  return settings.assignments.chat?.model || "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+  return settings.assignments.chat?.model || "";
 }
 
 export function setActiveModel(model: string): void {

@@ -1,7 +1,7 @@
 import { execSync, spawn } from "child_process";
 import path from "path";
 
-const PYTHON = "/Users/dav/.pyenv/versions/lewagon/bin/python";
+const PYTHON = process.env.PYTHON_PATH || "python3";
 const SCRIPT = path.join(process.cwd(), "scripts/embedding-server.py");
 const DEFAULT_PORT = 11435;
 const DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
@@ -66,7 +66,7 @@ export function spawnEmbeddingServer(
   // Kill anything on the port first
   const existingPid = findEmbeddingProcess(port);
   if (existingPid) {
-    try { process.kill(existingPid, "SIGTERM"); } catch {}
+    try { process.kill(existingPid, "SIGTERM"); } catch { /* process already exited */ }
   }
 
   console.log(`[embedding] Spawning: ${PYTHON} ${SCRIPT} --model ${model} --port ${port}`);
@@ -145,10 +145,10 @@ export function stopEmbeddingServer(port = DEFAULT_PORT): boolean {
     }
     try {
       process.kill(pid, "SIGKILL");
-    } catch {}
+    } catch { /* process already exited after SIGKILL */ }
     return true;
   } catch {
-    return false;
+    return false; /* SIGTERM failed — process not found */
   }
 }
 

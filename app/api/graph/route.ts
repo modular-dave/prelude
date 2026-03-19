@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { knowledgeGraph, graphStats } from "@/lib/clude";
 import { supabase } from "@/lib/supabase";
+import { parseIntParam } from "@/lib/api-utils";
 import type { EntityType } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   try {
     const entityTypes = req.nextUrl.searchParams.get("entityTypes")?.split(",") as EntityType[] | undefined;
-    const minMentions = parseInt(req.nextUrl.searchParams.get("minMentions") ?? "0", 10) || undefined;
+    const minMentionsRaw = parseIntParam(req.nextUrl.searchParams.get("minMentions"), 0, 0, 10000);
+    const minMentions = minMentionsRaw || undefined;
     const includeMemories = req.nextUrl.searchParams.get("includeMemories") === "true";
-    const limit = req.nextUrl.searchParams.has("limit") ? parseInt(req.nextUrl.searchParams.get("limit")!, 10) : undefined;
+    const limit = req.nextUrl.searchParams.has("limit") ? parseIntParam(req.nextUrl.searchParams.get("limit"), 1000, 1, 50000) : undefined;
     const bundle = req.nextUrl.searchParams.get("bundle") === "true";
 
     if (bundle) {

@@ -20,7 +20,7 @@ export function persistEnv(entries: Record<string, string>): void {
   let content = "";
   try {
     content = fs.readFileSync(ENV_PATH, "utf-8");
-  } catch {}
+  } catch { /* file doesn't exist yet — will be created */ }
 
   const { lines, vars } = parseEnvFile(content);
 

@@ -44,11 +44,20 @@ function buildAdjacency(nodeIds: string[], edges: RawEdge[]): {
   for (const edge of edges) {
     if (!neighbors.has(edge.source) || !neighbors.has(edge.target)) continue;
     const w = edge.weight || 1;
-    neighbors.get(edge.source)!.set(edge.target, (neighbors.get(edge.source)!.get(edge.target) || 0) + w);
-    neighbors.get(edge.target)!.set(edge.source, (neighbors.get(edge.target)!.get(edge.source) || 0) + w);
-    degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
-    degrees.set(edge.target, (degrees.get(edge.target) || 0) + w);
-    totalWeight += w;
+
+    if (edge.source === edge.target) {
+      // Self-loop: contributes w to degree once, and w to internal community weight
+      neighbors.get(edge.source)!.set(edge.source, (neighbors.get(edge.source)!.get(edge.source) || 0) + w);
+      degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
+      totalWeight += w;
+    } else {
+      // Normal edge: bidirectional adjacency, w to each endpoint's degree
+      neighbors.get(edge.source)!.set(edge.target, (neighbors.get(edge.source)!.get(edge.target) || 0) + w);
+      neighbors.get(edge.target)!.set(edge.source, (neighbors.get(edge.target)!.get(edge.source) || 0) + w);
+      degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
+      degrees.set(edge.target, (degrees.get(edge.target) || 0) + w);
+      totalWeight += w;
+    }
   }
 
   return { neighbors, totalWeight, degrees };
@@ -160,22 +169,31 @@ function mergeSmallClusters(
 
   if (small.size === 0) return assignment;
 
+  // Pre-index edges by node ID to avoid O(N·E) full scan per node
+  const edgeIndex = new Map<string, Array<{ neighbor: string; weight: number }>>();
+  for (const edge of edges) {
+    if (!edgeIndex.has(edge.source)) edgeIndex.set(edge.source, []);
+    if (!edgeIndex.has(edge.target)) edgeIndex.set(edge.target, []);
+    const w = edge.weight || 1;
+    edgeIndex.get(edge.source)!.push({ neighbor: edge.target, weight: w });
+    edgeIndex.get(edge.target)!.push({ neighbor: edge.source, weight: w });
+  }
+
   const result = new Map(assignment);
 
   for (const nodeId of result.keys()) {
     const comm = result.get(nodeId)!;
     if (!small.has(comm)) continue;
 
-    // Find best neighbor cluster
+    // Find best neighbor cluster using pre-indexed edges
     const neighborClusters = new Map<string, number>();
-    for (const edge of edges) {
-      let neighborId: string | null = null;
-      if (edge.source === nodeId) neighborId = edge.target;
-      else if (edge.target === nodeId) neighborId = edge.source;
-      if (!neighborId) continue;
-      const nc = result.get(neighborId);
-      if (!nc || small.has(nc)) continue;
-      neighborClusters.set(nc, (neighborClusters.get(nc) || 0) + (edge.weight || 1));
+    const nodeEdges = edgeIndex.get(nodeId);
+    if (nodeEdges) {
+      for (const { neighbor, weight } of nodeEdges) {
+        const nc = result.get(neighbor);
+        if (!nc || small.has(nc)) continue;
+        neighborClusters.set(nc, (neighborClusters.get(nc) || 0) + weight);
+      }
     }
 
     if (neighborClusters.size > 0) {
@@ -257,7 +275,7 @@ export function computeHierarchy(data: RawGraphData, config: CompilerConfig): Cl
 
   // Level 2 → 1: subclusters → clusters (if enough subclusters)
   let l1Assignment = new Map<string, string>();
-  if (subclusters.size > 12) {
+  if (subclusters.size > config.subclusterThreshold) {
     // Build a coarsened graph: subclusters as nodes, aggregate edges
     const subIds = [...subclusters];
     const subEdges = aggregateEdges(l2Assignment, data.edges);
@@ -275,7 +293,7 @@ export function computeHierarchy(data: RawGraphData, config: CompilerConfig): Cl
   // Level 1 → 0: clusters → superclusters (if enough clusters)
   const clusters = new Set(l1Assignment.values());
   let l0Assignment = new Map<string, string>();
-  if (clusters.size > 8) {
+  if (clusters.size > config.clusterThreshold) {
     const clusterIds = [...clusters];
     // Build cluster-level edges
     const clusterEdgeMap = new Map<string, number>();

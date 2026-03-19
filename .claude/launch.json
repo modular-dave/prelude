@@ -11,8 +11,8 @@
     {
       "name": "mlx-server",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["server/mlx_server.py", "11434"],
-      "port": 11434
+      "runtimeArgs": ["server/mlx_server.py", "8899"],
+      "port": 8899
     }
   ]
 }

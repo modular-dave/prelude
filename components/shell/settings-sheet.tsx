@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { ImportOverlay } from "@/components/shell/import-overlay";
 import { loadSystemPrompt, saveSystemPrompt } from "@/lib/system-prompt";
@@ -16,27 +15,22 @@ export function SettingsSheet({
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  // Model summary (just for the settings link label)
   const [activeModel, setActiveModelState] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [importOpen, setImportOpen] = useState(false);
-
-  // Cortex summary
   const [cortexSummary, setCortexSummary] = useState<string | null>(null);
 
-  // Fetch active model name for the link label
   const refreshActiveModel = useCallback(async () => {
     try {
       const res = await fetch("/api/models");
       const data = await res.json();
       setActiveModelState(data.active || null);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[settings] Failed to fetch active model:", e);
     }
   }, []);
 
-  // Fetch cortex config summary
   const refreshCortexSummary = useCallback(async () => {
     try {
       const res = await fetch("/api/config");
@@ -51,11 +45,8 @@ export function SettingsSheet({
     }
   }, []);
 
-  // Load system prompt when sheet opens
   useEffect(() => {
-    if (open) {
-      setSystemPrompt(loadSystemPrompt());
-    }
+    if (open) setSystemPrompt(loadSystemPrompt());
   }, [open]);
 
   useEffect(() => {
@@ -66,19 +57,13 @@ export function SettingsSheet({
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    if (open) { document.body.style.overflow = "hidden"; } else { document.body.style.overflow = ""; }
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
@@ -89,140 +74,121 @@ export function SettingsSheet({
       <div
         ref={backdropRef}
         className="absolute inset-0 animate-fade-in"
-        style={{ background: "rgba(0,0,0,0.15)", backdropFilter: "blur(2px)" }}
+        style={{ background: "rgba(0,0,0,0.08)" }}
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full sm:w-96 h-full overflow-y-auto glass-panel animate-slide-in-right">
+      <div
+        className="relative z-10 w-full sm:w-80 h-full overflow-y-auto font-mono animate-slide-in-right"
+        style={{ background: "var(--bg)", borderLeft: "2px solid var(--border)" }}
+      >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-4 glass">
-          <h2 style={{ fontSize: "13px", fontWeight: 500, color: "var(--text)" }}>Settings</h2>
-          <button
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-[6px] transition"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <X className="h-3.5 w-3.5" />
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          <span className="t-heading" style={{ color: "var(--text)" }}>settings</span>
+          <button onClick={onClose} className="text-btn t-body" style={{ color: "var(--text-faint)" }}>
+            ×
           </button>
         </div>
 
-        <div className="p-4 space-y-2">
+        <div className="p-4 space-y-1">
           {/* System Prompt */}
           <button
             onClick={() => setPromptOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition active:scale-[0.99]"
           >
-            <span className="flex-1">System Prompt</span>
+            <span className="t-body" style={{ color: "var(--text-faint)" }}>
+              {promptOpen ? "−" : "+"} system prompt
+            </span>
             {systemPrompt.trim() && (
-              <span style={{ fontSize: "9px", fontWeight: 400, color: "var(--accent)" }}>
-                Active
-              </span>
-            )}
-            {promptOpen ? (
-              <ChevronRight className="h-3.5 w-3.5 rotate-90" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
+              <span className="h-[5px] w-[5px] rounded-full" style={{ background: "var(--accent)" }} />
             )}
           </button>
           {promptOpen && (
-            <div className="space-y-2 px-1 pb-2 animate-fade-slide-up">
-              <p style={{ fontSize: "9px", fontWeight: 400, lineHeight: 1.6, color: "var(--text-faint)" }}>
-                Custom instructions prepended to every chat.
+            <div className="pl-4 space-y-2 pb-2 animate-fade-slide-up">
+              <p className="t-micro" style={{ color: "var(--text-faint)", lineHeight: 1.6 }}>
+                custom instructions prepended to every chat
               </p>
               <textarea
                 value={systemPrompt}
-                onChange={(e) => {
-                  setSystemPrompt(e.target.value);
-                }}
-                onBlur={() => {
-                  saveSystemPrompt(systemPrompt);
-                }}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                onBlur={() => saveSystemPrompt(systemPrompt)}
                 placeholder="You are a helpful assistant..."
                 rows={4}
-                className="w-full resize-y rounded-[6px] px-2.5 py-2 bg-transparent outline-none"
+                className="w-full resize-y bg-transparent px-0 py-1 outline-none t-body"
                 style={{
-                  fontSize: "11px",
-                  fontWeight: 400,
-                  lineHeight: 1.6,
-                  border: "1px solid var(--border)",
+                  borderBottom: "1px solid var(--border)",
                   color: "var(--text)",
                   minHeight: "60px",
                   maxHeight: "200px",
+                  lineHeight: 1.6,
                 }}
               />
-              {systemPrompt.trim() && (
-                <div className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
-                  <span style={{ fontSize: "9px", fontWeight: 400, color: "var(--text-faint)" }}>
-                    Custom prompt active
-                  </span>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Model — link to dedicated page */}
+          <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+
+          {/* Model */}
           <Link
             href="/models"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)", textDecoration: "none" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition"
+            style={{ color: "var(--text-muted)", textDecoration: "none" }}
           >
-            <span className="flex-1">Model</span>
-            <span className="truncate max-w-[120px]" style={{ fontSize: "9px", fontWeight: 400, color: "var(--text-faint)" }}>
-              {activeModel ? modelDisplayName(activeModel) : "No model"}
+            <span className="flex-1 t-body">models</span>
+            <span className="truncate max-w-[120px] t-micro" style={{ color: "var(--text-faint)" }}>
+              {activeModel ? modelDisplayName(activeModel) : "—"}
             </span>
           </Link>
 
-          {/* Cortex — link to dedicated page */}
+          {/* Cortex */}
           <Link
             href="/cortex"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)", textDecoration: "none" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition"
+            style={{ color: "var(--text-muted)", textDecoration: "none" }}
           >
-            <span className="flex-1">Cortex</span>
+            <span className="flex-1 t-body">cortex</span>
             {cortexSummary && (
-              <span className="truncate max-w-[120px]" style={{ fontSize: "9px", fontWeight: 400, color: "var(--text-faint)" }}>
+              <span className="truncate max-w-[120px] t-micro" style={{ color: "var(--text-faint)" }}>
                 {cortexSummary}
               </span>
             )}
           </Link>
 
-          {/* Stats link */}
+          {/* Stats */}
           <Link
             href="/stats"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)", textDecoration: "none" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition"
+            style={{ color: "var(--text-muted)", textDecoration: "none" }}
           >
-            <span className="flex-1">Stats</span>
+            <span className="t-body">stats</span>
           </Link>
 
-          {/* History link */}
+          {/* History */}
           <Link
             href="/history"
             onClick={onClose}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)", textDecoration: "none" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition"
+            style={{ color: "var(--text-muted)", textDecoration: "none" }}
           >
-            <span className="flex-1">Memory History</span>
+            <span className="t-body">memory history</span>
           </Link>
 
-          {/* Import conversations */}
+          <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+
+          {/* Import */}
           <button
             onClick={() => setImportOpen(true)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
-            style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-muted)" }}
+            className="flex w-full items-center gap-1.5 py-1.5 text-left transition"
+            style={{ color: "var(--text-muted)" }}
           >
-            <span className="flex-1">Import Chats</span>
+            <span className="t-body">import chats</span>
           </button>
-
         </div>
       </div>
 
-      {/* Import overlay */}
       {importOpen && <ImportOverlay onClose={() => setImportOpen(false)} />}
     </div>
   );

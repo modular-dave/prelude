@@ -8,25 +8,19 @@ import { MemoryNodeDetail } from "@/components/brain/memory-node-detail";
 import { EdgePathDetail } from "@/components/brain/edge-path-detail";
 import { useMemory } from "@/lib/memory-context";
 import { useContainerSize } from "@/hooks/use-container-size";
-import { TYPE_COLORS, TYPE_LABELS, LINK_TYPE_COLORS, LINK_TYPE_LABELS, type MemoryType, type FilterBag, type FocusMode } from "@/lib/types";
+import { TYPE_COLORS, LINK_TYPE_COLORS, type MemoryType, type FilterBag, type FocusMode } from "@/lib/types";
 import { ALL_MEMORY_TYPES } from "@/lib/retrieval-settings";
-import { Target, Link2, Layers, ChevronDown, ChevronRight, Moon, Check, Play, Pause, Plus, Minus, Info, Send, MessageSquare, Clock, Trash2 } from "lucide-react";
-import {
-  loadConversations,
-  saveConversation,
-  updateConversation,
-  deleteConversation,
-  clearAllConversations,
-  generateTitle,
-} from "@/lib/chat-store";
-import { getActiveModel } from "@/lib/model-settings";
-import { loadSystemPrompt } from "@/lib/system-prompt";
-import type { Conversation, ChatMessage } from "@/lib/chat-store";
+import { ChevronDown, ChevronRight, Play, Pause, Plus, Minus, Info, MessageSquare, Trash2 } from "lucide-react";
+import type { Conversation } from "@/lib/chat-store";
+import { useCortexStatus } from "@/components/brain/hooks/use-cortex-status";
+import { useBrainChat } from "@/components/brain/hooks/use-brain-chat";
+import { usePathTracing } from "@/components/brain/hooks/use-path-tracing";
 import { SettingsPanel } from "@/components/brain/panels/settings-panel";
 import { ModelsPanel } from "@/components/brain/panels/models-panel";
 import { CortexPanel } from "@/components/brain/panels/cortex-panel";
 import { ImportPanel } from "@/components/brain/panels/import-panel";
 import { FloatNav } from "@/components/shell/float-nav";
+import { BrainStatusBar } from "@/components/brain/sections/brain-status-bar";
 
 type MemoryFilter = "all" | "inputs" | "outputs";
 type CenterMode = "combined" | "reinforced" | "retrieved";
@@ -95,12 +89,15 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [showClock, setShowClock] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState("");
-  const [chatStreaming, setChatStreaming] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatConvId, setChatConvId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  // ── Brain chat (extracted hook) ──
+  const {
+    chatInput, setChatInput, chatStreaming, chatMessages, setChatMessages,
+    chatConvId, setChatConvId, historyOpen, setHistoryOpen, conversations,
+    chatScrollRef, handleNewBrainChat, handleLoadConversation,
+    handleDeleteConversation, handleClearAll, sendBrainChat,
+  } = useBrainChat(retrievalSettings, refresh, setChatOpen, setDetailsOpen);
+
   const [rightPanel, setRightPanel] = useState<"settings" | "models" | "cortex" | "import" | null>(null);
   const [graphReady, setGraphReady] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,7 +108,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [pathMinStrength, setPathMinStrength] = useState(0);
   // traceData is now a derived value (useMemo), not state
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const chatScrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const neuralGraphRef = useRef<NeuralGraphHandle>(null);
@@ -141,145 +137,14 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
     timelineCutoff, decayCutoff, visibleMemoryIds: globalVisibleIds, reorgMode,
   });
-  // Updated below after reachableNodes is computed
-
-  // The memory ID to trace from — edge source or selected node
-  const traceMemoryId = selectedEdge
-    ? selectedEdge.sourceNumericId
-    : selectedMemoryId;
-
-  // Build adjacency list from loaded graph edges (instant, no API call)
-  const adjacency = useMemo(() => {
-    const adj = new Map<string, Array<{ target: string; type: string; strength: number }>>();
-    for (const e of knowledgeGraph.edges) {
-      const src = e.source;
-      const tgt = e.target;
-      if (!adj.has(src)) adj.set(src, []);
-      if (!adj.has(tgt)) adj.set(tgt, []);
-      adj.get(src)!.push({ target: tgt, type: e.type, strength: e.weight });
-      adj.get(tgt)!.push({ target: src, type: e.type, strength: e.weight });
-    }
-    return adj;
-  }, [knowledgeGraph.edges]);
-
-  // Client-side BFS trace (synchronous, instant — derived value, no state)
-  const traceData = useMemo(() => {
-    if (!traceMemoryId) return null;
-    const rootId = `m_${traceMemoryId}`;
-    const visited = new Map<string, number>();
-    visited.set(rootId, 0);
-    const queue: Array<{ id: string; depth: number }> = [{ id: rootId, depth: 0 }];
-    const links: Array<{ source_id: number; target_id: number; strength: number; link_type: string }> = [];
-    const seen = new Set<string>();
-
-    while (queue.length > 0) {
-      const { id, depth } = queue.shift()!;
-      if (depth >= 10) continue;
-      for (const edge of (adjacency.get(id) || [])) {
-        if (!visited.has(edge.target)) {
-          visited.set(edge.target, depth + 1);
-          queue.push({ id: edge.target, depth: depth + 1 });
-        }
-        if (id.startsWith("m_") && edge.target.startsWith("m_")) {
-          const key = id < edge.target ? `${id}|${edge.target}` : `${edge.target}|${id}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            const srcNum = parseInt(id.slice(2));
-            const tgtNum = parseInt(edge.target.slice(2));
-            if (!isNaN(srcNum) && !isNaN(tgtNum)) {
-              links.push({ source_id: srcNum, target_id: tgtNum, strength: edge.strength, link_type: edge.type });
-            }
-          }
-        }
-      }
-    }
-
-    const nodes = Array.from(visited.entries())
-      .filter(([id]) => id.startsWith("m_"))
-      .map(([id, depth]) => ({ id: parseInt(id.slice(2)), depth }));
-
-    return {
-      root: { id: traceMemoryId, depth: 0 },
-      ancestors: nodes.filter(n => n.depth > 0),
-      descendants: [],
-      related: [],
-      links,
-    };
-  }, [traceMemoryId, adjacency]);
-
-  // Compute actual max depth from trace nodes (not the request param)
-  const traceMaxDepth = useMemo(() => {
-    if (!traceData) return 0;
-    let max = 0;
-    for (const n of (traceData.ancestors || [])) if (n.depth > max) max = n.depth;
-    for (const n of (traceData.descendants || [])) if (n.depth > max) max = n.depth;
-    for (const n of (traceData.related || [])) if ((n.depth ?? 1) > max) max = n.depth ?? 1;
-    return max;
-  }, [traceData]);
-
-  // Build filtered trace nodes (respects direction + depth)
-  const allTraceNodes = useMemo(() => {
-    if (!traceData) return new Map<number, any>(); // eslint-disable-line @typescript-eslint/no-explicit-any
-    const map = new Map<number, any>(); // eslint-disable-line @typescript-eslint/no-explicit-any
-    if (traceData.root) map.set(traceData.root.id, { ...traceData.root, depth: 0 });
-    if (pathDirection !== "downstream") {
-      for (const n of (traceData.ancestors || [])) {
-        if (n.depth <= pathDepth) map.set(n.id, n);
-      }
-    }
-    if (pathDirection !== "upstream") {
-      for (const n of (traceData.descendants || [])) {
-        if (n.depth <= pathDepth) map.set(n.id, n);
-      }
-    }
-    for (const n of (traceData.related || [])) {
-      if ((n.depth ?? 1) <= pathDepth) map.set(n.id, n);
-    }
-    return map;
-  }, [traceData, pathDirection, pathDepth]);
-
-  // Depth map for NeuralGraph — maps graph node IDs to BFS hop depth
-  const traceNodeDepths = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [numId, node] of allTraceNodes) {
-      map.set(`m_${numId}`, node.depth ?? 1);
-    }
-    return map;
-  }, [allTraceNodes]);
-
-  // All trace nodes within depth + strength filter (no BFS needed — trace API already computed the cluster)
-  const reachableNodes = useMemo(() => {
-    if (!traceData || !traceMemoryId) return [];
-    // Start with all nodes from allTraceNodes (already filtered by depth + direction)
-    const nodes = new Set<number>(allTraceNodes.keys());
-    nodes.add(traceMemoryId);
-    // If minStrength > 0, filter to only nodes that have at least one link passing the threshold
-    if (pathMinStrength > 0 && traceData.links) {
-      const connected = new Set<number>();
-      connected.add(traceMemoryId);
-      for (const l of traceData.links) {
-        if (l.strength >= pathMinStrength && nodes.has(l.source_id) && nodes.has(l.target_id)) {
-          connected.add(l.source_id);
-          connected.add(l.target_id);
-        }
-      }
-      return Array.from(connected);
-    }
-    return Array.from(nodes);
-  }, [traceData, traceMemoryId, allTraceNodes, pathMinStrength]);
-
-  const reachableCount = reachableNodes.length;
-
-  // Combined visibility: global filters ∩ trace path filter
-  const visibleMemoryIds = useMemo(() => {
-    if (!traceData || !traceMemoryId) return globalVisibleIds;
-    // Filter to reachable nodes (at depth 0 = just the selected node)
-    const reachableSet = new Set(reachableNodes);
-    if (globalVisibleIds !== null) {
-      return new Set([...reachableSet].filter(id => globalVisibleIds.has(id)));
-    }
-    return reachableSet;
-  }, [traceData, traceMemoryId, reachableNodes, globalVisibleIds]);
+  // ── Path tracing (extracted hook) ──
+  const {
+    traceMemoryId, traceData, traceMaxDepth, allTraceNodes,
+    traceNodeDepths, reachableNodes, reachableCount, visibleMemoryIds,
+  } = usePathTracing(
+    selectedMemoryId, selectedEdge, knowledgeGraph.edges,
+    globalVisibleIds, pathDepth, pathDirection, pathMinStrength,
+  );
 
   // Update filterBag ref with combined visibility
   filterBagRef.current = {
@@ -387,69 +252,8 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     })();
   }, []);
 
-  // ── Cortex status ──
-  const [cortexOnline, setCortexOnline] = useState<boolean | null>(null);
-  const [activeModel, setActiveModel] = useState<string | null>(null);
-  const [inferenceConnected, setInferenceConnected] = useState(false);
-  const [embeddingConnected, setEmbeddingConnected] = useState(false);
-  const [dreamToggling, setDreamToggling] = useState(false);
-  const [reflectToggling, setReflectToggling] = useState(false);
-  const [inferenceModelLabel, setInferenceModelLabel] = useState<string | null>(null);
-  const [embeddingModelLabel, setEmbeddingModelLabel] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [modelsRes, configRes, statusRes] = await Promise.all([
-          fetch("/api/models"),
-          fetch("/api/config"),
-          fetch("/api/status"),
-        ]);
-        const modelsData = await modelsRes.json();
-        const configData = await configRes.json();
-        const statusData = await statusRes.json();
-        setCortexOnline(!!modelsData.running);
-        if (modelsData.active) setActiveModel(modelsData.active);
-        setInferenceConnected(!!configData.inference?.connected);
-        setEmbeddingConnected(!!configData.embedding?.connected);
-        if (configData.inference?.model) setInferenceModelLabel(`${configData.inference.provider} · ${configData.inference.model.split("/").pop()}`);
-        if (configData.embedding?.model) setEmbeddingModelLabel(`${configData.embedding.provider} · ${configData.embedding.model.split("/").pop()}`);
-        // Sync schedule state from server
-        updateRetrievalSettings({
-          dreamScheduleEnabled: statusData.schedules?.dream ?? false,
-          reflectionScheduleEnabled: statusData.schedules?.reflection ?? false,
-        });
-      } catch {
-        setCortexOnline(false);
-      }
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleDreamSchedule = useCallback(async () => {
-    setDreamToggling(true);
-    try {
-      const method = retrievalSettings.dreamScheduleEnabled ? "DELETE" : "POST";
-      await fetch("/api/dream/schedule", { method });
-      updateRetrievalSettings({ dreamScheduleEnabled: !retrievalSettings.dreamScheduleEnabled });
-    } finally {
-      setDreamToggling(false);
-    }
-  }, [retrievalSettings.dreamScheduleEnabled, updateRetrievalSettings]);
-
-  const toggleReflectSchedule = useCallback(async () => {
-    setReflectToggling(true);
-    try {
-      const action = retrievalSettings.reflectionScheduleEnabled ? "stop" : "start";
-      await fetch("/api/reflect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schedule: action }),
-      });
-      updateRetrievalSettings({ reflectionScheduleEnabled: !retrievalSettings.reflectionScheduleEnabled });
-    } finally {
-      setReflectToggling(false);
-    }
-  }, [retrievalSettings.reflectionScheduleEnabled, updateRetrievalSettings]);
+  // ── Cortex status (extracted hook) ──
+  const cortexStatus = useCortexStatus(retrievalSettings, updateRetrievalSettings);
 
   // Build a set of memory IDs belonging to any dream session
   const allDreamMemoryIds = useMemo(() => {
@@ -555,155 +359,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     return true;
   }, [allDreamMemoryIds, selectedDreamMemoryIds, enabledDreamSources]);
 
-  // Auto-scroll chat messages
-  useEffect(() => {
-    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [chatMessages]);
-
-  const refreshConversations = useCallback(async () => {
-    const convs = await loadConversations();
-    setConversations(convs);
-    return convs;
-  }, []);
-
-  // Load conversations on mount
-  useEffect(() => { refreshConversations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleNewBrainChat = useCallback(() => {
-    setChatMessages([]);
-    setChatConvId(null);
-    setChatInput("");
-    setHistoryOpen(false);
-  }, []);
-
-  const handleLoadConversation = useCallback((conv: Conversation) => {
-    setChatMessages(conv.messages);
-    setChatConvId(conv.id);
-    setHistoryOpen(false);
-    setChatOpen(true);
-    setDetailsOpen(false);
-  }, []);
-
-  const handleDeleteConversation = useCallback(async (id: string) => {
-    await deleteConversation(id);
-    const updated = await refreshConversations();
-    refresh();
-    if (chatConvId === id) {
-      if (updated.length > 0) {
-        setChatConvId(updated[0].id);
-        setChatMessages(updated[0].messages);
-      } else {
-        setChatConvId(null);
-        setChatMessages([]);
-      }
-    }
-  }, [chatConvId, refreshConversations, refresh]);
-
-  const handleClearAll = useCallback(async () => {
-    fetch("/api/memories", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    }).then(() => refresh());
-    await clearAllConversations();
-    setConversations([]);
-    setChatConvId(null);
-    setChatMessages([]);
-    setHistoryOpen(false);
-  }, [refresh]);
-
-  const sendBrainChat = useCallback(async () => {
-    const text = chatInput.trim();
-    if (!text || chatStreaming) return;
-
-    const userMsg: ChatMessage = { role: "user", content: text };
-    const newMessages = [...chatMessages, userMsg];
-    setChatMessages(newMessages);
-    setChatInput("");
-    setChatStreaming(true);
-
-    // Persist conversation
-    const now = new Date().toISOString();
-    const title = generateTitle(newMessages);
-    let convId = chatConvId;
-
-    if (convId) {
-      await updateConversation(convId, { title, messages: newMessages });
-    } else {
-      convId = crypto.randomUUID();
-      const conv: Conversation = { id: convId, title, messages: newMessages, createdAt: now, updatedAt: now };
-      await saveConversation(conv);
-      setChatConvId(convId);
-    }
-
-    // Refresh graph — user memory node appears
-    refresh();
-
-    const assistantMsg: ChatMessage = { role: "assistant", content: "" };
-    setChatMessages([...newMessages, assistantMsg]);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: newMessages,
-          conversationId: convId,
-          recallLimit: retrievalSettings.recallLimit,
-          minImportance: retrievalSettings.minImportance || undefined,
-          minDecay: retrievalSettings.minDecay || undefined,
-          types: retrievalSettings.enabledTypes,
-          systemPrompt: loadSystemPrompt(),
-          clinamenLimit: retrievalSettings.clinamenLimit,
-          clinamenMinImportance: retrievalSettings.clinamenMinImportance,
-          clinamenMaxRelevance: retrievalSettings.clinamenMaxRelevance,
-        }),
-      });
-
-      if (!res.ok || !res.body) throw new Error("Failed to connect");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") break;
-          try {
-            const json = JSON.parse(data);
-            if (json.content) {
-              fullContent += json.content;
-              setChatMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: fullContent };
-                return updated;
-              });
-            }
-          } catch { /* skip */ }
-        }
-      }
-
-      const finalMessages = [...newMessages, { role: "assistant" as const, content: fullContent }];
-      setChatMessages(finalMessages);
-      await updateConversation(convId!, { title: generateTitle(finalMessages), messages: finalMessages });
-      refreshConversations();
-
-      // Refresh graph — assistant memory node appears
-      refresh();
-    } catch (err) {
-      const errorMsg = `Error: ${err instanceof Error ? err.message : "Connection failed"}`;
-      const finalMessages = [...newMessages, { role: "assistant" as const, content: errorMsg }];
-      setChatMessages(finalMessages);
-      if (convId) await updateConversation(convId, { title: generateTitle(finalMessages), messages: finalMessages });
-    } finally {
-      setChatStreaming(false);
-    }
-  }, [chatInput, chatStreaming, chatMessages, chatConvId, retrievalSettings, refresh, refreshConversations]);
 
   const filteredMemories = useMemo(() => memories.filter((m) => {
     if (timelineCutoff !== Infinity && new Date(m.created_at).getTime() > timelineCutoff) return false;
@@ -1165,169 +820,15 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
           )}
 
           {/* Neural Map status — pinned top-right */}
-          {(() => {
-            const inferenceActive = inferenceConnected;
-            const embeddingActive = embeddingConnected;
-            const dreamActive = retrievalSettings.dreamScheduleEnabled;
-            const reflectActive = retrievalSettings.reflectionScheduleEnabled;
-            const modelActive = inferenceActive || embeddingActive;
-            const memActive = dreamActive || reflectActive;
-            const activeCount = [modelActive, memActive].filter(Boolean).length;
-            const inactiveGrey = "var(--text-faint)";
-            const status = cortexOnline === null ? "..." : !cortexOnline ? "inactive" : activeCount === 2 ? "live" : activeCount > 0 ? "partial" : "inactive";
-            const dotColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
-            const textColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
-            const modelDot = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
-            const modelText = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
-            const modelLabel = inferenceActive && embeddingActive ? "active" : inferenceActive || embeddingActive ? "partial" : "inactive";
-            const memDot = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
-            const memText = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
-            const memLabel = dreamActive && reflectActive ? "active" : dreamActive || reflectActive ? "partial" : "inactive";
-            return (
-              <div className="absolute top-0 right-4 pointer-events-auto select-none text-right">
-                <div className="flex items-center gap-1.5 justify-end">
-                  {!compact && (
-                    <span className="font-mono" style={{ color: "var(--accent)" }}>
-                      Neural Map
-                    </span>
-                  )}
-                  {!compact && (
-                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                      {filteredMemories.length}
-                    </span>
-                  )}
-                  <span
-                    className="h-[5px] w-[5px] rounded-full"
-                    style={{ background: status === "..." ? "var(--text-faint)" : dotColor }}
-                  />
-                  <span className="font-mono" style={{ color: status === "..." ? "var(--text-faint)" : textColor }}>
-                    {status}
-                  </span>
-                </div>
-                {!compact && (
-                <div className="mt-1 space-y-0.5">
-                    {/* Models section — collapsible */}
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button
-                        onClick={() => toggleSection("model")}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        {!(collapsed.model ?? true) ? "−" : "+"} models︱
-                      </button>
-                      <span
-                        className="h-[5px] w-[5px] rounded-full"
-                        style={{ background: modelDot }}
-                      />
-                      <span
-                        className="font-mono cursor-pointer"
-                        onClick={() => toggleSection("model")}
-                        style={{ color: modelText }}
-                      >
-                        {modelLabel}
-                      </span>
-                    </div>
-                    {!(collapsed.model ?? true) && (
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                          inference︱
-                        </span>
-                        <span
-                          className="h-[5px] w-[5px] rounded-full"
-                          style={{ background: inferenceActive ? "#22c55e" : "var(--text-faint)" }}
-                        />
-                        <span className="font-mono" style={{ color: inferenceActive ? "#22c55e" : "var(--text-faint)" }}>
-                          {inferenceActive ? "active" : "inactive"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 justify-end">
-                        <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                          embedding︱
-                        </span>
-                        <span
-                          className="h-[5px] w-[5px] rounded-full"
-                          style={{ background: embeddingActive ? "#22c55e" : "var(--text-faint)" }}
-                        />
-                        <span className="font-mono" style={{ color: embeddingActive ? "#22c55e" : "var(--text-faint)" }}>
-                          {embeddingActive ? "active" : "inactive"}
-                        </span>
-                      </div>
-                    </div>
-                    )}
-
-                    {/* Memory section — collapsible */}
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button
-                        onClick={() => toggleSection("memory")}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        {!(collapsed.memory ?? true) ? "−" : "+"} memory︱
-                      </button>
-                      <span
-                        className="h-[5px] w-[5px] rounded-full"
-                        style={{ background: memDot }}
-                      />
-                      <span
-                        className="font-mono cursor-pointer"
-                        onClick={() => toggleSection("memory")}
-                        style={{ color: memText }}
-                      >
-                        {memLabel}
-                      </span>
-                    </div>
-                    {!(collapsed.memory ?? true) && (
-                    <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button
-                        onClick={toggleDreamSchedule}
-                        disabled={dreamToggling}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        dream︱
-                      </button>
-                      <span
-                        className="h-[5px] w-[5px] rounded-full"
-                        style={{ background: dreamActive ? "#22c55e" : "var(--text-faint)" }}
-                      />
-                      <span
-                        className="font-mono cursor-pointer"
-                        onClick={toggleDreamSchedule}
-                        style={{ color: dreamActive ? "#22c55e" : "var(--text-faint)" }}
-                      >
-                        {dreamToggling ? "..." : dreamActive ? "active" : "inactive"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button
-                        onClick={toggleReflectSchedule}
-                        disabled={reflectToggling}
-                        className="font-mono transition active:scale-95"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        reflect︱
-                      </button>
-                      <span
-                        className="h-[5px] w-[5px] rounded-full"
-                        style={{ background: reflectActive ? "#22c55e" : "var(--text-faint)" }}
-                      />
-                      <span
-                        className="font-mono cursor-pointer"
-                        onClick={toggleReflectSchedule}
-                        style={{ color: reflectActive ? "#22c55e" : "var(--text-faint)" }}
-                      >
-                        {reflectToggling ? "..." : reflectActive ? "active" : "inactive"}
-                      </span>
-                    </div>
-                    </div>
-                    )}
-                </div>
-                )}
-              </div>
-            );
-          })()}
+          <BrainStatusBar
+            compact={compact}
+            filteredCount={filteredMemories.length}
+            cortexStatus={cortexStatus}
+            dreamScheduleEnabled={retrievalSettings.dreamScheduleEnabled}
+            reflectionScheduleEnabled={retrievalSettings.reflectionScheduleEnabled}
+            collapsed={collapsed}
+            toggleSection={toggleSection}
+          />
         </div>
 
         {/* Zoom buttons */}

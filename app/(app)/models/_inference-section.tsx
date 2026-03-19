@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   setActiveModel,
   addKnownModel,
@@ -78,8 +78,11 @@ export function InferenceSection() {
           }
           setHostedConnected(connected);
         }
-      } catch {}
-    } catch {
+      } catch (e) {
+        console.warn("[models] Failed to fetch hosted provider status:", e);
+      }
+    } catch (e) {
+      console.warn("[models] Failed to refresh models:", e);
       setBackendOnline(false);
     }
   }, []);
@@ -229,7 +232,7 @@ export function InferenceSection() {
             } else if (evt.status === "error") {
               setModelError(evt.error || "Install failed");
             }
-          } catch {}
+          } catch { /* partial SSE chunk — expected, skip */ }
         }
       }
       addKnownModel(trimmed);
@@ -296,39 +299,31 @@ export function InferenceSection() {
 
   return (
     <>
-      {/* Status card — inference assignments */}
-      <div
-        className="mt-6 rounded-[8px] px-4 py-3"
-        style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
-      >
-        <div className="flex items-center gap-3 mb-2">
+      {/* Status — inference assignments */}
+      <div className="mt-6">
+        <div className="flex items-center gap-1.5">
           <span
-            className="h-2 w-2 rounded-full shrink-0"
+            className="h-[5px] w-[5px] rounded-full shrink-0"
             style={{ background: backendOnline === null ? "var(--text-faint)" : statusConfig.color }}
           />
           <span className="font-mono" style={{ color: backendOnline === null ? "var(--text-faint)" : statusConfig.color, fontSize: 11, fontWeight: 400 }}>
-            {backendOnline === null ? "Checking..." : statusConfig.label}
+            {backendOnline === null ? "checking..." : statusConfig.label}
           </span>
         </div>
-        <span className="font-mono mt-1 mb-1 block" style={{ fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-faint)" }}>Inference</span>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="mt-2 space-y-0.5">
           {COG_FUNCS.map(({ key, label, color }) => {
             const assign = assignments[key];
             return (
-              <div
-                key={key}
-                className="rounded-[6px] px-2.5 py-1.5"
-                style={{ background: "var(--surface)", borderLeft: `2px solid ${color}` }}
-              >
-                <span className="block font-mono" style={{ color, fontSize: 9, fontWeight: 400 }}>
+              <div key={key} className="flex items-center gap-2">
+                <span className="font-mono" style={{ color, fontSize: 9, fontWeight: 400, width: 44 }}>
                   {label.toLowerCase()}
                 </span>
-                <span className="block font-mono truncate mt-0.5" style={{ color: assign?.model ? "var(--accent)" : "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+                <span className="font-mono truncate" style={{ color: assign?.model ? "var(--text)" : "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
                   {assign?.model || "unassigned"}
                 </span>
                 {assign?.provider && assign.provider !== "unknown" && (
-                  <span className="block font-mono truncate" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-                    via {assign.provider}
+                  <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+                    ︱{assign.provider}
                   </span>
                 )}
               </div>
@@ -339,26 +334,22 @@ export function InferenceSection() {
 
       {/* Error */}
       {modelError && (
-        <div className="mt-4 rounded-[8px] p-4" style={{ background: "color-mix(in srgb, var(--error) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)" }}>
-          <p className="font-mono" style={{ color: "var(--error)", fontSize: 11, fontWeight: 400 }}>{modelError}</p>
-        </div>
+        <p className="mt-3 font-mono" style={{ color: "var(--error)", fontSize: 11, fontWeight: 400 }}>{modelError}</p>
       )}
 
       {/* Inference section */}
       <div className="mt-8">
+        <div style={{ borderTop: "1px solid var(--border)", margin: "16px 0 8px" }} />
         <button
           onClick={() => setInferenceOpen((v) => !v)}
-          className="flex w-full items-center gap-2 mb-3 text-left"
+          className="flex w-full items-center gap-1.5 mb-3 text-left transition active:scale-[0.99]"
         >
-          <span className="font-mono flex-1" style={{ color: "var(--text)", fontSize: 13, fontWeight: 500 }}>Inference</span>
-          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-            Chat, dream, reflect
+          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 11, fontWeight: 400 }}>
+            {inferenceOpen ? "−" : "+"} inference︱
           </span>
-          {inferenceOpen ? (
-            <ChevronDown className="h-3 w-3" style={{ color: "var(--text-faint)" }} />
-          ) : (
-            <ChevronRight className="h-3 w-3" style={{ color: "var(--text-faint)" }} />
-          )}
+          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+            chat, dream, reflect
+          </span>
         </button>
         {inferenceOpen && (
           <div className="space-y-6 animate-fade-slide-up">

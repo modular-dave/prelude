@@ -27,6 +27,7 @@ import {
   type CogFunc,
 } from "@/lib/active-model-store";
 import { swapVeniceModel, resetCortex } from "@/lib/cortex";
+import { apiError } from "@/lib/api-utils";
 
 const CONFIGURED_MODEL = process.env.VENICE_MODEL || null;
 
@@ -108,7 +109,9 @@ export async function POST(req: NextRequest) {
       try {
         const { execSync } = await import("child_process");
         execSync("pkill -f 'ollama serve'", { timeout: 5000 });
-      } catch {}
+      } catch (e) {
+        console.warn("[models] pkill ollama failed (may already be stopped):", e instanceof Error ? e.message : e);
+      }
       return NextResponse.json({ ok: true });
     }
     killMLXServer();
@@ -122,25 +125,25 @@ export async function POST(req: NextRequest) {
       if (already) return NextResponse.json({ ok: true });
       const ready = await startOllamaServer();
       if (!ready) {
-        return NextResponse.json({ error: "Ollama failed to start. Is it installed?" }, { status: 502 });
+        return apiError("Ollama failed to start. Is it installed?", 502);
       }
       return NextResponse.json({ ok: true });
     }
 
     const mlxModel = model || listMLXModels()[0];
     if (!mlxModel) {
-      return NextResponse.json({ error: "No MLX models installed. Install a model first." }, { status: 400 });
+      return apiError("No MLX models installed. Install a model first.");
     }
     killMLXServer();
     const ready = await startMLXServer(mlxModel);
     if (!ready) {
-      return NextResponse.json({ error: "MLX server failed to start within timeout" }, { status: 502 });
+      return apiError("MLX server failed to start within timeout", 502);
     }
     return NextResponse.json({ ok: true, model });
   }
 
   if (!model) {
-    return NextResponse.json({ error: "model required" }, { status: 400 });
+    return apiError("model required");
   }
 
   // ── Ollama provider ──────────────────────────────────────────
@@ -157,19 +160,19 @@ export async function POST(req: NextRequest) {
     if (action === "install") {
       const result = await pullOllamaModel(model);
       if (!result.success) {
-        return NextResponse.json({ error: result.error || "Pull failed" }, { status: 500 });
+        return apiError(result.error || "Pull failed", 500);
       }
       return NextResponse.json({ ok: true, model });
     }
     if (action === "uninstall") {
       const result = await deleteOllamaModel(model);
       if (!result.success) {
-        return NextResponse.json({ error: result.error || "Delete failed" }, { status: 500 });
+        return apiError(result.error || "Delete failed", 500);
       }
       clearAssignmentsForModel(model);
       return NextResponse.json({ ok: true, model, assignments: getAllAssignments() });
     }
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    return apiError("Invalid action");
   }
 
   // ── MLX provider (default) ───────────────────────────────────
@@ -186,13 +189,10 @@ export async function POST(req: NextRequest) {
         killMLXServer();
         const ready = await startMLXServer(model);
         if (!ready) {
-          return NextResponse.json({ error: "Server failed to start within timeout" }, { status: 502 });
+          return apiError("Server failed to start within timeout", 502);
         }
       } catch (err) {
-        return NextResponse.json(
-          { error: err instanceof Error ? err.message : "Failed to switch model" },
-          { status: 500 },
-        );
+        return apiError(err instanceof Error ? err.message : "Failed to switch model", 500);
       }
     }
     return NextResponse.json({ ok: true, model, cognitiveFunction: fn, assignments: getAllAssignments() });
@@ -200,18 +200,18 @@ export async function POST(req: NextRequest) {
   if (action === "install") {
     const result = installMLXModel(model);
     if (!result.success) {
-      return NextResponse.json({ error: result.error || "Install failed" }, { status: 500 });
+      return apiError(result.error || "Install failed", 500);
     }
     return NextResponse.json({ ok: true, model });
   }
   if (action === "uninstall") {
     const result = uninstallMLXModel(model);
     if (!result.success) {
-      return NextResponse.json({ error: result.error || "Uninstall failed" }, { status: 500 });
+      return apiError(result.error || "Uninstall failed", 500);
     }
     clearAssignmentsForModel(model);
     return NextResponse.json({ ok: true, model, assignments: getAllAssignments() });
   }
 
-  return NextResponse.json({ error: "Invalid action. Use: start, switch, install, uninstall" }, { status: 400 });
+  return apiError("Invalid action. Use: start, switch, install, uninstall");
 }

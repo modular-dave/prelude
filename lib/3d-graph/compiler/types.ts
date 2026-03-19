@@ -171,6 +171,8 @@ export interface CompilerConfig {
   maxClusterSize: number;        // maximum before splitting
   neighborhoodDepth: number;     // hops for topology chunks
   bubbleRadius: number;          // sphere radius
+  subclusterThreshold: number;   // min subclusters to trigger cluster-level grouping
+  clusterThreshold: number;      // min clusters to trigger supercluster-level grouping
 }
 
 export const DEFAULT_COMPILER_CONFIG: CompilerConfig = {
@@ -182,4 +184,6 @@ export const DEFAULT_COMPILER_CONFIG: CompilerConfig = {
   maxClusterSize: 50,
   neighborhoodDepth: 2,
   bubbleRadius: 400,
+  subclusterThreshold: 12,
+  clusterThreshold: 8,
 };

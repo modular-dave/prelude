@@ -62,7 +62,7 @@ export async function processConversationMessage(opts: {
   // 3. Conversation-thread linking (Cortex doesn't know conversation structure)
   if (linkToIds?.length) {
     for (const prevId of linkToIds) {
-      await link(memId, prevId, "relates", 0.5).catch(() => {});
+      await link(memId, prevId, "relates", 0.5).catch(() => { /* link failure is non-fatal — memory was already stored */ });
     }
   }
 

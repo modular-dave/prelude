@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { recallMemories, getStats, storeMemory } from "@/lib/clude";
+import { apiError, parseIntParam } from "@/lib/api-utils";
 
 function supabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
@@ -8,7 +9,7 @@ function supabase() {
 
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q") ?? "";
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10);
+  const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 20, 1, 1000);
 
   try {
     if (query === "__stats__") {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
         .contains("tags", [tag])
         .order("created_at", { ascending: true })
         .limit(limit);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json(data ?? []);
     }
 
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     const memories = await recallMemories(query, { limit, minImportance, minDecay, types });
     return NextResponse.json(memories);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -95,62 +96,68 @@ export async function DELETE(req: NextRequest) {
           break;
         }
         default:
-          return NextResponse.json(
-            { error: `Unknown scope: ${body.scope}. Use chat|dream|introspection|all` },
-            { status: 400 }
-          );
+          return apiError(`Unknown scope: ${body.scope}. Use chat|dream|introspection|all`);
       }
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.scope });
     }
 
     if (body.all) {
       // Delete ALL memories (legacy, same as scope: "all")
       const { error } = await db.from("memories").delete().neq("id", 0);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: "all" });
     }
 
     if (body.tag) {
       // Delete memories containing a specific tag
       const { error } = await db.from("memories").delete().contains("tags", [body.tag]);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.tag });
     }
 
     if (body.id) {
       // Delete a single memory by ID
       const { error } = await db.from("memories").delete().eq("id", body.id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.id });
     }
 
     if (body.ids && Array.isArray(body.ids)) {
       // Delete multiple memories by IDs
       const { error } = await db.from("memories").delete().in("id", body.ids);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.ids.length });
     }
 
-    return NextResponse.json({ error: "Provide 'scope', 'all', 'tag', 'id', or 'ids'" }, { status: 400 });
+    return apiError("Provide 'scope', 'all', 'tag', 'id', or 'ids'");
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
+
+const VALID_MEMORY_TYPES = new Set(["episodic", "semantic", "procedural", "autobiographical", "reflection", "dream", "emergence"]);
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    if (!body.content || typeof body.content !== "string") {
+      return apiError("'content' is required and must be a string");
+    }
+    if (body.content.length > 100_000) {
+      return apiError("'content' exceeds maximum length of 100,000 characters");
+    }
+    const type = VALID_MEMORY_TYPES.has(body.type) ? body.type : "semantic";
     const id = await storeMemory({
-      type: body.type ?? "semantic",
+      type,
       content: body.content,
       summary: body.summary ?? body.content.slice(0, 100),
-      tags: body.tags ?? [],
-      importance: body.importance ?? 0.6,
+      tags: Array.isArray(body.tags) ? body.tags.filter((t: unknown) => typeof t === "string").slice(0, 50) : [],
+      importance: Math.min(Math.max(Number(body.importance) || 0.6, 0), 1),
     });
     return NextResponse.json({ id });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

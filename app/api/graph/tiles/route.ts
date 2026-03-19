@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCachedOutput } from "../compile/route";
+import { apiError } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   const output = getCachedOutput();
   if (!output) {
-    return NextResponse.json(
-      { error: "No compiled graph. POST to /api/graph/compile first." },
-      { status: 404 },
-    );
+    return apiError("No compiled graph. POST to /api/graph/compile first.", 404);
   }
 
   const tileId = req.nextUrl.searchParams.get("id");
@@ -16,7 +14,7 @@ export async function GET(req: NextRequest) {
   if (tileId) {
     const tile = output.tiles.get(tileId);
     if (!tile) {
-      return NextResponse.json({ error: `Tile not found: ${tileId}` }, { status: 404 });
+      return apiError(`Tile not found: ${tileId}`, 404);
     }
     return NextResponse.json(tile);
   }
@@ -24,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (chunkId) {
     const chunk = output.topologyChunks.get(chunkId);
     if (!chunk) {
-      return NextResponse.json({ error: `Topology chunk not found: ${chunkId}` }, { status: 404 });
+      return apiError(`Topology chunk not found: ${chunkId}`, 404);
     }
     return NextResponse.json(chunk);
   }

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { parseIntParam } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "10000", 10);
+    const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 10000, 1, 50000);
 
     const { data, error } = await supabase
       .from("memory_links")

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { similarEntities, entitiesInMemory } from "@/lib/clude";
+import { parseIntParam } from "@/lib/api-utils";
 import type { EntityType } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   try {
     const query = req.nextUrl.searchParams.get("q");
     const memoryId = req.nextUrl.searchParams.get("memoryId");
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10);
+    const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 20, 1, 500);
     const entityTypes = req.nextUrl.searchParams.get("entityTypes")?.split(",") as EntityType[] | undefined;
 
     if (memoryId) {

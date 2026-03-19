@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordAction, recordOutcome, learnFromActions } from "@/lib/clude";
+import { apiError } from "@/lib/api-utils";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,8 +22,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ lessons });
     }
 
-    return NextResponse.json({ error: "type must be action, outcome, or learn" }, { status: 400 });
+    return apiError("type must be action, outcome, or learn");
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

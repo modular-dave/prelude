@@ -118,7 +118,7 @@ function streamOllamaPull(model: string): Response {
           try {
             const json = JSON.parse(buffer);
             if (json.status) send({ status: json.status });
-          } catch {}
+          } catch { /* incomplete JSON in buffer remainder — expected */ }
         }
 
         send({ status: "done" });

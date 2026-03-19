@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCortex } from "@/lib/cortex";
 import { getDb } from "clude-bot/dist/core/database";
+import { apiError } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
     const memoryId = req.nextUrl.searchParams.get("memoryId");
     if (!memoryId) {
-      return NextResponse.json({ error: "memoryId required" }, { status: 400 });
+      return apiError("memoryId required");
     }
 
     await ensureCortex();
@@ -20,6 +21,6 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
     return NextResponse.json(data ?? []);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
