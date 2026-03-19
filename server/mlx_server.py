@@ -84,6 +84,6 @@ def health():
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 11434
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8899
     print(f"Starting MLX server on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
