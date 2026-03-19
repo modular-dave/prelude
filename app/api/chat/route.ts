@@ -1,13 +1,11 @@
 import { NextRequest } from "next/server";
 import { streamChat, type ChatMessage } from "@/lib/ollama";
 import {
-  storeMemory,
   recallMemories,
   formatContext,
-  scoreImportance,
-  extractEntities,
   clinamen,
 } from "@/lib/clude";
+import { processConversationMessage } from "@/lib/memory-pipeline";
 
 export async function POST(req: NextRequest) {
   const { messages, model, recallLimit, minImportance, minDecay, types, conversationId, systemPrompt, clinamenLimit, clinamenMinImportance, clinamenMaxRelevance } = (await req.json()) as {
@@ -25,7 +23,7 @@ export async function POST(req: NextRequest) {
   };
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
 
-  // Recall relevant memories via Cortex (full recall with access tracking + Hebbian reinforcement)
+  // ── Recall relevant memories via Cortex ──
   let context = "";
   if (lastUserMsg) {
     const memories = await recallMemories(lastUserMsg.content, {
@@ -34,7 +32,6 @@ export async function POST(req: NextRequest) {
       minDecay: minDecay || undefined,
       types,
     });
-    // Filter out memories from the current conversation — they're already in the message history
     const filtered = conversationId
       ? memories.filter((m: any) => !m.tags?.includes(`conv:${conversationId}`))
       : memories;
@@ -43,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Fetch clinamen (divergent) memories if enabled
+  // ── Fetch clinamen (divergent) memories ──
   let clinamenContext = "";
   if (lastUserMsg && clinamenLimit && clinamenLimit > 0) {
     try {
@@ -64,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Build messages with custom system prompt, Cortex context, and clinamen
+  // ── Build LLM message array ──
   const llmMessages: ChatMessage[] = [];
   if (systemPrompt) {
     llmMessages.push({ role: "system", content: systemPrompt });
@@ -77,43 +74,24 @@ export async function POST(req: NextRequest) {
   }
   llmMessages.push(...messages);
 
-  // Stream response from local MLX
-  const stream = await streamChat(llmMessages, model);
-
-  // Store the user message as episodic memory with scored importance (fire and forget)
+  // ── Store user message as episodic memory (before streaming) ──
+  let userMemId: number | null = null;
   if (lastUserMsg) {
-    (async () => {
-      try {
-        const importance = await scoreImportance(lastUserMsg.content).catch(() => 0.5);
-        const summary =
-          lastUserMsg.content.length > 100
-            ? lastUserMsg.content.slice(0, 100) + "..."
-            : lastUserMsg.content;
-        const memId = await storeMemory({
-          type: "episodic",
-          content: lastUserMsg.content,
-          summary,
-          tags: conversationId ? ["user-message", `conv:${conversationId}`] : ["user-message"],
-          importance,
-        });
-        // Extract and link entities from the user message
-        if (memId) {
-          await extractEntities(memId, lastUserMsg.content, summary).catch(() => {});
-        }
-      } catch {
-        // non-critical
-      }
-    })();
+    userMemId = await processConversationMessage({
+      role: "user",
+      content: lastUserMsg.content,
+      conversationId,
+    }).catch(() => null);
   }
 
-  // Use TransformStream to intercept chunks inline while streaming to client
-  // This ensures assistant response collection survives the request lifecycle
+  // ── Stream LLM response ──
+  const stream = await streamChat(llmMessages);
+
+  // ── Collect assistant response and store as episodic memory ──
   let fullText = "";
   const transform = new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
-      // Pass through to client
       controller.enqueue(chunk);
-      // Collect text for memory storage
       const text = new TextDecoder().decode(chunk, { stream: true });
       for (const line of text.split("\n")) {
         if (!line.startsWith("data: ")) continue;
@@ -129,29 +107,13 @@ export async function POST(req: NextRequest) {
       }
     },
     async flush() {
-      // Stream is done — store assistant response as memory (skip trivially short/generic responses)
       if (fullText.trim() && fullText.trim().length > 50) {
-        try {
-          const importance = await scoreImportance(fullText).catch(() => 0.3);
-          const summary =
-            fullText.length > 100
-              ? fullText.slice(0, 100) + "..."
-              : fullText;
-          const memId = await storeMemory({
-            type: "semantic",
-            content: fullText,
-            summary,
-            tags: conversationId
-              ? ["assistant-response", `conv:${conversationId}`]
-              : ["assistant-response"],
-            importance,
-          });
-          if (memId) {
-            await extractEntities(memId, fullText, summary).catch(() => {});
-          }
-        } catch {
-          // non-critical
-        }
+        await processConversationMessage({
+          role: "assistant",
+          content: fullText,
+          conversationId,
+          linkToIds: userMemId ? [userMemId] : undefined,
+        }).catch(() => {});
       }
     },
   });

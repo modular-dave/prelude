@@ -3,18 +3,31 @@
 // Owns the render loop. Replaces react-force-graph-3d's scene management.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
+
+interface ActiveAnimation {
+  startPos: THREE.Vector3;
+  startTarget: THREE.Vector3;
+  endPos: THREE.Vector3;
+  endTarget: THREE.Vector3;
+  startTime: number;
+  duration: number;
+}
 
 export class SceneManager {
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
-  readonly controls: OrbitControls;
+  readonly controls: TrackballControls;
 
   private container: HTMLElement;
   private rafId: number | null = null;
   private tickCallbacks: Array<(dt: number) => void> = [];
+  private postControlsCallbacks: Array<(dt: number) => void> = [];
   private clock = { lastTime: 0 };
+
+  // Animation state — driven by the main render loop, no separate RAF
+  private animation: ActiveAnimation | null = null;
 
   constructor(container: HTMLElement, width: number, height: number, bubbleRadius = 400) {
     this.container = container;
@@ -39,14 +52,16 @@ export class SceneManager {
     container.appendChild(this.renderer.domElement);
 
     // Controls
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.rotateSpeed = 0.5;
+    this.controls = new TrackballControls(this.camera, this.renderer.domElement);
+    this.controls.rotateSpeed = 2.0;
     this.controls.zoomSpeed = 1.2;
+    this.controls.panSpeed = 0;
+    this.controls.noPan = true;
+    this.controls.noZoom = false;
     this.controls.minDistance = bubbleRadius * 0.1;
     this.controls.maxDistance = camDist * 2;
-    this.controls.enablePan = false;
+    this.controls.dynamicDampingFactor = 0.15;
+    this.controls.staticMoving = false;
 
     // Lights — strong ambient + directional for clear colors
     const ambient = new THREE.AmbientLight(0xffffff, 0.8);
@@ -65,6 +80,10 @@ export class SceneManager {
     this.tickCallbacks.push(callback);
   }
 
+  onPostControls(callback: (dt: number) => void): void {
+    this.postControlsCallbacks.push(callback);
+  }
+
   start(): void {
     if (this.rafId !== null) return;
     this.clock.lastTime = performance.now();
@@ -74,11 +93,32 @@ export class SceneManager {
       const dt = Math.min(0.05, (now - this.clock.lastTime) / 1000); // cap dt at 50ms
       this.clock.lastTime = now;
 
+      // Drive camera animation (if active) BEFORE tick callbacks
+      if (this.animation) {
+        const a = this.animation;
+        const t = Math.min(1, (now - a.startTime) / a.duration);
+        const ease = easeInOutQuart(t);
+        this.camera.position.lerpVectors(a.startPos, a.endPos, ease);
+        this.controls.target.lerpVectors(a.startTarget, a.endTarget, ease);
+        this.camera.lookAt(this.controls.target);
+        if (t >= 1) {
+          this.animation = null;
+          this.controls.enabled = true;
+          // Sync TrackballControls internal state — prevents stale rotation/zoom deltas
+          const c = this.controls as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+          if (c._movePrev && c._moveCurr) c._movePrev.copy(c._moveCurr);
+          if (c._zoomStart && c._zoomEnd) c._zoomStart.copy(c._zoomEnd);
+        }
+      }
+
       // Run tick callbacks
       for (const cb of this.tickCallbacks) cb(dt);
 
-      // Update controls
-      this.controls.update();
+      // Update controls (skip during animated transitions to prevent fighting)
+      if (!this.animation) this.controls.update();
+
+      // Post-controls hooks (e.g. sphere clamping that must run after controls)
+      for (const cb of this.postControlsCallbacks) cb(dt);
 
       // Render
       this.renderer.render(this.scene, this.camera);
@@ -102,6 +142,7 @@ export class SceneManager {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    this.controls.handleResize();
   }
 
   // ── Camera helpers ────────────────────────────────────────────
@@ -121,29 +162,32 @@ export class SceneManager {
     return 800 / Math.max(1, dist); // normalized: 1.0 = default distance
   }
 
-  flyTo(target: THREE.Vector3, duration = 1000): Promise<void> {
-    return new Promise(resolve => {
-      const startPos = this.camera.position.clone();
-      const startLookAt = this.controls.target.clone();
-      const startTime = performance.now();
+  // Unified camera movement — single source of truth for all camera changes.
+  // Animation is driven by the main render loop (no separate RAF).
+  moveTo(position: THREE.Vector3, target: THREE.Vector3, animate = true, duration = 500): void {
+    // Cancel any running animation
+    this.animation = null;
 
-      const animate = () => {
-        const elapsed = performance.now() - startTime;
-        const t = Math.min(1, elapsed / duration);
-        const ease = easeInOutQuart(t);
+    if (!animate) {
+      this.camera.position.copy(position);
+      this.controls.target.copy(target);
+      this.controls.enabled = true;
+      return;
+    }
 
-        this.camera.position.lerpVectors(startPos, target, ease);
-        this.controls.target.lerpVectors(startLookAt, new THREE.Vector3(0, 0, 0), ease);
-        this.controls.update();
+    this.controls.enabled = false; // prevent input accumulation during animation
+    this.animation = {
+      startPos: this.camera.position.clone(),
+      startTarget: this.controls.target.clone(),
+      endPos: position.clone(),
+      endTarget: target.clone(),
+      startTime: performance.now(),
+      duration,
+    };
+  }
 
-        if (t < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          resolve();
-        }
-      };
-      animate();
-    });
+  get animating(): boolean {
+    return this.animation !== null;
   }
 
   // ── Canvas access ─────────────────────────────────────────────
@@ -156,10 +200,12 @@ export class SceneManager {
 
   dispose(): void {
     this.stop();
+    this.animation = null;
     this.controls.dispose();
     this.renderer.dispose();
     this.scene.clear();
     this.tickCallbacks.length = 0;
+    this.postControlsCallbacks.length = 0;
     if (this.renderer.domElement.parentElement) {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
     }

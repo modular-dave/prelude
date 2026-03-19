@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, AlertTriangle, ChevronDown, ChevronRight, BarChart3, MessageCircle, Brain } from "lucide-react";
+import { Trash2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { FloatNav } from "@/components/shell/float-nav";
 import { useMemory } from "@/lib/memory-context";
-import { TypeBadge } from "@/components/ui/type-badge";
-import { ImportanceBar } from "@/components/ui/importance-bar";
 import {
   loadConversations,
   deleteConversation,
@@ -13,7 +11,6 @@ import {
   type Conversation,
 } from "@/lib/chat-store";
 import {
-  TYPE_COLORS,
   TYPE_LABELS,
   type MemoryType,
   type Memory,
@@ -55,50 +52,53 @@ function MemoryItem({
   return (
     <div
       onClick={onToggle}
-      className="cursor-pointer rounded-[6px] p-4 transition"
+      className="cursor-pointer rounded-[6px] p-4 transition font-mono"
       style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <TypeBadge type={memory.memory_type} />
+            <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
+              {TYPE_LABELS[memory.memory_type] || memory.memory_type}
+            </span>
             {isPrompt && (
-              <span className="rounded-[3px] px-1.5 py-0.5 t-tiny" style={{ background: "rgba(34, 68, 255, 0.08)", color: "var(--accent)" }}>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--accent)" }}>
                 prompt
               </span>
             )}
             {isThought && (
-              <span className="rounded-[3px] px-1.5 py-0.5 t-tiny" style={{ background: "rgba(90, 58, 128, 0.08)", color: "#5a3a80" }}>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
                 thought
               </span>
             )}
-            <span className="t-small" style={{ color: "var(--text-faint)" }}>
+            <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
               {timeAgo(memory.created_at)}
             </span>
           </div>
-          <p className="mt-2 t-small" style={{ color: "var(--text)" }}>{memory.summary}</p>
-          <div className="mt-2 w-32">
-            <ImportanceBar value={memory.importance} />
+          <p className="mt-2" style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>{memory.summary}</p>
+          <div className="mt-1 flex items-center gap-2">
+            <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              imp: {Math.round(memory.importance * 100)}%
+            </span>
           </div>
         </div>
-        <div className="text-right t-small space-y-0.5" style={{ color: "var(--text-faint)" }}>
-          <div>decay: {Math.round((memory.decay_factor || 1) * 100)}%</div>
-          <div>recalls: {memory.access_count || 0}</div>
+        <div className="text-right space-y-0.5">
+          <div style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>decay: {Math.round((memory.decay_factor || 1) * 100)}%</div>
+          <div style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>recalls: {memory.access_count || 0}</div>
         </div>
       </div>
 
       {expanded && (
         <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <p className="t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p className="leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
             {memory.content}
           </p>
           {memory.tags?.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-2 flex flex-wrap gap-2">
               {memory.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-[3px] px-1.5 py-0.5 t-small"
-                  style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
+                  style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
                 >
                   {tag}
                 </span>
@@ -156,10 +156,10 @@ export default function HistoryPage() {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
-    <div className="relative h-full overflow-y-auto p-6 pt-16" style={{ background: "var(--bg)" }}>
+    <div className="relative h-full overflow-y-auto p-6 pt-16 font-mono" style={{ background: "var(--bg)" }}>
       <div className="mx-auto max-w-2xl animate-fade-slide-up">
-        <h1 className="t-heading" style={{ color: "var(--text)" }}>History</h1>
-        <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>
+        <h1 style={{ fontSize: 16, fontWeight: 500, color: "var(--text)" }}>History</h1>
+        <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
           {memories.length} memories &middot; {conversations.length} chats
         </p>
 
@@ -167,10 +167,9 @@ export default function HistoryPage() {
         <div className="mt-6">
           <button
             onClick={() => setStatsOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
-            style={{ color: "var(--text-muted)" }}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)" }}
           >
-            <BarChart3 className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
             <span className="flex-1">Stats</span>
             {statsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
@@ -183,20 +182,16 @@ export default function HistoryPage() {
                   const avgImp = count > 0 ? mems.reduce((s, m) => s + m.importance, 0) / count : 0;
                   return (
                     <div key={type} className="flex items-center gap-2">
-                      <div
-                        className="h-[6px] w-[6px] rounded-full shrink-0"
-                        style={{ backgroundColor: TYPE_COLORS[type] }}
-                      />
-                      <span className="t-small w-20" style={{ color: "var(--text-muted)" }}>
+                      <span className="w-20" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
                         {TYPE_LABELS[type]}
                       </span>
-                      <span className="t-small w-6 text-right" style={{ color: "var(--text)" }}>
+                      <span className="w-6 text-right" style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
                         {count}
                       </span>
-                      <span className="t-small" style={{ color: "var(--text-faint)" }}>
+                      <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                         {count > 0 ? `${Math.round(avgImp * 100)}% imp` : ""}
                       </span>
-                      <span className="t-small" style={{ color: "var(--text-faint)" }}>
+                      <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                         {count > 0
                           ? `${Math.round((mems.reduce((s, m) => s + (m.decay_factor || 1), 0) / count) * 100)}% decay`
                           : ""}
@@ -213,18 +208,17 @@ export default function HistoryPage() {
         <div className="mt-2">
           <button
             onClick={() => setConvsOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
-            style={{ color: "var(--text-muted)" }}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)" }}
           >
-            <MessageCircle className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
             <span className="flex-1">Chats</span>
-            <span className="t-small" style={{ color: "var(--text-faint)" }}>{conversations.length}</span>
+            <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{conversations.length}</span>
             {convsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
           {convsOpen && (
             <div className="px-1 pb-2 animate-fade-slide-up">
               {conversations.length === 0 ? (
-                <p className="py-8 text-center t-small" style={{ color: "var(--text-faint)" }}>
+                <p className="py-8 text-center" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
                   No chats yet
                 </p>
               ) : (
@@ -236,10 +230,10 @@ export default function HistoryPage() {
                       style={{ background: "var(--surface-dim)" }}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="truncate t-btn" style={{ color: "var(--text)" }}>
+                        <p className="truncate" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
                           {conv.summary || conv.title}
                         </p>
-                        <p className="mt-0.5 t-tiny" style={{ color: "var(--text-faint)" }}>
+                        <p className="mt-0.5" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                           {conv.messages.length} messages &middot; {timeAgo(conv.updatedAt)}
                         </p>
                       </div>
@@ -259,8 +253,8 @@ export default function HistoryPage() {
               {conversations.length > 0 && (
                 <button
                   onClick={() => setPendingClearAll(true)}
-                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 t-small transition active:scale-95"
-                  style={{ color: "#ef4444" }}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 transition active:scale-95"
+                  style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}
                 >
                   <Trash2 className="h-3 w-3" />
                   Clear all chats &amp; memories
@@ -274,12 +268,11 @@ export default function HistoryPage() {
         <div className="mt-2">
           <button
             onClick={() => setTimelineOpen((v) => !v)}
-            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left t-btn transition"
-            style={{ color: "var(--text-muted)" }}
+            className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2.5 text-left transition"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)" }}
           >
-            <Brain className="h-3.5 w-3.5" style={{ color: "var(--accent)" }} />
             <span className="flex-1">Memory Timeline</span>
-            <span className="t-small" style={{ color: "var(--text-faint)" }}>{memories.length}</span>
+            <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{memories.length}</span>
             {timelineOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </button>
           {timelineOpen && (
@@ -290,10 +283,12 @@ export default function HistoryPage() {
                   <button
                     key={f}
                     onClick={() => setTimelineFilter(f)}
-                    className="rounded-[6px] px-3 py-1.5 t-small transition-all duration-200"
+                    className="rounded-[6px] px-3 py-1.5 transition-all duration-200"
                     style={{
+                      fontSize: 11,
+                      fontWeight: 400,
                       color: timelineFilter === f ? "var(--accent)" : "var(--text-faint)",
-                      background: timelineFilter === f ? "rgba(34, 68, 255, 0.08)" : "transparent",
+                      background: timelineFilter === f ? "var(--surface-dim)" : "transparent",
                     }}
                   >
                     {f === "all" ? "All" : f === "prompts" ? "Prompts" : "Thoughts"}
@@ -302,7 +297,7 @@ export default function HistoryPage() {
               </div>
 
               {filteredMemories.length === 0 ? (
-                <div className="flex h-40 items-center justify-center t-small" style={{ color: "var(--text-faint)" }}>
+                <div className="flex h-40 items-center justify-center" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
                   No memories yet. Start chatting to create some.
                 </div>
               ) : (
@@ -330,35 +325,32 @@ export default function HistoryPage() {
             style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)" }}
             onClick={() => setPendingDelete(null)}
           />
-          <div className="relative z-10 mx-4 w-full max-w-xs rounded-[10px] p-5 animate-fade-slide-up glass-panel">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
-              <div>
-                <p className="t-btn" style={{ color: "var(--text)" }}>
-                  Delete chat?
-                </p>
-                <p className="mt-1.5 t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                  This will also remove the associated memories from the brain.
-                </p>
-                <p className="mt-2 truncate t-small" style={{ color: "var(--text-faint)" }}>
-                  &ldquo;{pendingDelete.title}&rdquo;
-                </p>
-              </div>
+          <div className="relative z-10 mx-4 w-full max-w-xs rounded-[10px] p-5 animate-fade-slide-up glass-panel font-mono">
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+                Delete chat?
+              </p>
+              <p className="mt-1.5 leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+                This will also remove the associated memories from the brain.
+              </p>
+              <p className="mt-2 truncate" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                &ldquo;{pendingDelete.title}&rdquo;
+              </p>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setPendingDelete(null)}
-                className="rounded-[6px] px-3 py-1.5 t-btn transition active:scale-95"
-                style={{ color: "var(--text-muted)" }}
+                className="rounded-[6px] px-3 py-1.5 transition active:scale-95"
+                style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)" }}
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(pendingDelete.id)}
-                className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
-                style={{ background: "#ef4444" }}
+                className="rounded-[6px] px-3 py-1.5 transition active:scale-95"
+                style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
               >
-                Delete
+                delete
               </button>
             </div>
           </div>
@@ -373,32 +365,29 @@ export default function HistoryPage() {
             style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)" }}
             onClick={() => setPendingClearAll(false)}
           />
-          <div className="relative z-10 mx-4 w-full max-w-xs rounded-[10px] p-5 animate-fade-slide-up glass-panel">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
-              <div>
-                <p className="t-btn" style={{ color: "var(--text)" }}>
-                  Clear everything?
-                </p>
-                <p className="mt-1.5 t-small leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                  This will delete all {conversations.length} chat{conversations.length !== 1 ? "s" : ""} and all memories. This cannot be undone.
-                </p>
-              </div>
+          <div className="relative z-10 mx-4 w-full max-w-xs rounded-[10px] p-5 animate-fade-slide-up glass-panel font-mono">
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+                Clear everything?
+              </p>
+              <p className="mt-1.5 leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+                This will delete all {conversations.length} chat{conversations.length !== 1 ? "s" : ""} and all memories. This cannot be undone.
+              </p>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setPendingClearAll(false)}
-                className="rounded-[6px] px-3 py-1.5 t-btn transition active:scale-95"
-                style={{ color: "var(--text-muted)" }}
+                className="rounded-[6px] px-3 py-1.5 transition active:scale-95"
+                style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)" }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleClearAll}
-                className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
-                style={{ background: "#ef4444" }}
+                className="rounded-[6px] px-3 py-1.5 transition active:scale-95"
+                style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
               >
-                Clear All
+                delete all
               </button>
             </div>
           </div>

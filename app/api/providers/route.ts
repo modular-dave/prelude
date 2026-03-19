@@ -4,6 +4,7 @@ import {
   getProviderConfig,
   getAllProviderConfigs,
   isProviderConnected,
+  getActivePrimary,
 } from "@/lib/provider-config-store";
 
 // ── GET /api/providers ───────────────────────────────────────────
@@ -20,7 +21,7 @@ export async function GET() {
     };
   }
 
-  return NextResponse.json({ providers: status });
+  return NextResponse.json({ providers: status, activePrimary: getActivePrimary() });
 }
 
 // ── POST /api/providers ──────────────────────────────────────────
@@ -55,16 +56,16 @@ export async function POST(req: NextRequest) {
       });
       if (!res.ok) {
         return NextResponse.json({
-          ok: true,
-          connected: true,
+          ok: false,
+          connected: false,
           warning: `Saved but API returned ${res.status}. Check your credentials.`,
         });
       }
       return NextResponse.json({ ok: true, connected: true });
     } catch {
       return NextResponse.json({
-        ok: true,
-        connected: true,
+        ok: false,
+        connected: false,
         warning: "Saved but could not verify connection. Check the base URL.",
       });
     }

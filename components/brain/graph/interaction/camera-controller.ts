@@ -3,7 +3,7 @@
 // Ported from use-camera-controller.ts for direct Three.js control.
 
 import * as THREE from "three";
-import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
 import type { ViewStateManager } from "@/lib/3d-graph/runtime/view-state";
 import type { NodeInstances } from "../renderer/node-instances";
 
@@ -21,7 +21,7 @@ interface FlyToState {
 
 export class CameraController {
   private camera: THREE.PerspectiveCamera;
-  private controls: OrbitControls;
+  private controls: TrackballControls;
   private mode: CameraMode = "ORBIT";
   private flyTo: FlyToState | null = null;
   private autoRotate = false;
@@ -39,7 +39,7 @@ export class CameraController {
 
   constructor(
     camera: THREE.PerspectiveCamera,
-    controls: OrbitControls,
+    controls: TrackballControls,
     bubbleRadius: number,
   ) {
     this.camera = camera;

@@ -1,5 +1,9 @@
-import { redirect } from "next/navigation";
+import { BrainView } from "@/components/brain/brain-view";
 
 export default function RootPage() {
-  redirect("/brain");
+  return (
+    <div className="relative h-full">
+      <BrainView />
+    </div>
+  );
 }

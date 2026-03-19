@@ -22,12 +22,13 @@ interface NeuralGraphProps {
   hideEdges?: boolean;
   selectedEdge?: { sourceId: string; targetId: string } | null;
   highlightedPath?: Set<string> | null;
+  nodeDepthMap?: Map<string, number> | null;
   onPinnedContentChange?: (content: any | null) => void; // eslint-disable-line @typescript-eslint/no-explicit-any
   onBackgroundSelect?: () => void;
   onEdgeSelect?: (edge: SelectedEdgeInfo) => void;
   onReady?: () => void;
   onAutoRotateChange?: (rotating: boolean) => void;
-  vizMode?: "hero" | "cluster" | "zero";
+  vizMode?: "hero" | "cluster" | "starburst" | "zero";
 }
 
 export interface NeuralGraphHandle {
@@ -35,6 +36,7 @@ export interface NeuralGraphHandle {
   zoomOut: () => void;
   clearPinned: () => void;
   resetView: () => void;
+  fitNodes: (nodeIds: string[]) => void;
 }
 
 export interface SelectedEdgeInfo {
@@ -52,6 +54,7 @@ function vizModeToLens(vizMode: string): Lens {
   switch (vizMode) {
     case "hero": return "hero";
     case "cluster": return "cluster";
+    case "starburst": return "starburst";
     case "zero": return "zeroG";
     default: return "hero";
   }
@@ -62,7 +65,7 @@ function vizModeToLens(vizMode: string): Lens {
 const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(function NeuralGraph({
   onNodeSelect, selectedNodeId, filterBagRef, width, height,
   autoRotate = false, hideEdges = false, selectedEdge = null,
-  highlightedPath = null, onPinnedContentChange, onBackgroundSelect,
+  highlightedPath = null, nodeDepthMap = null, onPinnedContentChange, onBackgroundSelect,
   onEdgeSelect, onReady, onAutoRotateChange, vizMode = "hero",
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,10 +74,26 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
   const edgeInstancesRef = useRef<EdgeInstances | null>(null);
   const edgeClassifierRef = useRef<EdgeClassifier | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const isDragging = useRef(false);
+  const wasDragging = useRef(false); // survives pointerUp→click sequence
   const readyFired = useRef(false);
 
   const lens = vizModeToLens(vizMode);
   const selectedGraphId = selectedNodeId != null ? `m_${selectedNodeId}` : null;
+
+  // Refs to mirror props/state for the tick closure (avoids stale captures)
+  const highlightedPathRef = useRef(highlightedPath);
+  highlightedPathRef.current = highlightedPath;
+  const selectedGraphIdRef = useRef(selectedGraphId);
+  selectedGraphIdRef.current = selectedGraphId;
+  const hoveredIdRef = useRef(hoveredId);
+  hoveredIdRef.current = hoveredId;
+  const hideEdgesRef = useRef(hideEdges);
+  hideEdgesRef.current = hideEdges;
+  const nodeDepthMapRef = useRef(nodeDepthMap);
+  nodeDepthMapRef.current = nodeDepthMap;
+  const autoRotateRef = useRef(autoRotate);
+  autoRotateRef.current = autoRotate;
 
   // ── World session (compiler + runtime) ──
   const session = useWorldSession(lens);
@@ -83,7 +102,7 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  // ── Props → ViewState sync ──
+  // ── Props → ViewState sync (camera handled by brain-view fitNodes) ──
   useEffect(() => {
     if (!session.isReady) return;
 
@@ -176,40 +195,97 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
       // All focus modes show nodes (scaling handles emphasis)
       nodeInstances.setVisible(true);
 
-      // Edge focus → show edges; memory/entity focus → hide edges
-      if (focusMode === "edges" && !hideEdges) {
+      // Show edges in edge-focus mode, or when path has multiple nodes (depth > 0)
+      const hp = highlightedPathRef.current;
+      const pathActive = hp && hp.size > 1;
+      if ((focusMode === "edges" || pathActive) && !hideEdgesRef.current) {
         const linkTypeFilter = filters?.linkTypeFilter;
         const visibleEntityIds = filters ? nodeInstances.getVisibleEntityIds(filters) : undefined;
-        edgeClassifier.classify(s.viewState.current, hotTiles, hotChunks, highlightedPath, linkTypeFilter, visibleEntityIds);
+        edgeClassifier.classify(s.viewState.current, hotTiles, hotChunks, hp, linkTypeFilter, visibleEntityIds);
         edgeInstances.syncFromEdges(edgeClassifier.getEdges(), nodeInstances, true);
         edgeInstances.setVisible(true);
       } else {
         edgeInstances.setVisible(false);
       }
 
-      // 6. Update highlights
+      // 6. Update highlights with depth-based halos
+      const dm = nodeDepthMapRef.current;
+      const hpNodes = highlightedPathRef.current;
       nodeInstances.updateHighlights({
-        selectedId: selectedGraphId,
-        hoveredId,
+        selectedId: selectedGraphIdRef.current,
+        hoveredId: hoveredIdRef.current,
+        highlightedIds: hpNodes && hpNodes.size > 0 ? hpNodes : undefined,
+        depthMap: dm || undefined,
+        maxDepth: dm ? Math.max(...dm.values(), 1) : 1,
       });
+
     });
 
-    // Auto-rotate
-    if (autoRotate) {
-      let angle = 0;
-      sceneManager.onTick((dt) => {
-        if (!autoRotate) return;
-        angle += dt * 0.3;
-        const dist = sceneManager.camera.position.length();
-        sceneManager.camera.position.x = Math.sin(angle) * dist;
-        sceneManager.camera.position.z = Math.cos(angle) * dist;
-        sceneManager.camera.lookAt(0, 0, 0);
-      });
-    }
+    // Auto-rotate — always registered, checked via ref so toggle works without re-init
+    let angle = Math.atan2(sceneManager.camera.position.x, sceneManager.camera.position.z);
+    sceneManager.onTick((dt) => {
+      if (!autoRotateRef.current || sceneManager.animating) return;
+      angle += dt * 0.3;
+      const dist = sceneManager.camera.position.length();
+      sceneManager.camera.position.x = Math.sin(angle) * dist;
+      sceneManager.camera.position.z = Math.cos(angle) * dist;
+      sceneManager.camera.lookAt(sceneManager.controls.target);
+    });
+
+    // Single view: clamp camera outside sphere — runs AFTER controls.update()
+    // Skip during animations to prevent fighting with moveTo lerp.
+    sceneManager.onPostControls(() => {
+      if (sceneManager.animating) return;
+      const selId = selectedGraphIdRef.current;
+      if (selId) {
+        const rootPos = nodeInstances.getEntityPosition(selId);
+        if (rootPos) {
+          const rootDist = rootPos.length();
+          const camPos = sceneManager.camera.position;
+          const camDist = camPos.length();
+          const minDist = Math.max(rootDist * 0.8, 50);
+          if (camDist < minDist) {
+            const dir = camPos.clone().normalize();
+            if (dir.length() < 0.01) dir.copy(rootPos.clone().normalize());
+            camPos.copy(dir.multiplyScalar(minDist));
+          }
+        }
+      }
+    });
 
     sceneManager.start();
 
+    // ── Drag detection via canvas pointer events ──
+    // Attached here (not in a separate effect) so listeners live/die with the canvas.
+    const canvas = sceneManager.canvas;
+    let downPos: { x: number; y: number } | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      downPos = { x: e.clientX, y: e.clientY };
+      isDragging.current = false;
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (downPos) {
+        const dx = e.clientX - downPos.x;
+        const dy = e.clientY - downPos.y;
+        if (dx * dx + dy * dy > 16) isDragging.current = true;
+      }
+    };
+    const onPointerUp = () => {
+      if (isDragging.current) {
+        wasDragging.current = true;
+        setTimeout(() => { wasDragging.current = false; }, 100);
+      }
+      isDragging.current = false;
+      downPos = null;
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+
     return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
       nodeInstances.dispose();
       edgeInstances.dispose();
       sceneManager.dispose();
@@ -222,7 +298,11 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
     if (session.isReady && sceneManagerRef.current) {
       const sm = sceneManagerRef.current;
       const camDist = session.bubbleRadius * 2.5;
-      sm.camera.position.set(0, 0, camDist);
+      // Only set camera position on first ready — don't reset after data refreshes
+      if (!readyFired.current) {
+        sm.camera.position.set(0, 0, camDist);
+      }
+      // Always update projection limits (non-destructive)
       sm.camera.far = camDist * 5;
       sm.camera.updateProjectionMatrix();
       sm.controls.maxDistance = camDist * 2;
@@ -246,6 +326,11 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
   const mouse = useRef(new THREE.Vector2());
 
   const handleClick = useCallback((e: React.MouseEvent) => {
+    // Skip click if user was dragging (orbit/pan) — wasDragging survives pointerUp→click
+    if (wasDragging.current) {
+      wasDragging.current = false;
+      return;
+    }
     if (!sceneManagerRef.current || !nodeInstancesRef.current) return;
 
     const rect = sceneManagerRef.current.canvas.getBoundingClientRect();
@@ -279,9 +364,18 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
     }
   }, [session.nodeNumericIdMap, onNodeSelect, onBackgroundSelect]);
 
+  // Drag detection is handled via canvas pointer events in the SceneManager init effect.
+
   // ── Hover handling ──
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!sceneManagerRef.current || !nodeInstancesRef.current) return;
+
+    if (isDragging.current) {
+      if (hoveredId) setHoveredId(null);
+      if (containerRef.current) containerRef.current.style.cursor = "grabbing";
+      onPinnedContentChange?.(null);
+      return;
+    }
 
     const rect = sceneManagerRef.current.canvas.getBoundingClientRect();
     mouse.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -322,6 +416,13 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
             if (edge.source === hit || edge.target === hit) linkCount++;
           }
         }
+        const diversityScore = nodeInstancesRef.current?.getDiversityScore(hit, filterBagRef.current.centerMode) ?? 0;
+        const linkTypeDiversity = nodeInstancesRef.current?.getLinkTypeDiversity(hit) ?? 0;
+        const neighborTypeDiversity = nodeInstancesRef.current?.getNeighborTypeDiversity(hit) ?? 0;
+        const maxNeighbors = nodeInstancesRef.current?.getMaxNeighbors(hit) ?? 0;
+        const maxPath = nodeInstancesRef.current?.getMaxPathDepth(hit) ?? 0;
+        const rank = nodeInstancesRef.current?.getRank(hit) ?? null;
+        const heroModes = nodeInstancesRef.current?.getHeroModes(hit);
         onPinnedContentChange({
           type: entity.nodeCategory === "entity" ? "entity" : "memory",
           name: entity.label,
@@ -330,6 +431,13 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
           accessCount: entity.accessCount,
           linkCount,
           decayFactor: entity.decayFactor,
+          diversityScore,
+          linkTypeDiversity,
+          neighborTypeDiversity,
+          maxNeighbors,
+          maxPath,
+          rank,
+          heroModes: heroModes && heroModes.length > 0 ? heroModes : undefined,
           position: { x: mouseX, y: mouseY },
         });
       }
@@ -343,28 +451,68 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
     zoomIn: () => {
       const sm = sceneManagerRef.current;
       if (!sm) return;
-      const dist = sm.camera.position.length();
+      const dist = sm.camera.position.distanceTo(sm.controls.target);
       const newDist = Math.max(50, dist * 0.75);
-      const dir = sm.camera.position.clone().normalize();
-      sm.flyTo(dir.multiplyScalar(newDist), 300);
+      const dir = sm.camera.position.clone().sub(sm.controls.target).normalize();
+      sessionRef.current.tileCache?.freezeEviction(400);
+      sm.moveTo(sm.controls.target.clone().add(dir.multiplyScalar(newDist)), sm.controls.target.clone(), true, 300);
     },
     zoomOut: () => {
       const sm = sceneManagerRef.current;
       if (!sm) return;
-      const dist = sm.camera.position.length();
       const maxDist = (sessionRef.current.bubbleRadius || 400) * 5;
+      const dist = sm.camera.position.distanceTo(sm.controls.target);
       const newDist = Math.min(maxDist, dist * 1.33);
-      const dir = sm.camera.position.clone().normalize();
-      sm.flyTo(dir.multiplyScalar(newDist), 300);
+      const dir = sm.camera.position.clone().sub(sm.controls.target).normalize();
+      sessionRef.current.tileCache?.freezeEviction(400);
+      sm.moveTo(sm.controls.target.clone().add(dir.multiplyScalar(newDist)), sm.controls.target.clone(), true, 300);
     },
-    clearPinned: () => {
-      // No-op for now — pinned state managed by brain-view
-    },
+    clearPinned: () => {},
     resetView: () => {
       const sm = sceneManagerRef.current;
       if (!sm) return;
       const camDist = (sessionRef.current.bubbleRadius || 400) * 2.5;
-      sm.flyTo(new THREE.Vector3(0, 0, camDist), 800);
+      sessionRef.current.tileCache?.freezeEviction(500);
+      sm.moveTo(new THREE.Vector3(0, 0, camDist), new THREE.Vector3(0, 0, 0), true, 400);
+    },
+    fitNodes: (nodeIds: string[]) => {
+      const sm = sceneManagerRef.current;
+      const ni = nodeInstancesRef.current;
+      if (!sm || !ni || nodeIds.length === 0) return;
+      const rootPos = ni.getEntityPosition(nodeIds[0]);
+      if (!rootPos) return;
+      const target = rootPos.clone();
+      const bubbleR = sessionRef.current.bubbleRadius || 400;
+
+      // Angular spread: max angle between root and any reachable node on the sphere
+      const rootDir = target.clone().normalize();
+      let maxAngle = 0;
+      for (const id of nodeIds) {
+        const pos = ni.getEntityPosition(id);
+        if (pos) {
+          const dir = pos.clone().normalize();
+          const angle = Math.acos(Math.max(-1, Math.min(1, rootDir.dot(dir))));
+          maxAngle = Math.max(maxAngle, angle);
+        }
+      }
+
+      // Distance based on angular spread
+      const fov = sm.camera.fov * (Math.PI / 180);
+      let dist: number;
+      if (maxAngle < 0.1) {
+        dist = 350; // single node close-up
+      } else if (maxAngle < Math.PI * 0.5) {
+        const arcRadius = bubbleR * Math.sin(maxAngle);
+        dist = Math.max(150, (arcRadius + 50) / Math.tan(fov / 2));
+      } else {
+        dist = bubbleR * 2.5; // wide spread — global view
+      }
+
+      // Camera along radial ray from sphere center through root
+      const radial = rootDir.length() > 0.01 ? rootDir.clone() : new THREE.Vector3(0, 0, 1);
+      const endPos = target.clone().add(radial.multiplyScalar(dist));
+      sessionRef.current.tileCache?.freezeEviction(800);
+      sm.moveTo(endPos, target, true, 700);
     },
   }), []);
 
