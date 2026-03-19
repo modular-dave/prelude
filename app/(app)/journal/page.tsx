@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Play, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FloatNav } from "@/components/shell/float-nav";
 import { useMemory } from "@/lib/memory-context";
@@ -24,7 +24,6 @@ export default function JournalPage() {
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  // Load past introspective memories as journal entries
   const pastJournals = memories.filter(
     (m) => m.memory_type === "introspective" && m.tags?.includes("reflection")
   );
@@ -66,7 +65,6 @@ export default function JournalPage() {
         setScheduleActive(!scheduleActive);
       }
     } catch {
-      // ignore
     } finally {
       setScheduleLoading(false);
     }
@@ -111,95 +109,80 @@ export default function JournalPage() {
   return (
     <div className="relative h-full overflow-y-auto p-6 pt-16 font-mono" style={{ background: "var(--bg)" }}>
       <div className="animate-fade-slide-up">
-        <h1 style={{ fontSize: 16, fontWeight: 500, color: "var(--text)" }}>Journal</h1>
-        <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
-          Introspective reflections and self-model journaling via Cortex
+        <span className="t-title" style={{ color: "var(--text)" }}>reflect</span>
+        <p className="mt-1 t-tiny" style={{ color: "var(--text-faint)" }}>
+          introspective reflections and self-model journaling
         </p>
       </div>
 
-      {/* Controls */}
-      <div className="mt-6 flex items-center gap-2">
+      {/* Controls — plain text buttons */}
+      <div className="mt-6 flex items-center gap-4">
         <button
           onClick={triggerReflection}
           disabled={reflectionLoading}
-          className="rounded-[6px] px-4 py-2 transition active:scale-95 disabled:opacity-40 glass"
-          style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
+          className="text-btn transition active:scale-95 disabled:opacity-40"
+          style={{ fontSize: 11, fontWeight: 400, color: "var(--accent)" }}
         >
           {reflectionLoading ? (
             <span className="flex items-center gap-1.5">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Reflecting...
+              reflecting...
             </span>
           ) : (
-            <span className="flex items-center gap-1.5">
-              <Play className="h-3 w-3" />
-              Trigger Reflection
-            </span>
+            "trigger reflection"
           )}
         </button>
+
+        <span style={{ color: "var(--text-faint)", fontSize: 9 }}>︱</span>
 
         <button
           onClick={toggleSchedule}
           disabled={scheduleLoading}
-          className="rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
-            color: scheduleActive ? "var(--success)" : "var(--text)",
-            borderWidth: 1,
-            borderStyle: "solid",
-            borderColor: scheduleActive ? "var(--success)" : "var(--border)",
-          }}
+          className="text-btn transition active:scale-95 disabled:opacity-40"
+          style={{ fontSize: 11, fontWeight: 400, color: scheduleActive ? "var(--success)" : "var(--text-faint)" }}
         >
           {scheduleLoading ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin inline-block" />
           ) : (
-            <span className="flex items-center gap-1.5">
-              {scheduleActive ? "Auto-Reflect On" : "Auto-Reflect Off"}
-            </span>
+            <>auto-reflect︱{scheduleActive ? "on" : "off"}</>
           )}
         </button>
 
         {pastJournals.length > 0 && (
-          <button
-            onClick={() => setConfirmClear(true)}
-            disabled={clearing}
-            className="rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
-            style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
-          >
-            {clearing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Trash2 className="h-3 w-3" />
-                Clear Reflections
-              </span>
-            )}
-          </button>
+          <>
+            <span style={{ color: "var(--text-faint)", fontSize: 9 }}>︱</span>
+            <button
+              onClick={() => setConfirmClear(true)}
+              disabled={clearing}
+              className="text-btn transition active:scale-95 disabled:opacity-40"
+              style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}
+            >
+              {clearing ? <Loader2 className="h-3 w-3 animate-spin inline-block" /> : "clear all"}
+            </button>
+          </>
         )}
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mt-4 rounded-[8px] p-4" style={{ background: "var(--bg)", border: "1px solid var(--error)" }}>
-          <p style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
-        </div>
+        <p className="mt-4" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
       )}
 
       {/* Current reflection result */}
       {currentJournal && (
-        <JournalCard journal={currentJournal} isNew />
+        <JournalEntry journal={currentJournal} isNew />
       )}
 
       {/* Past journal entries */}
       {pastJournals.length > 0 && (
         <div className="mt-8">
-          <h2 className="mb-3" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
-            Past Reflections ({pastJournals.length})
-          </h2>
-          <div className="space-y-3">
+          <div style={{ borderTop: "1px solid var(--border)", marginBottom: 8 }} />
+          <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+            past reflections ({pastJournals.length})
+          </span>
+          <div className="mt-3 space-y-0">
             {pastJournals.map((m) => (
-              <JournalMemoryCard key={m.id} memory={m} onDelete={(id) => setConfirmDeleteId(id)} />
+              <MemoryEntry key={m.id} memory={m} onDelete={(id) => setConfirmDeleteId(id)} />
             ))}
           </div>
         </div>
@@ -207,10 +190,10 @@ export default function JournalPage() {
 
       {/* Empty state */}
       {!currentJournal && pastJournals.length === 0 && (
-        <div className="mt-16 flex flex-col items-center justify-center text-center">
-          <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-muted)" }}>No journal entries yet</p>
-          <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
-            Trigger a reflection to generate the first introspective journal entry
+        <div className="mt-16">
+          <p className="t-body" style={{ color: "var(--text-muted)" }}>no journal entries yet</p>
+          <p className="mt-1 t-tiny" style={{ color: "var(--text-faint)" }}>
+            trigger a reflection to generate the first introspective journal entry
           </p>
         </div>
       )}
@@ -239,39 +222,26 @@ export default function JournalPage() {
   );
 }
 
-function JournalCard({ journal, isNew }: { journal: ReflectionJournal; isNew?: boolean }) {
+function JournalEntry({ journal, isNew }: { journal: ReflectionJournal; isNew?: boolean }) {
   return (
-    <div
-      className={`mt-4 rounded-[8px] p-5 ${isNew ? "animate-fade-slide-up" : ""}`}
-      style={{
-        background: "var(--surface-dim)",
-        borderWidth: 1,
-        borderStyle: "solid",
-        borderColor: "var(--border)",
-        borderTopWidth: 2,
-        borderTopColor: "var(--accent)",
-      }}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--accent)" }}>
+    <div className={`mt-4 ${isNew ? "animate-fade-slide-up" : ""}`}>
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }} />
+      <div className="flex items-center justify-between mb-2">
+        <span className="t-body" style={{ color: "var(--accent)" }}>
           {journal.title}
-        </h3>
-        <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+        </span>
+        <span className="t-micro" style={{ color: "var(--text-faint)" }}>
           {new Date(journal.timestamp).toLocaleString()}
         </span>
       </div>
-      <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+      <p className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }}>
         {journal.text}
       </p>
       {journal.seedMemoryIds && journal.seedMemoryIds.length > 0 && (
-        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>Seed memories:</span>
+        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+          <span className="t-micro" style={{ color: "var(--text-faint)" }}>seeds︱</span>
           {journal.seedMemoryIds.map((id) => (
-            <span
-              key={id}
-              className="rounded-[3px] px-1.5 py-0.5"
-              style={{ fontSize: 9, fontWeight: 400, background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
-            >
+            <span key={id} className="t-micro" style={{ color: "var(--text-faint)" }}>
               #{id}
             </span>
           ))}
@@ -281,7 +251,7 @@ function JournalCard({ journal, isNew }: { journal: ReflectionJournal; isNew?: b
   );
 }
 
-function JournalMemoryCard({ memory, onDelete }: { memory: Memory; onDelete?: (id: number) => void }) {
+function MemoryEntry({ memory, onDelete }: { memory: Memory; onDelete?: (id: number) => void }) {
   const [open, setOpen] = useState(false);
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -291,55 +261,40 @@ function JournalMemoryCard({ memory, onDelete }: { memory: Memory; onDelete?: (i
 
   return (
     <div
-      className="rounded-[8px] cursor-pointer transition"
-      style={{
-        background: "var(--surface-dim)",
-        border: "1px solid var(--border)",
-        borderLeftWidth: 3,
-        borderLeftColor: "var(--accent)",
-      }}
+      className="cursor-pointer transition py-1"
       onClick={() => setOpen((v) => !v)}
     >
-      <div className="flex items-center p-4">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {open ? (
-            <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-          )}
-          <span className="truncate" style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
-            {memory.summary || "Reflection"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 ml-3">
-          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
-            imp: {(memory.importance ?? 0).toFixed(2)}
-          </span>
-          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
-            {new Date(memory.created_at).toLocaleDateString()}
-          </span>
-          <button
-            onClick={handleDelete}
-            className="p-1 transition-opacity opacity-30 hover:opacity-80"
-            style={{ color: "var(--text-faint)" }}
-            title="Delete this reflection"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
+      <div className="flex items-center gap-2">
+        <span className="t-body" style={{ color: "var(--text-faint)" }}>
+          {open ? "−" : "+"}
+        </span>
+        <span className="truncate t-body" style={{ color: "var(--text)" }}>
+          {memory.summary || "Reflection"}
+        </span>
+        <span className="t-micro shrink-0" style={{ color: "var(--text-faint)" }}>
+          imp: {(memory.importance ?? 0).toFixed(2)}
+        </span>
+        <span className="t-micro shrink-0" style={{ color: "var(--text-faint)" }}>
+          {new Date(memory.created_at).toLocaleDateString()}
+        </span>
+        <button
+          onClick={handleDelete}
+          className="shrink-0 opacity-0 hover:opacity-80 transition-opacity"
+          style={{ color: "var(--text-faint)" }}
+          title="Delete this reflection"
+        >
+          <Trash2 className="h-2.5 w-2.5" />
+        </button>
       </div>
       {open && (
-        <div className="px-4 pb-4 animate-fade-slide-up" style={{ borderTop: "1px solid var(--border)" }}>
-          <p className="leading-relaxed whitespace-pre-wrap pt-3" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+        <div className="pl-4 mt-1 animate-fade-slide-up">
+          <p className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }}>
             {memory.content}
           </p>
           {memory.tags && memory.tags.length > 0 && (
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
               {memory.tags.map((tag) => (
-                <span
-                  key={tag}
-                  style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
-                >
+                <span key={tag} className="t-micro" style={{ color: "var(--text-faint)" }}>
                   {tag}
                 </span>
               ))}

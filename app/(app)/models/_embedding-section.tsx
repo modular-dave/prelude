@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Loader2, ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { Loader2, ExternalLink, X } from "lucide-react";
 import { EmbTypePicker } from "./_shared-components";
 import {
   EMB_LOCAL,
@@ -395,56 +395,44 @@ export function EmbeddingSection() {
 
   return (
     <>
-      {/* Status card — embedding assignments */}
-      <div
-        className="mt-3 rounded-[8px] px-4 py-3"
-        style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
-      >
-        <span className="font-mono mt-1 mb-1 block" style={{ fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-faint)" }}>Embedding</span>
-        <div className="grid grid-cols-2 gap-2">
-          {EMB_TYPES.map(({ key, label, color }) => {
-            const slot = embConfig?.embeddingSlots?.[key];
-            const health = slotHealth[key];
-            const provId = slot ? resolveProvider(slot.baseUrl) : null;
-            const modelName = slot?.model?.split("/").pop() || null;
-            return (
-              <div
-                key={`emb-${key}`}
-                className="rounded-[6px] px-2.5 py-1.5"
-                style={{ background: "var(--surface)", borderLeft: `2px solid ${color}` }}
-              >
-                <span className="block font-mono" style={{ color, fontSize: 9, fontWeight: 400 }}>
-                  {label.toLowerCase()}
+      {/* Status — embedding assignments */}
+      <div className="mt-3 space-y-0.5">
+        {EMB_TYPES.map(({ key, label, color }) => {
+          const slot = embConfig?.embeddingSlots?.[key];
+          const health = slotHealth[key];
+          const provId = slot ? resolveProvider(slot.baseUrl) : null;
+          const modelName = slot?.model?.split("/").pop() || null;
+          return (
+            <div key={`emb-${key}`} className="flex items-center gap-2">
+              <span className="font-mono" style={{ color, fontSize: 9, fontWeight: 400, width: 44 }}>
+                {label.toLowerCase()}
+              </span>
+              <span className="font-mono truncate" style={{ color: modelName ? "var(--text)" : "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+                {modelName || "unassigned"}
+              </span>
+              {provId && (
+                <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+                  ︱{provId}{health?.ok ? ` · ${health.dims ?? "?"}d` : health === null ? "" : " · offline"}
                 </span>
-                <span className="block font-mono truncate mt-0.5" style={{ color: modelName ? "var(--accent)" : "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-                  {modelName || "unassigned"}
-                </span>
-                {provId && (
-                  <span className="block font-mono truncate" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-                    via {provId}{health?.ok ? ` · ${health.dims ?? "?"}d` : health === null ? "" : " · offline"}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Embedding section */}
       <div className="mt-8 mb-12">
+        <div style={{ borderTop: "1px solid var(--border)", margin: "16px 0 8px" }} />
         <button
           onClick={() => setEmbeddingOpen((v) => !v)}
-          className="flex w-full items-center gap-2 mb-3 text-left"
+          className="flex w-full items-center gap-1.5 mb-3 text-left transition active:scale-[0.99]"
         >
-          <span className="font-mono flex-1" style={{ color: "var(--text)", fontSize: 13, fontWeight: 500 }}>Embedding</span>
-          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-            Semantic search & memory
+          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 11, fontWeight: 400 }}>
+            {embeddingOpen ? "−" : "+"} embedding︱
           </span>
-          {embeddingOpen ? (
-            <ChevronDown className="h-3 w-3" style={{ color: "var(--text-faint)" }} />
-          ) : (
-            <ChevronRight className="h-3 w-3" style={{ color: "var(--text-faint)" }} />
-          )}
+          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
+            semantic search & memory
+          </span>
         </button>
         {embeddingOpen && (
           <div className="space-y-3 animate-fade-slide-up">
@@ -460,13 +448,13 @@ export function EmbeddingSection() {
                 return (
                   <div
                     key={prov.id}
-                    className="rounded-[8px]"
-                    style={{ border: isActiveProvider ? "1px solid var(--accent)" : "1px solid var(--border)" }}
+                    className=""
+                    style={{ border: "none" }}
                   >
                     <button
                       onClick={() => toggleEmbProvider(prov.id)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition"
-                      style={{ background: "var(--surface-dim)", borderRadius: isOpen ? "8px 8px 0 0" : "8px" }}
+                      style={{ background: "transparent" }}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -518,10 +506,9 @@ export function EmbeddingSection() {
                         </div>
                         <p className="font-mono mt-0.5" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>{prov.desc}</p>
                       </div>
-                      <ChevronRight
-                        className="h-3.5 w-3.5 shrink-0"
-                        style={{ color: "var(--text-faint)", transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}
-                      />
+                      <span className="font-mono shrink-0" style={{ color: "var(--text-faint)", fontSize: 11 }}>
+                        {isOpen ? "−" : "+"}
+                      </span>
                     </button>
 
                     {isOpen && (
@@ -536,10 +523,9 @@ export function EmbeddingSection() {
                             return (
                               <div
                                 key={m.id}
-                                className="group relative rounded-[6px] px-2.5 py-2 transition cursor-pointer"
+                                className="group relative py-0.5 transition cursor-pointer"
                                 style={{
-                                  background: typeTags.length > 0 ? "var(--surface-dim)" : isModelActive ? "color-mix(in srgb, var(--success) 8%, transparent)" : "transparent",
-                                  border: isModelActive ? "1px solid color-mix(in srgb, var(--success) 30%, transparent)" : "1px solid transparent",
+                                  background: "transparent",
                                 }}
                                 onClick={() => {
                                   if (isLoading) return;
@@ -645,7 +631,7 @@ export function EmbeddingSection() {
                         {embResult && !embResult.ok && embResult.provider === prov.id && (
                           <div className="px-4 pb-3">
                             <div
-                              className="flex items-start gap-1.5 font-mono rounded-[6px] px-2.5 py-2"
+                              className="flex items-start gap-1.5 font-mono py-1"
                               style={{ color: "var(--error)", background: "color-mix(in srgb, var(--error) 6%, transparent)", fontSize: 9, fontWeight: 400 }}
                             >
                               <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1" style={{ background: "var(--error)" }} />
@@ -674,13 +660,13 @@ export function EmbeddingSection() {
                 return (
                   <div
                     key={prov.id}
-                    className="rounded-[8px]"
-                    style={{ border: isActiveProvider ? "1px solid var(--accent)" : "1px solid var(--border)" }}
+                    className=""
+                    style={{ border: "none" }}
                   >
                     <button
                       onClick={() => toggleEmbProvider(prov.id)}
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition"
-                      style={{ background: "var(--surface-dim)", borderRadius: isOpen ? "8px 8px 0 0" : "8px" }}
+                      style={{ background: "transparent" }}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -720,10 +706,9 @@ export function EmbeddingSection() {
                         </div>
                         <p className="font-mono mt-0.5" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>{prov.desc}</p>
                       </div>
-                      <ChevronRight
-                        className="h-3.5 w-3.5 shrink-0"
-                        style={{ color: "var(--text-faint)", transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}
-                      />
+                      <span className="font-mono shrink-0" style={{ color: "var(--text-faint)", fontSize: 11 }}>
+                        {isOpen ? "−" : "+"}
+                      </span>
                     </button>
 
                     {isOpen && (
@@ -749,9 +734,9 @@ export function EmbeddingSection() {
                               placeholder={embConfig?.embeddingKeys?.[prov.id] ? "••••••••  (saved)" : `${prov.id}-api-key...`}
                               value={apiKey}
                               onChange={(e) => setEmbApiKeys((k) => ({ ...k, [prov.id]: e.target.value }))}
-                              className="flex-1 font-mono rounded-[6px] px-3 py-1.5 outline-none transition"
+                              className="flex-1 font-mono bg-transparent px-0 py-1 outline-none transition"
                               style={{
-                                background: "var(--surface-dimmer, var(--surface))",
+                                background: "transparent", borderBottom: "1px solid var(--border)",
                                 border: `1px solid ${embConfig?.embeddingKeys?.[prov.id] ? "color-mix(in srgb, var(--success) 30%, transparent)" : "var(--border)"}`,
                                 color: "var(--text)",
                                 fontSize: 9,
@@ -763,7 +748,7 @@ export function EmbeddingSection() {
                             <button
                               disabled={!apiKey || embKeySaving === prov.id}
                               onClick={() => handleEmbSaveKey(prov.id)}
-                              className="shrink-0 rounded-[6px] px-3 py-1.5 font-mono transition"
+                              className="shrink-0 font-mono text-btn transition"
                               style={{
                                 background: embConfig?.embeddingKeys?.[prov.id] ? "color-mix(in srgb, var(--success) 8%, transparent)" : "color-mix(in srgb, var(--accent) 8%, transparent)",
                                 border: `1px solid ${embConfig?.embeddingKeys?.[prov.id] ? "color-mix(in srgb, var(--success) 20%, transparent)" : "color-mix(in srgb, var(--accent) 20%, transparent)"}`,
@@ -789,10 +774,9 @@ export function EmbeddingSection() {
                             return (
                               <div
                                 key={m.id}
-                                className="group relative rounded-[6px] px-2.5 py-2 transition cursor-pointer"
+                                className="group relative py-0.5 transition cursor-pointer"
                                 style={{
-                                  background: typeTags.length > 0 ? "var(--surface-dim)" : isModelActive ? "color-mix(in srgb, var(--success) 8%, transparent)" : "transparent",
-                                  border: isModelActive ? "1px solid color-mix(in srgb, var(--success) 30%, transparent)" : "1px solid transparent",
+                                  background: "transparent",
                                   opacity: !keySaved && !isModelActive && typeTags.length === 0 ? 0.5 : 1,
                                 }}
                                 onClick={() => {
@@ -891,7 +875,7 @@ export function EmbeddingSection() {
                         {embResult && !embResult.ok && embResult.provider === prov.id && (
                           <div className="px-4 pb-3">
                             <div
-                              className="flex items-start gap-1.5 font-mono rounded-[6px] px-2.5 py-2"
+                              className="flex items-start gap-1.5 font-mono py-1"
                               style={{ color: "var(--error)", background: "color-mix(in srgb, var(--error) 6%, transparent)", fontSize: 9, fontWeight: 400 }}
                             >
                               <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1" style={{ background: "var(--error)" }} />

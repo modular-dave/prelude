@@ -28,11 +28,11 @@ export function EmbTypePicker({
   return (
     <div
       ref={ref}
-      className="absolute z-50 rounded-[8px] p-2 shadow-lg animate-fade-slide-up"
+      className="absolute z-50 p-2 animate-fade-slide-up"
       style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        minWidth: 160,
+        background: "var(--bg)",
+        borderLeft: "2px solid var(--border)",
+        minWidth: 140,
         top: "100%",
         left: "50%",
         transform: "translateX(-50%)",
@@ -40,16 +40,15 @@ export function EmbTypePicker({
       }}
     >
       <p className="font-mono px-2 py-1" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-        Use for:
+        use for:
       </p>
       {EMB_TYPES.map(({ key, label, color }) => (
         <button
           key={key}
           onClick={() => onSelect(key)}
-          className="flex w-full items-center gap-2 px-2 py-1.5 rounded-[4px] transition hover:opacity-80"
-          style={{ background: "transparent" }}
+          className="flex w-full items-center gap-2 px-2 py-1 transition hover:opacity-80"
         >
-          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+          <span className="h-[5px] w-[5px] rounded-full shrink-0" style={{ background: color }} />
           <span className="font-mono" style={{ color: "var(--text)", fontSize: 11, fontWeight: 400 }}>{label}</span>
         </button>
       ))}
@@ -81,11 +80,11 @@ export function FunctionPicker({
   return (
     <div
       ref={ref}
-      className="absolute z-50 rounded-[8px] p-2 shadow-lg animate-fade-slide-up"
+      className="absolute z-50 p-2 animate-fade-slide-up"
       style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        minWidth: 200,
+        background: "var(--bg)",
+        borderLeft: "2px solid var(--border)",
+        minWidth: 160,
         top: "100%",
         left: "50%",
         transform: "translateX(-50%)",
@@ -93,27 +92,25 @@ export function FunctionPicker({
       }}
     >
       <p className="font-mono px-2 py-1 truncate" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-        Use for:
+        use for:
       </p>
       {COG_FUNCS.map(({ key, label, color }) => (
         <button
           key={key}
           onClick={() => onSelect(key)}
-          className="flex w-full items-center gap-2 px-2 py-1.5 rounded-[4px] transition hover:opacity-80"
-          style={{ background: "transparent" }}
+          className="flex w-full items-center gap-2 px-2 py-1 transition hover:opacity-80"
         >
-          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+          <span className="h-[5px] w-[5px] rounded-full shrink-0" style={{ background: color }} />
           <span className="font-mono" style={{ color: "var(--text)", fontSize: 11, fontWeight: 400 }}>{label}</span>
         </button>
       ))}
       <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
       <button
         onClick={() => onSelect("all")}
-        className="flex w-full items-center gap-2 px-2 py-1.5 rounded-[4px] transition hover:opacity-80"
-        style={{ background: "transparent" }}
+        className="flex w-full items-center gap-2 px-2 py-1 transition hover:opacity-80"
       >
-        <span className="h-2 w-2 rounded-full shrink-0" style={{ background: "var(--success)" }} />
-        <span className="font-mono" style={{ color: "var(--text)", fontSize: 11, fontWeight: 400 }}>All functions</span>
+        <span className="h-[5px] w-[5px] rounded-full shrink-0" style={{ background: "var(--success)" }} />
+        <span className="font-mono" style={{ color: "var(--text)", fontSize: 11, fontWeight: 400 }}>all functions</span>
       </button>
     </div>
   );
@@ -155,23 +152,23 @@ export function HostedConfigForm({
     .every((e) => (values[e.key] || "").trim().length > 0);
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="font-mono" style={{ fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-faint)" }}>
-          {connected ? "Saved" : "Credentials"}
-        </h4>
+        <span className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+          {connected ? "saved" : "credentials"}
+        </span>
         <a
           href={prov.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-mono inline-flex items-center gap-1 transition"
+          className="text-btn font-mono"
           style={{ color: "var(--accent)", fontSize: 9, fontWeight: 400 }}
         >
-          Get API key <ExternalLink className="h-2.5 w-2.5" />
+          get api key →
         </a>
       </div>
 
-      {/* Credential inputs (API key, base URL) */}
+      {/* Credential inputs — underline style */}
       <div className="space-y-1.5">
         {credentialVars.map((env) => (
           <div key={env.key}>
@@ -184,16 +181,15 @@ export function HostedConfigForm({
               placeholder={env.placeholder}
               value={values[env.key] || ""}
               onChange={(e) => setValues((v) => ({ ...v, [env.key]: e.target.value }))}
-              className="w-full font-mono rounded-[6px] px-3 py-1.5 outline-none transition"
+              className="w-full font-mono bg-transparent px-0 py-1 outline-none transition"
               style={{
-                background: "var(--surface-dimmer, var(--surface))",
-                border: "1px solid var(--border)",
+                borderBottom: "1px solid var(--border)",
                 color: "var(--text)",
                 fontSize: 9,
                 fontWeight: 400,
               }}
-              onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "var(--border)"; }}
+              onFocus={(e) => { e.target.style.borderBottomColor = "var(--accent)"; }}
+              onBlur={(e) => { e.target.style.borderBottomColor = "var(--border)"; }}
             />
           </div>
         ))}
@@ -205,22 +201,17 @@ export function HostedConfigForm({
       <button
         onClick={handleSubmit}
         disabled={!hasRequired || submitting}
-        className="flex w-full items-center justify-center gap-2 rounded-[6px] px-3 py-2 transition cursor-pointer font-mono"
+        className="text-btn font-mono transition active:scale-95"
         style={{
-          background: connected ? "color-mix(in srgb, var(--success) 8%, transparent)" : "color-mix(in srgb, var(--accent) 8%, transparent)",
-          border: `1px solid ${connected ? "color-mix(in srgb, var(--success) 20%, transparent)" : "color-mix(in srgb, var(--accent) 20%, transparent)"}`,
           color: connected ? "var(--success)" : "var(--accent)",
-          opacity: !hasRequired || submitting ? 0.5 : 1,
+          opacity: !hasRequired || submitting ? 0.4 : 1,
           fontSize: 11,
           fontWeight: 400,
         }}
       >
         {submitting ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : connected ? (
-          <Check className="h-3 w-3" />
-        ) : null}
-        {submitting ? "Saving\u2026" : connected ? "Update" : "Save"}
+          <><Loader2 className="h-3 w-3 inline-block animate-spin mr-1" /> saving...</>
+        ) : connected ? "update" : "save"}
       </button>
     </div>
   );

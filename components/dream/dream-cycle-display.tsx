@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, ChevronDown, ChevronRight, Play, Trash2 } from "lucide-react";
+import { Loader2, Play, Trash2 } from "lucide-react";
 import { useMemory } from "@/lib/memory-context";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -207,7 +207,7 @@ export function DreamCycleDisplay() {
             <button
               onClick={() => setConfirmClearAll(true)}
               disabled={clearing}
-              className="font-mono rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
+              className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
               style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
             >
               {clearing ? (
@@ -223,7 +223,7 @@ export function DreamCycleDisplay() {
           <button
             onClick={toggleDreamSchedule}
             disabled={scheduleLoading}
-            className="font-mono rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
+            className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
             style={{
               fontSize: 11,
               fontWeight: 500,
@@ -244,7 +244,7 @@ export function DreamCycleDisplay() {
           <button
             onClick={runDream}
             disabled={running || memories.length === 0}
-            className="font-mono rounded-[6px] px-4 py-2 transition active:scale-95 disabled:opacity-40 glass"
+            className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
             style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
           >
             {running ? (
@@ -271,14 +271,10 @@ export function DreamCycleDisplay() {
             <button
               key={phase.key}
               onClick={() => phaseResult && setExpandedPhase(expandedPhase === phase.key ? null : phase.key)}
-              className="font-mono rounded-[6px] p-4 text-left transition-all duration-200"
+              className="font-mono py-2 text-left transition-all duration-200"
               style={{
-                background: "var(--surface-dim)",
-                borderWidth: 1,
-                borderStyle: "solid",
-                borderColor: "var(--border)",
-                borderTopWidth: isComplete ? 2 : 1,
-                borderTopColor: isComplete ? "var(--accent)" : "var(--border)",
+                background: "transparent",
+                borderTop: isComplete ? "2px solid var(--accent)" : "1px solid var(--border)",
                 cursor: phaseResult ? "pointer" : "default",
               }}
             >
@@ -321,9 +317,9 @@ export function DreamCycleDisplay() {
         const phaseMemories = result.newMemories.filter((m) => phaseResult.newMemoryIds.includes(m.id));
         return (
           <div
-            className="font-mono rounded-[8px] p-5 animate-fade-slide-up"
+            className="font-mono mt-4 animate-fade-slide-up"
             style={{
-              background: "var(--surface-dim)",
+              background: "transparent",
               borderWidth: 1,
               borderStyle: "solid",
               borderColor: "var(--border)",
@@ -339,7 +335,7 @@ export function DreamCycleDisplay() {
             </div>
 
             {/* Phase output */}
-            <div className="rounded-[6px] p-3 mb-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
+            <div className="mb-3" style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
               <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
                 {phaseResult.output}
               </p>
@@ -355,8 +351,7 @@ export function DreamCycleDisplay() {
                   {phaseMemories.map((m) => (
                     <div
                       key={m.id}
-                      className="flex items-start gap-2 rounded-[6px] p-2.5"
-                      style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+                      className="flex items-start gap-2 py-1"
                     >
                       <div className="min-w-0 flex-1">
                         <p style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
@@ -387,7 +382,7 @@ export function DreamCycleDisplay() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-[8px] p-4" style={{ background: "var(--bg)", border: "1px solid var(--error)" }}>
+        <div className="mt-4">
           <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
         </div>
       )}
@@ -395,9 +390,9 @@ export function DreamCycleDisplay() {
       {/* Emergence highlight */}
       {result?.emergence && (
         <div
-          className="font-mono rounded-[8px] p-5 animate-fade-slide-up"
+          className="font-mono mt-4 animate-fade-slide-up"
           style={{
-            background: "var(--surface-dim)",
+            background: "transparent",
             borderWidth: 1,
             borderStyle: "solid",
             borderColor: "var(--border)",
@@ -505,19 +500,17 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
 
   return (
     <div
-      className="font-mono rounded-[6px] overflow-hidden"
-      style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
+      className="font-mono overflow-hidden"
+      style={{ borderTop: "1px solid var(--border)", paddingTop: 4 }}
     >
       <div className="flex items-center">
         <button
           onClick={() => setOpen(!open)}
-          className="flex-1 flex items-center gap-3 p-3 text-left transition-colors duration-150"
+          className="flex-1 flex items-center gap-2 py-1 text-left transition-colors duration-150"
         >
-          {open ? (
-            <ChevronDown className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-          ) : (
-            <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
-          )}
+          <span className="font-mono shrink-0" style={{ color: "var(--text-faint)", fontSize: 11 }}>
+            {open ? "−" : "+"}
+          </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>

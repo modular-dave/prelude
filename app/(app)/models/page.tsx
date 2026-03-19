@@ -6,9 +6,9 @@ export default function ModelsPage() {
   return (
     <div className="relative h-full overflow-y-auto p-6 pt-16 font-mono" style={{ background: "var(--bg)" }}>
       <div className="animate-fade-slide-up">
-        <h1 style={{ fontSize: 16, fontWeight: 500, color: "var(--text)" }}>Models</h1>
-        <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
-          Configure inference providers and embedding models
+        <span className="t-title" style={{ color: "var(--text)" }}>models</span>
+        <p className="mt-1 t-tiny" style={{ color: "var(--text-faint)" }}>
+          inference providers and embedding
         </p>
       </div>
 
