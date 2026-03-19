@@ -3,6 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BrainScanline } from "@/components/brain/brain-scanline";
+import {
+  LOCAL_PROVIDERS,
+  HOSTED_PROVIDERS,
+  COG_FUNCS,
+  EMB_LOCAL,
+  EMB_HOSTED,
+  type ProviderDef,
+  type EmbProvider,
+  type EmbModel,
+} from "@/app/(app)/models/_types";
+import type { CogFunc } from "@/lib/active-model-store";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -16,28 +27,19 @@ interface Platform {
 interface DetectResult {
   platform: Platform;
   backends: {
-    mlx: {
-      available: boolean;
-      inference: boolean;
-      inferenceModel: string | null;
-      embedding: boolean;
-      embeddingModel: string | null;
-      embeddingDims: number | null;
-    };
-    ollama: {
-      available: boolean;
-      inferenceModels: string[];
-      embeddingModels: string[];
-    };
-    cloud: {
-      available: boolean;
-      configured: boolean;
-    };
+    mlx: { available: boolean; inference: boolean; inferenceModel: string | null; embedding: boolean; embeddingModel: string | null; embeddingDims: number | null };
+    ollama: { available: boolean; inferenceModels: string[]; embeddingModels: string[] };
+    cloud: { available: boolean; configured: boolean };
   };
   recommended: string;
 }
 
 type Step = "detect" | "inference" | "embedding" | "confirm";
+
+interface FuncAssignment {
+  model: string;
+  provider: string;
+}
 
 const S = {
   h1: { fontSize: 16, fontWeight: 500 } as const,
@@ -49,6 +51,10 @@ const S = {
   faint: "var(--text-faint)",
 };
 
+const dot = (ok: boolean) => (
+  <span className="inline-block h-[5px] w-[5px] rounded-full" style={{ background: ok ? "#22c55e" : "var(--text-faint)" }} />
+);
+
 // ── Component ────────────────────────────────────────────────────
 
 export default function SetupPage() {
@@ -58,17 +64,26 @@ export default function SetupPage() {
   const [detection, setDetection] = useState<DetectResult | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // User choices
-  const [selectedBackend, setSelectedBackend] = useState<"mlx" | "ollama" | "cloud">("mlx");
-  const [selectedInfModel, setSelectedInfModel] = useState<string>("");
-  const [selectedEmbModel, setSelectedEmbModel] = useState<string>("");
-  const [selectedEmbDims, setSelectedEmbDims] = useState<number>(384);
-
-  // Cloud config
+  // Inference state
+  const [infBackend, setInfBackend] = useState<string>("mlx");
+  const [sameForAll, setSameForAll] = useState(true);
+  const [assignments, setAssignments] = useState<Record<CogFunc, FuncAssignment>>({
+    chat: { model: "", provider: "" },
+    dream: { model: "", provider: "" },
+    reflect: { model: "", provider: "" },
+  });
   const [cloudApiKey, setCloudApiKey] = useState("");
   const [cloudBaseUrl, setCloudBaseUrl] = useState("");
+  const [cloudProvider, setCloudProvider] = useState("venice");
 
-  // ── Step 1: Detect hardware ──
+  // Embedding state
+  const [embBackend, setEmbBackend] = useState<string>("mlx");
+  const [embModel, setEmbModel] = useState<string>("");
+  const [embDims, setEmbDims] = useState<number>(384);
+  const [embApiKey, setEmbApiKey] = useState("");
+  const [embBaseUrl, setEmbBaseUrl] = useState("");
+
+  // ── Step 1: Detect ──
   useEffect(() => {
     (async () => {
       try {
@@ -80,71 +95,107 @@ export default function SetupPage() {
         const data: DetectResult = await res.json();
         setDetection(data);
 
-        // Auto-select recommended backend
-        const rec = data.recommended as "mlx" | "ollama" | "cloud";
-        setSelectedBackend(rec);
+        const rec = data.recommended;
+        setInfBackend(rec);
+        setEmbBackend(rec === "cloud" ? "cloud" : rec);
 
         // Pre-select models
+        const provider = rec === "mlx" ? LOCAL_PROVIDERS.find(p => p.id === "mlx")!
+          : rec === "ollama" ? LOCAL_PROVIDERS.find(p => p.id === "ollama")!
+          : HOSTED_PROVIDERS[0];
+        const defaultModel = data.backends.mlx.inferenceModel
+          || (rec === "ollama" && data.backends.ollama.inferenceModels[0])
+          || provider?.models[0]?.id || "";
+        const a = { model: defaultModel, provider: rec };
+        setAssignments({ chat: a, dream: { ...a }, reflect: { ...a } });
+
+        // Pre-select embedding
         if (rec === "mlx") {
-          setSelectedInfModel(data.backends.mlx.inferenceModel || "mlx-community/Qwen2.5-0.5B-Instruct-4bit");
-          setSelectedEmbModel(data.backends.mlx.embeddingModel || "sentence-transformers/all-MiniLM-L6-v2");
-          setSelectedEmbDims(data.backends.mlx.embeddingDims || 384);
+          const em = EMB_LOCAL.find(p => p.id === "mlx");
+          setEmbModel(em?.models[0]?.id || "sentence-transformers/all-MiniLM-L6-v2");
+          setEmbDims(em?.models[0]?.dims || 384);
+          setEmbBaseUrl(em?.baseUrl || "http://127.0.0.1:11435/v1");
         } else if (rec === "ollama") {
-          const infModels = data.backends.ollama.inferenceModels;
-          const embModels = data.backends.ollama.embeddingModels;
-          setSelectedInfModel(infModels[0] || "qwen2.5:0.5b");
-          setSelectedEmbModel(embModels[0] || "nomic-embed-text");
-          setSelectedEmbDims(embModels[0]?.includes("mxbai") ? 1024 : 768);
+          const em = EMB_LOCAL.find(p => p.id === "ollama");
+          setEmbModel(em?.models[0]?.id || "nomic-embed-text");
+          setEmbDims(em?.models[0]?.dims || 768);
+          setEmbBaseUrl(em?.baseUrl || "http://127.0.0.1:11434/v1");
         }
-      } catch {
-        // Detection failed — still show the page
-      } finally {
-        setDetecting(false);
-      }
+      } catch {} finally { setDetecting(false); }
     })();
   }, []);
 
-  // ── Step 4: Save config ──
+  // ── Helpers ──
+  const getInfProvider = (): ProviderDef | undefined =>
+    [...LOCAL_PROVIDERS, ...HOSTED_PROVIDERS].find(p => p.id === infBackend || p.id === cloudProvider);
+
+  const getInfModels = () => {
+    if (infBackend === "cloud") return HOSTED_PROVIDERS.find(p => p.id === cloudProvider)?.models || [];
+    const provider = LOCAL_PROVIDERS.find(p => p.id === infBackend);
+    if (!provider) return [];
+    // Merge provider presets with actually installed models from detection
+    if (infBackend === "ollama" && detection?.backends.ollama.inferenceModels.length) {
+      const installed = detection.backends.ollama.inferenceModels;
+      const presetIds = new Set(provider.models.map(m => m.id));
+      const extra = installed.filter(m => !presetIds.has(m)).map(m => ({ id: m, name: m, description: "installed" }));
+      return [...provider.models.filter(m => installed.includes(m.id)), ...extra];
+    }
+    return provider.models;
+  };
+
+  const getEmbProvider = (): EmbProvider | undefined =>
+    [...EMB_LOCAL, ...EMB_HOSTED].find(p => p.id === embBackend);
+
+  const getEmbModels = (): EmbModel[] => {
+    const prov = getEmbProvider();
+    return prov?.models || [];
+  };
+
+  const setAllAssignments = (model: string, provider: string) => {
+    const a = { model, provider };
+    setAssignments({ chat: a, dream: { ...a }, reflect: { ...a } });
+  };
+
+  const setFuncAssignment = (fn: CogFunc, model: string) => {
+    setAssignments(prev => ({ ...prev, [fn]: { model, provider: infBackend === "cloud" ? cloudProvider : infBackend } }));
+  };
+
+  const resolveInfBaseUrl = () => {
+    if (infBackend === "mlx") return "http://127.0.0.1:8899/v1";
+    if (infBackend === "ollama") return "http://127.0.0.1:11434/v1";
+    if (infBackend === "cloud") {
+      const p = HOSTED_PROVIDERS.find(h => h.id === cloudProvider);
+      return cloudBaseUrl || p?.envVars.find(v => v.key === "VENICE_BASE_URL")?.placeholder || "https://api.venice.ai/api/v1";
+    }
+    return "";
+  };
+
+  // ── Save ──
   const handleSave = async () => {
     setSaving(true);
+    const LOCAL_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
+    const baseUrl = resolveInfBaseUrl();
+    const apiKey = infBackend === "cloud" ? cloudApiKey : "local";
+    const prov = infBackend === "cloud" ? cloudProvider : infBackend;
+
     const config: Record<string, string> = {
       SUPABASE_URL: "http://127.0.0.1:54321",
-      SUPABASE_SERVICE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU",
+      SUPABASE_SERVICE_KEY: LOCAL_KEY,
+      VENICE_BASE_URL: baseUrl,
+      VENICE_API_KEY: apiKey,
+      VENICE_MODEL: assignments.chat.model,
+      INFERENCE_CHAT_MODEL: assignments.chat.model,
+      INFERENCE_CHAT_PROVIDER: prov,
+      INFERENCE_DREAM_MODEL: assignments.dream.model,
+      INFERENCE_DREAM_PROVIDER: prov,
+      INFERENCE_REFLECT_MODEL: assignments.reflect.model,
+      INFERENCE_REFLECT_PROVIDER: prov,
+      EMBEDDING_PROVIDER: embBackend === "cloud" ? embBackend : "openai",
+      EMBEDDING_BASE_URL: embBaseUrl || getEmbProvider()?.baseUrl || "",
+      EMBEDDING_API_KEY: embApiKey || "local",
+      EMBEDDING_MODEL: embModel,
+      EMBEDDING_DIMENSIONS: String(embDims),
     };
-
-    if (selectedBackend === "mlx") {
-      config.VENICE_BASE_URL = "http://127.0.0.1:8899/v1";
-      config.VENICE_API_KEY = "local";
-      config.VENICE_MODEL = selectedInfModel;
-      config.INFERENCE_CHAT_MODEL = selectedInfModel;
-      config.INFERENCE_CHAT_PROVIDER = "mlx";
-      config.EMBEDDING_PROVIDER = "openai";
-      config.EMBEDDING_BASE_URL = "http://127.0.0.1:11435/v1";
-      config.EMBEDDING_API_KEY = "local";
-      config.EMBEDDING_MODEL = selectedEmbModel;
-      config.EMBEDDING_DIMENSIONS = String(selectedEmbDims);
-    } else if (selectedBackend === "ollama") {
-      config.VENICE_BASE_URL = "http://127.0.0.1:11434/v1";
-      config.VENICE_API_KEY = "local";
-      config.VENICE_MODEL = selectedInfModel;
-      config.INFERENCE_CHAT_MODEL = selectedInfModel;
-      config.INFERENCE_CHAT_PROVIDER = "ollama";
-      config.EMBEDDING_PROVIDER = "openai";
-      config.EMBEDDING_BASE_URL = "http://127.0.0.1:11434/v1";
-      config.EMBEDDING_API_KEY = "ollama";
-      config.EMBEDDING_MODEL = selectedEmbModel;
-      config.EMBEDDING_DIMENSIONS = String(selectedEmbDims);
-    } else {
-      config.VENICE_BASE_URL = cloudBaseUrl || "https://api.venice.ai/api/v1";
-      config.VENICE_API_KEY = cloudApiKey;
-      config.VENICE_MODEL = selectedInfModel || "llama-3.3-70b";
-      config.INFERENCE_CHAT_MODEL = selectedInfModel || "llama-3.3-70b";
-      config.INFERENCE_CHAT_PROVIDER = "venice";
-      config.EMBEDDING_PROVIDER = "voyage";
-      config.EMBEDDING_API_KEY = cloudApiKey;
-      config.EMBEDDING_MODEL = "voyage-3-lite";
-      config.EMBEDDING_DIMENSIONS = "1024";
-    }
 
     try {
       await fetch("/api/config", {
@@ -153,387 +204,258 @@ export default function SetupPage() {
         body: JSON.stringify({ action: "save", config }),
       });
       router.push("/");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
+  // ── Platform label ──
+  const osLabel = detection?.platform?.isAppleSilicon ? "Apple Silicon"
+    : detection?.platform?.os === "darwin" ? "macOS Intel"
+    : detection?.platform?.os === "linux" ? "Linux"
+    : detection?.platform?.os === "win32" ? "Windows"
+    : detection?.platform?.os || "...";
+
   // ── Render ──
-
-  const dot = (ok: boolean) => (
-    <span
-      className="inline-block h-[5px] w-[5px] rounded-full"
-      style={{ background: ok ? "#22c55e" : "var(--text-faint)" }}
-    />
-  );
-
-  const osLabel = detection?.platform
-    ? detection.platform.isAppleSilicon
-      ? "Apple Silicon"
-      : detection.platform.os === "darwin"
-        ? "macOS Intel"
-        : detection.platform.os === "linux"
-          ? "Linux"
-          : detection.platform.os === "win32"
-            ? "Windows"
-            : detection.platform.os
-    : "...";
-
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="w-full max-w-md px-6">
+    <div className="flex h-full items-center justify-center overflow-y-auto">
+      <div className="w-full max-w-md px-6 py-12">
         {/* Header */}
         <div className="mb-8 text-center">
           <BrainScanline size={60} />
-          <h1 className="font-mono mt-4" style={S.h1}>
-            prelude setup
-          </h1>
+          <h1 className="font-mono mt-4" style={S.h1}>prelude setup</h1>
           <p className="font-mono mt-1" style={{ ...S.small, color: S.faint }}>
             {step === "detect" && "detecting environment..."}
-            {step === "inference" && "choose inference model"}
-            {step === "embedding" && "choose embedding model"}
+            {step === "inference" && "configure inference"}
+            {step === "embedding" && "configure embedding"}
             {step === "confirm" && "review configuration"}
           </p>
         </div>
 
-        {/* ── Step 1: Detection ── */}
+        {/* ── STEP 1: DETECT ── */}
         {step === "detect" && (
           <div className="space-y-4">
             {detecting ? (
-              <p className="font-mono text-center" style={{ ...S.p, color: S.muted }}>
-                scanning hardware...
-              </p>
+              <p className="font-mono text-center" style={{ ...S.p, color: S.muted }}>scanning hardware...</p>
             ) : detection ? (
               <>
-                {/* Platform */}
                 <div className="p-4" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
                   <p className="font-mono" style={S.h2}>platform</p>
-                  <p className="font-mono mt-1" style={{ ...S.p, color: S.muted }}>
-                    {osLabel} · {detection.platform.arch}
-                  </p>
-                  <p className="font-mono" style={{ ...S.small, color: S.faint }}>
-                    {detection.platform.cpuModel}
-                  </p>
+                  <p className="font-mono mt-1" style={{ ...S.p, color: S.muted }}>{osLabel} · {detection.platform.arch}</p>
+                  <p className="font-mono" style={{ ...S.small, color: S.faint }}>{detection.platform.cpuModel}</p>
                 </div>
-
-                {/* Backends */}
                 <div className="p-4" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
                   <p className="font-mono mb-2" style={S.h2}>backends</p>
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       {dot(detection.backends.mlx.available)}
-                      <span className="font-mono" style={{ ...S.p, color: detection.backends.mlx.available ? "var(--text)" : S.faint }}>
-                        mlx
+                      <span className="font-mono" style={{ ...S.p, color: detection.backends.mlx.available ? "var(--text)" : S.faint }}>mlx</span>
+                      <span className="font-mono" style={{ ...S.small, color: S.faint }}>
+                        {detection.backends.mlx.inference ? "inference" : ""}{detection.backends.mlx.embedding ? " + embedding" : ""}
+                        {!detection.backends.mlx.available && detection.platform.isAppleSilicon ? "not running" : ""}
                       </span>
-                      {detection.backends.mlx.available && (
-                        <span className="font-mono" style={{ ...S.small, color: S.faint }}>
-                          inference{detection.backends.mlx.inference ? " + embedding" : ""}
-                        </span>
-                      )}
-                      {!detection.backends.mlx.available && detection.platform.isAppleSilicon && (
-                        <span className="font-mono" style={{ ...S.small, color: S.faint }}>
-                          not running
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {dot(detection.backends.ollama.available)}
-                      <span className="font-mono" style={{ ...S.p, color: detection.backends.ollama.available ? "var(--text)" : S.faint }}>
-                        ollama
+                      <span className="font-mono" style={{ ...S.p, color: detection.backends.ollama.available ? "var(--text)" : S.faint }}>ollama</span>
+                      <span className="font-mono" style={{ ...S.small, color: S.faint }}>
+                        {detection.backends.ollama.available ? `${detection.backends.ollama.inferenceModels.length + detection.backends.ollama.embeddingModels.length} models` : ""}
                       </span>
-                      {detection.backends.ollama.available && (
-                        <span className="font-mono" style={{ ...S.small, color: S.faint }}>
-                          {detection.backends.ollama.inferenceModels.length} models
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {dot(detection.backends.cloud.configured)}
-                      <span className="font-mono" style={{ ...S.p, color: detection.backends.cloud.configured ? "var(--text)" : S.faint }}>
-                        cloud
-                      </span>
-                      <span className="font-mono" style={{ ...S.small, color: S.faint }}>
-                        {detection.backends.cloud.configured ? "api key set" : "needs api key"}
-                      </span>
+                      <span className="font-mono" style={{ ...S.p, color: detection.backends.cloud.configured ? "var(--text)" : S.faint }}>cloud</span>
+                      <span className="font-mono" style={{ ...S.small, color: S.faint }}>{detection.backends.cloud.configured ? "api key set" : "needs api key"}</span>
                     </div>
                   </div>
                 </div>
-
-                {/* Recommended */}
-                <p className="font-mono text-center" style={{ ...S.small, color: S.accent }}>
-                  recommended: {detection.recommended}
-                </p>
-
-                <button
-                  onClick={() => setStep("inference")}
-                  className="w-full py-2 font-mono transition active:scale-[0.98]"
-                  style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}
-                >
+                <p className="font-mono text-center" style={{ ...S.small, color: S.accent }}>recommended: {detection.recommended}</p>
+                <button onClick={() => setStep("inference")} className="w-full py-2 font-mono transition active:scale-[0.98]" style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}>
                   continue
                 </button>
               </>
             ) : (
-              <p className="font-mono text-center" style={{ ...S.p, color: S.faint }}>
-                detection failed — configure manually below
-              </p>
+              <button onClick={() => setStep("inference")} className="w-full py-2 font-mono" style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}>
+                configure manually
+              </button>
             )}
           </div>
         )}
 
-        {/* ── Step 2: Choose inference model ── */}
-        {step === "inference" && detection && (
+        {/* ── STEP 2: INFERENCE ── */}
+        {step === "inference" && (
           <div className="space-y-4">
-            {/* Backend selector */}
+            {/* Backend tabs */}
             <div className="flex gap-2">
-              {(["mlx", "ollama", "cloud"] as const).map((b) => {
-                const available = b === "mlx" ? detection.backends.mlx.available || detection.platform.isAppleSilicon
-                  : b === "ollama" ? detection.backends.ollama.available
-                  : true; // cloud always available
+              {["mlx", "ollama", "cloud"].map((b) => {
+                const avail = b === "mlx" ? (detection?.backends.mlx.available || detection?.platform.isAppleSilicon)
+                  : b === "ollama" ? detection?.backends.ollama.available : true;
                 return (
-                  <button
-                    key={b}
-                    onClick={() => setSelectedBackend(b)}
-                    disabled={!available}
-                    className="flex-1 py-1.5 font-mono transition active:scale-[0.98] disabled:opacity-30"
-                    style={{
-                      ...S.p,
-                      color: selectedBackend === b ? S.accent : S.muted,
-                      border: `1px solid ${selectedBackend === b ? S.accent : "var(--border)"}`,
-                      borderRadius: 4,
-                      textAlign: "center",
-                    }}
-                  >
+                  <button key={b} onClick={() => { setInfBackend(b); if (b !== "cloud") { const m = (b === "mlx" ? LOCAL_PROVIDERS.find(p=>p.id==="mlx") : LOCAL_PROVIDERS.find(p=>p.id==="ollama"))?.models[0]?.id || ""; setAllAssignments(m, b); }}}
+                    disabled={!avail} className="flex-1 py-1.5 font-mono transition active:scale-[0.98] disabled:opacity-30"
+                    style={{ ...S.p, color: infBackend === b ? S.accent : S.muted, border: `1px solid ${infBackend === b ? S.accent : "var(--border)"}`, borderRadius: 4, textAlign: "center" }}>
                     {b}
                   </button>
                 );
               })}
             </div>
 
-            {/* Model list for selected backend */}
-            <div className="p-4 space-y-2" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
-              <p className="font-mono" style={S.h2}>inference model</p>
+            {/* Cloud provider sub-tabs */}
+            {infBackend === "cloud" && (
+              <div className="flex gap-1">
+                {HOSTED_PROVIDERS.map((hp) => (
+                  <button key={hp.id} onClick={() => { setCloudProvider(hp.id); setAllAssignments(hp.models[0]?.id || "", hp.id); }}
+                    className="flex-1 py-1 font-mono transition" style={{ ...S.small, color: cloudProvider === hp.id ? S.accent : S.faint, borderBottom: cloudProvider === hp.id ? `1px solid ${S.accent}` : "1px solid transparent" }}>
+                    {hp.name}
+                  </button>
+                ))}
+              </div>
+            )}
 
-              {selectedBackend === "mlx" && (
-                <>
-                  {(detection.backends.mlx.inferenceModel
-                    ? [detection.backends.mlx.inferenceModel]
-                    : ["mlx-community/Qwen2.5-0.5B-Instruct-4bit", "mlx-community/Qwen2.5-1.5B-Instruct-4bit", "mlx-community/Llama-3.2-1B-Instruct-4bit"]
-                  ).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setSelectedInfModel(m)}
-                      className="block w-full text-left px-2 py-1 font-mono transition"
-                      style={{
-                        ...S.p,
-                        color: selectedInfModel === m ? S.accent : "var(--text)",
-                        background: selectedInfModel === m ? "var(--surface)" : "transparent",
-                        borderRadius: 2,
-                      }}
-                    >
-                      {m.split("/").pop()}
+            {/* Cloud API inputs */}
+            {infBackend === "cloud" && (
+              <div className="space-y-2">
+                <input type="password" value={cloudApiKey} onChange={e => setCloudApiKey(e.target.value)} placeholder="API key"
+                  className="w-full bg-transparent outline-none font-mono px-2 py-1" style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }} />
+                <input type="text" value={cloudBaseUrl} onChange={e => setCloudBaseUrl(e.target.value)} placeholder={HOSTED_PROVIDERS.find(h=>h.id===cloudProvider)?.envVars[0]?.placeholder || ""}
+                  className="w-full bg-transparent outline-none font-mono px-2 py-1" style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }} />
+              </div>
+            )}
+
+            {/* Model selection */}
+            <div className="p-4" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-mono" style={S.h2}>models</p>
+                <button onClick={() => setSameForAll(!sameForAll)} className="font-mono transition" style={{ ...S.small, color: S.accent }}>
+                  {sameForAll ? "per-function" : "same for all"}
+                </button>
+              </div>
+
+              {sameForAll ? (
+                /* Single model for all 3 functions */
+                <div className="space-y-1">
+                  {getInfModels().map((m) => (
+                    <button key={m.id} onClick={() => setAllAssignments(m.id, infBackend === "cloud" ? cloudProvider : infBackend)}
+                      className="block w-full text-left px-2 py-1 font-mono transition" style={{ ...S.p, color: assignments.chat.model === m.id ? S.accent : "var(--text)", background: assignments.chat.model === m.id ? "var(--surface)" : "transparent", borderRadius: 2 }}>
+                      {m.name} <span style={{ color: S.faint }}>{m.description}</span>
                     </button>
                   ))}
-                </>
-              )}
-
-              {selectedBackend === "ollama" && (
-                <>
-                  {detection.backends.ollama.inferenceModels.length > 0 ? (
-                    detection.backends.ollama.inferenceModels.map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setSelectedInfModel(m)}
-                        className="block w-full text-left px-2 py-1 font-mono transition"
-                        style={{
-                          ...S.p,
-                          color: selectedInfModel === m ? S.accent : "var(--text)",
-                          background: selectedInfModel === m ? "var(--surface)" : "transparent",
-                          borderRadius: 2,
-                        }}
-                      >
-                        {m}
-                      </button>
-                    ))
-                  ) : (
-                    <p className="font-mono" style={{ ...S.small, color: S.faint }}>
-                      no models installed — run: ollama pull qwen2.5:0.5b
-                    </p>
-                  )}
-                </>
-              )}
-
-              {selectedBackend === "cloud" && (
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={cloudBaseUrl}
-                    onChange={(e) => setCloudBaseUrl(e.target.value)}
-                    placeholder="API base URL (e.g., https://api.venice.ai/api/v1)"
-                    className="w-full bg-transparent outline-none font-mono px-2 py-1"
-                    style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }}
-                  />
-                  <input
-                    type="password"
-                    value={cloudApiKey}
-                    onChange={(e) => setCloudApiKey(e.target.value)}
-                    placeholder="API key"
-                    className="w-full bg-transparent outline-none font-mono px-2 py-1"
-                    style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }}
-                  />
-                  <input
-                    type="text"
-                    value={selectedInfModel}
-                    onChange={(e) => setSelectedInfModel(e.target.value)}
-                    placeholder="Model name (e.g., llama-3.3-70b)"
-                    className="w-full bg-transparent outline-none font-mono px-2 py-1"
-                    style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }}
-                  />
+                </div>
+              ) : (
+                /* Per-function model selection */
+                <div className="space-y-3">
+                  {COG_FUNCS.map(({ key, label, color }) => (
+                    <div key={key}>
+                      <p className="font-mono mb-1" style={{ ...S.small, color }}>{label}</p>
+                      <div className="space-y-0.5">
+                        {getInfModels().map((m) => (
+                          <button key={m.id} onClick={() => setFuncAssignment(key, m.id)}
+                            className="block w-full text-left px-2 py-0.5 font-mono transition" style={{ ...S.small, color: assignments[key].model === m.id ? color : "var(--text)", background: assignments[key].model === m.id ? "var(--surface)" : "transparent", borderRadius: 2 }}>
+                            {m.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setStep("detect")}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98]"
-                style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}
-              >
-                back
-              </button>
-              <button
-                onClick={() => setStep("embedding")}
-                disabled={!selectedInfModel}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98] disabled:opacity-30"
-                style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}
-              >
-                next
-              </button>
+              <button onClick={() => setStep("detect")} className="flex-1 py-2 font-mono transition active:scale-[0.98]" style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}>back</button>
+              <button onClick={() => setStep("embedding")} disabled={!assignments.chat.model} className="flex-1 py-2 font-mono transition active:scale-[0.98] disabled:opacity-30" style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}>next</button>
             </div>
           </div>
         )}
 
-        {/* ── Step 3: Choose embedding model ── */}
-        {step === "embedding" && detection && (
+        {/* ── STEP 3: EMBEDDING ── */}
+        {step === "embedding" && (
           <div className="space-y-4">
-            <div className="p-4 space-y-2" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
-              <p className="font-mono" style={S.h2}>embedding model</p>
-              <p className="font-mono" style={{ ...S.small, color: S.faint }}>
-                auto-selected for {selectedBackend}
-              </p>
-
-              {selectedBackend === "mlx" && (
-                ["sentence-transformers/all-MiniLM-L6-v2"].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => { setSelectedEmbModel(m); setSelectedEmbDims(384); }}
-                    className="block w-full text-left px-2 py-1 font-mono transition"
-                    style={{
-                      ...S.p,
-                      color: selectedEmbModel === m ? S.accent : "var(--text)",
-                      background: selectedEmbModel === m ? "var(--surface)" : "transparent",
-                      borderRadius: 2,
-                    }}
-                  >
-                    {m.split("/").pop()} · 384d
+            {/* Backend tabs */}
+            <div className="flex gap-2">
+              {["mlx", "ollama", "openai", "voyage"].map((b) => {
+                const isLocal = b === "mlx" || b === "ollama";
+                const avail = b === "mlx" ? (detection?.backends.mlx.available || detection?.platform.isAppleSilicon)
+                  : b === "ollama" ? detection?.backends.ollama.available : true;
+                return (
+                  <button key={b} onClick={() => {
+                    setEmbBackend(b);
+                    const prov = [...EMB_LOCAL, ...EMB_HOSTED].find(p => p.id === b);
+                    if (prov?.models[0]) { setEmbModel(prov.models[0].id); setEmbDims(prov.models[0].dims); setEmbBaseUrl(prov.baseUrl); }
+                  }}
+                    disabled={!avail} className="flex-1 py-1.5 font-mono transition active:scale-[0.98] disabled:opacity-30"
+                    style={{ ...S.p, color: embBackend === b ? S.accent : S.muted, border: `1px solid ${embBackend === b ? S.accent : "var(--border)"}`, borderRadius: 4, textAlign: "center" }}>
+                    {b}
                   </button>
-                ))
-              )}
-
-              {selectedBackend === "ollama" && (
-                (detection.backends.ollama.embeddingModels.length > 0
-                  ? detection.backends.ollama.embeddingModels
-                  : ["nomic-embed-text", "mxbai-embed-large"]
-                ).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setSelectedEmbModel(m);
-                      setSelectedEmbDims(m.includes("mxbai") ? 1024 : 768);
-                    }}
-                    className="block w-full text-left px-2 py-1 font-mono transition"
-                    style={{
-                      ...S.p,
-                      color: selectedEmbModel === m ? S.accent : "var(--text)",
-                      background: selectedEmbModel === m ? "var(--surface)" : "transparent",
-                      borderRadius: 2,
-                    }}
-                  >
-                    {m} · {m.includes("mxbai") ? "1024" : "768"}d
-                  </button>
-                ))
-              )}
-
-              {selectedBackend === "cloud" && (
-                <p className="font-mono px-2 py-1" style={{ ...S.p, color: S.muted }}>
-                  voyage-3-lite · 1024d
-                </p>
-              )}
+                );
+              })}
             </div>
+
+            {/* Cloud API key */}
+            {(embBackend === "openai" || embBackend === "voyage") && (
+              <input type="password" value={embApiKey} onChange={e => setEmbApiKey(e.target.value)} placeholder={`${embBackend} API key`}
+                className="w-full bg-transparent outline-none font-mono px-2 py-1" style={{ ...S.p, border: "1px solid var(--border)", borderRadius: 2 }} />
+            )}
+
+            {/* Model list */}
+            <div className="p-4" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
+              <p className="font-mono mb-2" style={S.h2}>embedding model</p>
+              <div className="space-y-1">
+                {getEmbModels().map((m) => (
+                  <button key={m.id} onClick={() => { setEmbModel(m.id); setEmbDims(m.dims); }}
+                    className="block w-full text-left px-2 py-1 font-mono transition" style={{ ...S.p, color: embModel === m.id ? S.accent : "var(--text)", background: embModel === m.id ? "var(--surface)" : "transparent", borderRadius: 2 }}>
+                    {m.name} <span style={{ color: S.faint }}>{m.dims}d · {m.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Dimension warning */}
+            <p className="font-mono px-2" style={{ ...S.small, color: S.faint }}>
+              embedding dimensions ({embDims}d) are locked after first use — changing later requires re-embedding all memories
+            </p>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setStep("inference")}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98]"
-                style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}
-              >
-                back
-              </button>
-              <button
-                onClick={() => setStep("confirm")}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98]"
-                style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}
-              >
-                next
-              </button>
+              <button onClick={() => setStep("inference")} className="flex-1 py-2 font-mono transition active:scale-[0.98]" style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}>back</button>
+              <button onClick={() => setStep("confirm")} className="flex-1 py-2 font-mono transition active:scale-[0.98]" style={{ ...S.p, color: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}>next</button>
             </div>
           </div>
         )}
 
-        {/* ── Step 4: Confirm & Save ── */}
+        {/* ── STEP 4: CONFIRM ── */}
         {step === "confirm" && (
           <div className="space-y-4">
             <div className="p-4 space-y-3" style={{ border: "1px solid var(--border)", borderRadius: 4 }}>
               <p className="font-mono" style={S.h2}>configuration</p>
               <div className="space-y-1">
-                <div className="flex justify-between">
-                  <span className="font-mono" style={{ ...S.small, color: S.faint }}>platform</span>
-                  <span className="font-mono" style={S.small}>{osLabel}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-mono" style={{ ...S.small, color: S.faint }}>backend</span>
-                  <span className="font-mono" style={S.small}>{selectedBackend}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-mono" style={{ ...S.small, color: S.faint }}>inference</span>
-                  <span className="font-mono" style={S.small}>{selectedInfModel.split("/").pop()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-mono" style={{ ...S.small, color: S.faint }}>embedding</span>
-                  <span className="font-mono" style={S.small}>{selectedEmbModel.split("/").pop()} · {selectedEmbDims}d</span>
-                </div>
+                <Row label="platform" value={osLabel} />
+                <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                {COG_FUNCS.map(({ key, label, color }) => (
+                  <Row key={key} label={label.toLowerCase()} value={`${assignments[key].model.split("/").pop()}`} valueColor={color} />
+                ))}
+                <Row label="provider" value={infBackend === "cloud" ? cloudProvider : infBackend} />
+                <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0" }} />
+                <Row label="embedding" value={`${embModel.split("/").pop()} · ${embDims}d`} />
+                <Row label="emb provider" value={embBackend} />
               </div>
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => setStep("embedding")}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98]"
-                style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}
-              >
-                back
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex-1 py-2 font-mono transition active:scale-[0.98] disabled:opacity-50"
-                style={{ ...S.p, color: "#fff", background: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}
-              >
+              <button onClick={() => setStep("embedding")} className="flex-1 py-2 font-mono transition active:scale-[0.98]" style={{ ...S.p, color: S.muted, border: "1px solid var(--border)", borderRadius: 4 }}>back</button>
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-2 font-mono transition active:scale-[0.98] disabled:opacity-50" style={{ ...S.p, color: "#fff", background: S.accent, border: `1px solid ${S.accent}`, borderRadius: 4 }}>
                 {saving ? "saving..." : "start prelude"}
               </button>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</span>
+      <span className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: valueColor || "var(--text)" }}>{value}</span>
     </div>
   );
 }
