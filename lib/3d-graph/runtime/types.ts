@@ -7,7 +7,7 @@ export type { Vec3, SphericalBounds } from "../compiler/types";
 
 // ── View State ──────────────────────────────────────────────────────
 
-export type Lens = "hero" | "cluster" | "zeroG";
+export type Lens = "hero" | "cluster" | "starburst" | "zeroG";
 export type TopologyMode = "global" | "single";
 export type FocusType = "global" | "cluster" | "node" | "path";
 
@@ -102,6 +102,15 @@ export const LENS_WEIGHTS: Record<Lens, ResidencyWeights> = {
     memoryCost: 0.05,
   },
   cluster: {
+    spatialVisibility: 0.25,
+    focusProximity: 0.25,
+    semanticNeed: 0.2,
+    topologyNeed: 0.1,
+    motionPrediction: 0.05,
+    lensBias: 0.1,
+    memoryCost: 0.05,
+  },
+  starburst: {
     spatialVisibility: 0.25,
     focusProximity: 0.25,
     semanticNeed: 0.2,

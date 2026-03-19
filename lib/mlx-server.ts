@@ -106,7 +106,7 @@ print(json.dumps(models))
   }
 }
 
-/** Download a model from HuggingFace */
+/** Download a model from HuggingFace (blocking, no progress) */
 export function installModel(model: string): { success: boolean; error?: string } {
   try {
     execSync(
@@ -118,6 +118,73 @@ export function installModel(model: string): { success: boolean; error?: string 
     const msg = e instanceof Error ? e.message : String(e);
     return { success: false, error: msg.slice(0, 200) };
   }
+}
+
+/** Spawn model download with streaming progress via callback.
+ *  HF Hub prints download progress to stderr; we parse it for percent. */
+export function spawnInstallModel(
+  model: string,
+  onProgress: (data: { status: string; percent?: number; error?: string }) => void,
+  onDone: () => void,
+): { abort: () => void } {
+  const safeModel = model.replace(/'/g, "");
+  // Use tqdm-friendly env so HF Hub prints progress lines
+  const child = spawn(PYTHON, [
+    "-u", "-c",
+    `from huggingface_hub import snapshot_download; snapshot_download('${safeModel}')`,
+  ], {
+    env: { ...process.env, HF_HUB_ENABLE_HF_TRANSFER: "0", PYTHONUNBUFFERED: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let lastPercent = 0;
+
+  const parseProgress = (line: string) => {
+    // tqdm lines look like: "Fetching 9 files: 33%|███ | 3/9 [00:02<00:04, 1.30it/s]"
+    // or HF download: " 45%|████ | 123M/274M [00:05<00:06, 23.1MB/s]"
+    const pctMatch = line.match(/(\d+)%\|/);
+    if (pctMatch) {
+      const pct = parseInt(pctMatch[1], 10);
+      if (pct > lastPercent) {
+        lastPercent = pct;
+        onProgress({ status: "downloading", percent: pct });
+      }
+    }
+  };
+
+  child.stderr?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString();
+    for (const line of text.split("\n")) {
+      if (line.trim()) parseProgress(line);
+    }
+  });
+
+  child.stdout?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString();
+    for (const line of text.split("\n")) {
+      if (line.trim()) parseProgress(line);
+    }
+  });
+
+  child.on("close", (code) => {
+    if (code === 0) {
+      onProgress({ status: "done" });
+    } else {
+      onProgress({ status: "error", error: `Install exited with code ${code}` });
+    }
+    onDone();
+  });
+
+  child.on("error", (err) => {
+    onProgress({ status: "error", error: err.message.slice(0, 200) });
+    onDone();
+  });
+
+  return {
+    abort: () => {
+      try { child.kill("SIGTERM"); } catch {}
+    },
+  };
 }
 
 /** Uninstall a model from HuggingFace cache */

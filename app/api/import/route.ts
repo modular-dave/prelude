@@ -1,14 +1,7 @@
 import { NextRequest } from "next/server";
 import { supabase } from "@/lib/supabase";
-import {
-  storeMemory,
-  scoreImportance,
-  extractEntities,
-  link,
-  dream,
-  reflect,
-  decay,
-} from "@/lib/clude";
+import { dream, reflect, decay } from "@/lib/clude";
+import { processConversationMessage } from "@/lib/memory-pipeline";
 import type { ParsedConversation } from "@/lib/chatgpt-parser";
 
 function sseEvent(event: string, data: unknown): string {
@@ -28,7 +21,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Sort chronologically
   const sorted = [...conversations].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
@@ -68,13 +60,12 @@ export async function POST(req: NextRequest) {
           const gapHours = gapMs / (1000 * 60 * 60);
 
           if (gapHours > 6) {
-            const dreamCycles = Math.min(Math.floor(gapHours / 6), 20); // cap at 20 per gap
-            const reflectCycles = Math.min(Math.floor(gapHours / 24), 5); // cap at 5 per gap
+            const dreamCycles = Math.min(Math.floor(gapHours / 6), 20);
+            const reflectCycles = Math.min(Math.floor(gapHours / 24), 5);
             const gapDays = Math.round(gapHours / 24 * 10) / 10;
 
             emit("idle", { gapDays, dreamCycles, reflectCycles });
 
-            // Run decay for the idle period
             try {
               await decay();
               emit("decay", { period: `${gapDays} days` });
@@ -82,7 +73,6 @@ export async function POST(req: NextRequest) {
               // non-critical
             }
 
-            // Dream cycles for idle period
             for (let d = 0; d < dreamCycles; d++) {
               try {
                 const result = await dream();
@@ -94,11 +84,10 @@ export async function POST(req: NextRequest) {
                   idle: true,
                 });
               } catch {
-                emit("error", { message: `Dream cycle failed during idle gap`, fatal: false });
+                emit("error", { message: "Dream cycle failed during idle gap", fatal: false });
               }
             }
 
-            // Reflect cycles for idle period
             for (let r = 0; r < reflectCycles; r++) {
               try {
                 const result = await reflect();
@@ -109,7 +98,7 @@ export async function POST(req: NextRequest) {
                   idle: true,
                 });
               } catch {
-                emit("error", { message: `Reflection failed during idle gap`, fatal: false });
+                emit("error", { message: "Reflection failed during idle gap", fatal: false });
               }
             }
 
@@ -119,7 +108,7 @@ export async function POST(req: NextRequest) {
 
         prevTime = convTime;
 
-        // ── Store conversation ──
+        // ── Store conversation record ──
         try {
           await supabase.from("conversations").upsert(
             {
@@ -137,62 +126,31 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // ── Store messages as memories ──
+        // ── Process messages through shared Cortex pipeline ──
         const memoryIds: number[] = [];
 
         for (const msg of conv.messages) {
           try {
-            let importance = 0.3;
-            if (msg.role === "user") {
-              importance = await scoreImportance(msg.content).catch(() => 0.5);
-            }
-
-            const summary = msg.content.length > 100
-              ? msg.content.slice(0, 100) + "..."
-              : msg.content;
-
-            const tags = [
-              msg.role === "user" ? "user-message" : "assistant-response",
-              `conv:${conv.id}`,
-              "imported",
-            ];
-
-            const memId = await storeMemory({
-              type: "episodic",
+            const memId = await processConversationMessage({
+              role: msg.role as "user" | "assistant",
               content: msg.content,
-              summary,
-              tags,
-              importance,
+              conversationId: conv.id,
               source,
+              linkToIds: memoryIds.length > 0 ? [memoryIds[memoryIds.length - 1]] : undefined,
             });
 
             if (memId) {
               memoryIds.push(memId);
               stats.totalMemories++;
 
-              // Extract entities
-              await extractEntities(memId, msg.content, summary).catch(() => {});
-
               emit("memory", {
                 conversationIndex: i,
                 memoryId: memId,
                 role: msg.role,
-                importance: Math.round(importance * 100) / 100,
               });
             }
           } catch {
             emit("error", { message: `Failed to store message in: ${conv.title}`, fatal: false });
-          }
-        }
-
-        // ── Link memories within conversation ──
-        for (let a = 0; a < memoryIds.length; a++) {
-          for (let b = a + 1; b < memoryIds.length; b++) {
-            try {
-              await link(memoryIds[a], memoryIds[b], "relates", 0.5);
-            } catch {
-              // non-critical
-            }
           }
         }
 
@@ -209,7 +167,7 @@ export async function POST(req: NextRequest) {
 
         emit("progress", { phase: "importing", total: sorted.length, current: i + 1 });
 
-        // ── Batch dream/reflect: every 10 conversations in active period ──
+        // ── Batch dream/reflect every 10 conversations ──
         if (batchConvCount >= 10) {
           batchConvCount = 0;
 
@@ -240,7 +198,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Final dream/reflect if there are remaining conversations in the batch
+      // Final dream/reflect for remaining batch
       if (batchConvCount > 0) {
         try {
           const result = await dream();

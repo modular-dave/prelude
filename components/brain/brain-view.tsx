@@ -22,6 +22,11 @@ import {
 import { getActiveModel } from "@/lib/model-settings";
 import { loadSystemPrompt } from "@/lib/system-prompt";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
+import { SettingsPanel } from "@/components/brain/panels/settings-panel";
+import { ModelsPanel } from "@/components/brain/panels/models-panel";
+import { CortexPanel } from "@/components/brain/panels/cortex-panel";
+import { ImportPanel } from "@/components/brain/panels/import-panel";
+import { FloatNav } from "@/components/shell/float-nav";
 
 type MemoryFilter = "all" | "inputs" | "outputs";
 type CenterMode = "combined" | "reinforced" | "retrieved";
@@ -66,7 +71,7 @@ interface BrainViewProps {
 }
 
 export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
-  const { memories, retrievalSettings, updateRetrievalSettings, refresh } = useMemory();
+  const { memories, knowledgeGraph, retrievalSettings, updateRetrievalSettings, refresh } = useMemory();
   const [selectedMemoryId, setSelectedMemoryId] = useState<number | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdgeInfo | null>(initialEdge);
   const [highlightedPath, setHighlightedPath] = useState<Set<string> | null>(null);
@@ -77,6 +82,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [enabledDreamSources, setEnabledDreamSources] = useState<string[]>([...DREAM_SOURCES]);
   const [selectedDream, setSelectedDream] = useState<number | null>(null); // null = all
   const [centerMode, setCenterMode] = useState<CenterMode>("combined");
+  const [reorgMode, setReorgMode] = useState<"count" | "diversity">("count");
   const [autoRotate, setAutoRotate] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dreamSessions, setDreamSessions] = useState<DreamSession[]>([]);
@@ -84,7 +90,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [decayCutoff, setDecayCutoff] = useState(0); // 0 = show all, 1 = only fresh
   const [statusCardCollapsed, setStatusCardCollapsed] = useState(false);
-  const [vizMode, setVizMode] = useState<"hero" | "cluster">("hero");
+  const [vizMode, setVizMode] = useState<"hero" | "cluster" | "starburst" | "zero">("zero");
   const [focus, setFocus] = useState<FocusMode>("memories");
   const [showClock, setShowClock] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -95,6 +101,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [chatConvId, setChatConvId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [rightPanel, setRightPanel] = useState<"settings" | "models" | "cortex" | "import" | null>(null);
   const [graphReady, setGraphReady] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pinnedContent, setPinnedContent] = useState<{ content: any; position: { x: number; y: number } } | null>(null);
@@ -102,17 +109,17 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [pathDepth, setPathDepth] = useState(0);
   const [pathDirection, setPathDirection] = useState<"both" | "upstream" | "downstream">("both");
   const [pathMinStrength, setPathMinStrength] = useState(0);
-  const [traceData, setTraceData] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
-  const [loadingTrace, setLoadingTrace] = useState(false);
+  // traceData is now a derived value (useMemo), not state
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const neuralGraphRef = useRef<NeuralGraphHandle>(null);
   const graphSize = useContainerSize(graphContainerRef);
+  const compact = graphSize.width > 0 && graphSize.width < 500;
 
   // ── Filter bag: all filter values in a stable ref, read by NeuralGraph tick loop ──
-  const visibleMemoryIds = useMemo(() => {
+  const globalVisibleIds = useMemo(() => {
     const hasMetaFilter = memoryFilter !== "all";
     const hasTypeFilter = enabledTypes.length < ALL_MEMORY_TYPES.length;
     const hasTimeFilter = timelineCutoff !== Infinity;
@@ -132,45 +139,82 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   const filterBagRef = useRef<FilterBag>({
     memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, decayCutoff, visibleMemoryIds,
+    timelineCutoff, decayCutoff, visibleMemoryIds: globalVisibleIds, reorgMode,
   });
-  filterBagRef.current = {
-    memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, decayCutoff, visibleMemoryIds,
-  };
+  // Updated below after reachableNodes is computed
 
   // The memory ID to trace from — edge source or selected node
   const traceMemoryId = selectedEdge
     ? selectedEdge.sourceNumericId
     : selectedMemoryId;
 
-  // Fetch trace data when selection changes
-  useEffect(() => {
-    if (!traceMemoryId) {
-      setTraceData(null);
-      setLoadingTrace(false);
-      return;
+  // Build adjacency list from loaded graph edges (instant, no API call)
+  const adjacency = useMemo(() => {
+    const adj = new Map<string, Array<{ target: string; type: string; strength: number }>>();
+    for (const e of knowledgeGraph.edges) {
+      const src = e.source;
+      const tgt = e.target;
+      if (!adj.has(src)) adj.set(src, []);
+      if (!adj.has(tgt)) adj.set(tgt, []);
+      adj.get(src)!.push({ target: tgt, type: e.type, strength: e.weight });
+      adj.get(tgt)!.push({ target: src, type: e.type, strength: e.weight });
     }
-    let cancelled = false;
-    setLoadingTrace(true);
-    setPathDepth(selectedEdge ? 0 : 1);
-    setPathDirection("both");
-    setPathMinStrength(0);
-    fetch(`/api/trace?memoryId=${traceMemoryId}&maxDepth=10`)
-      .then(r => r.json())
-      .then(data => { if (!cancelled) { setTraceData(data); setLoadingTrace(false); } })
-      .catch(() => { if (!cancelled) { setTraceData(null); setLoadingTrace(false); } });
-    return () => { cancelled = true; };
-  }, [traceMemoryId]);
+    return adj;
+  }, [knowledgeGraph.edges]);
+
+  // Client-side BFS trace (synchronous, instant — derived value, no state)
+  const traceData = useMemo(() => {
+    if (!traceMemoryId) return null;
+    const rootId = `m_${traceMemoryId}`;
+    const visited = new Map<string, number>();
+    visited.set(rootId, 0);
+    const queue: Array<{ id: string; depth: number }> = [{ id: rootId, depth: 0 }];
+    const links: Array<{ source_id: number; target_id: number; strength: number; link_type: string }> = [];
+    const seen = new Set<string>();
+
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift()!;
+      if (depth >= 10) continue;
+      for (const edge of (adjacency.get(id) || [])) {
+        if (!visited.has(edge.target)) {
+          visited.set(edge.target, depth + 1);
+          queue.push({ id: edge.target, depth: depth + 1 });
+        }
+        if (id.startsWith("m_") && edge.target.startsWith("m_")) {
+          const key = id < edge.target ? `${id}|${edge.target}` : `${edge.target}|${id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            const srcNum = parseInt(id.slice(2));
+            const tgtNum = parseInt(edge.target.slice(2));
+            if (!isNaN(srcNum) && !isNaN(tgtNum)) {
+              links.push({ source_id: srcNum, target_id: tgtNum, strength: edge.strength, link_type: edge.type });
+            }
+          }
+        }
+      }
+    }
+
+    const nodes = Array.from(visited.entries())
+      .filter(([id]) => id.startsWith("m_"))
+      .map(([id, depth]) => ({ id: parseInt(id.slice(2)), depth }));
+
+    return {
+      root: { id: traceMemoryId, depth: 0 },
+      ancestors: nodes.filter(n => n.depth > 0),
+      descendants: [],
+      related: [],
+      links,
+    };
+  }, [traceMemoryId, adjacency]);
 
   // Compute actual max depth from trace nodes (not the request param)
   const traceMaxDepth = useMemo(() => {
-    if (!traceData) return 1;
+    if (!traceData) return 0;
     let max = 0;
     for (const n of (traceData.ancestors || [])) if (n.depth > max) max = n.depth;
     for (const n of (traceData.descendants || [])) if (n.depth > max) max = n.depth;
     for (const n of (traceData.related || [])) if ((n.depth ?? 1) > max) max = n.depth ?? 1;
-    return max || 1;
+    return max;
   }, [traceData]);
 
   // Build filtered trace nodes (respects direction + depth)
@@ -226,26 +270,67 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   const reachableCount = reachableNodes.length;
 
+  // Combined visibility: global filters ∩ trace path filter
+  const visibleMemoryIds = useMemo(() => {
+    if (!traceData || !traceMemoryId) return globalVisibleIds;
+    // Filter to reachable nodes (at depth 0 = just the selected node)
+    const reachableSet = new Set(reachableNodes);
+    if (globalVisibleIds !== null) {
+      return new Set([...reachableSet].filter(id => globalVisibleIds.has(id)));
+    }
+    return reachableSet;
+  }, [traceData, traceMemoryId, reachableNodes, globalVisibleIds]);
+
+  // Update filterBag ref with combined visibility
+  filterBagRef.current = {
+    memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
+    timelineCutoff, decayCutoff, visibleMemoryIds, reorgMode,
+  };
+
+  // Zoom camera to fit reachable nodes (single source of camera control)
+  // Use a stable key (sorted IDs string) to avoid re-firing when array reference changes but content is the same.
+  const reachableKey = useMemo(() => reachableNodes.slice().sort((a, b) => a - b).join(","), [reachableNodes]);
+  const hasSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!traceMemoryId) {
+      if (hasSelectedRef.current) {
+        neuralGraphRef.current?.resetView();
+        hasSelectedRef.current = false;
+      }
+      return;
+    }
+    hasSelectedRef.current = true;
+    if (reachableNodes.length <= 1) {
+      neuralGraphRef.current?.fitNodes([`m_${traceMemoryId}`]);
+    } else {
+      const graphIds = reachableNodes.map(id => `m_${id}`);
+      neuralGraphRef.current?.fitNodes(graphIds);
+    }
+  }, [reachableKey, traceMemoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Debounced path highlight
   useEffect(() => {
     clearTimeout(highlightTimeoutRef.current);
-    if (!traceMemoryId || (selectedEdge && pathDepth === 0)) {
+    if (!traceMemoryId) {
       setHighlightedPath(null);
       setHighlightedLinks(null);
       return;
     }
     highlightTimeoutRef.current = setTimeout(() => {
+      // Always highlight root (and edge target if applicable)
       const ids = new Set<string>();
-      if (traceMemoryId) ids.add(`m_${traceMemoryId}`);
+      ids.add(`m_${traceMemoryId}`);
       if (selectedEdge) ids.add(`m_${selectedEdge.targetNumericId}`);
-      for (const id of reachableNodes) ids.add(`m_${id}`);
+      // At depth > 0, also highlight reachable nodes
+      if (pathDepth > 0) {
+        for (const id of reachableNodes) ids.add(`m_${id}`);
+      }
       setHighlightedPath(ids.size > 0 ? ids : null);
 
-      // Build set of specific trace link IDs (canonical: sorted pair)
-      // Only links between reachable nodes get highlighted
-      const reachableSet = new Set(reachableNodes);
+      // Build highlighted links (only at depth > 0)
       const linkIds = new Set<string>();
-      if (traceData?.links) {
+      if (pathDepth > 0 && traceData?.links) {
+        const reachableSet = new Set(reachableNodes);
         for (const l of traceData.links) {
           if (!reachableSet.has(l.source_id) || !reachableSet.has(l.target_id)) continue;
           if (l.strength < pathMinStrength) continue;
@@ -305,21 +390,40 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   // ── Cortex status ──
   const [cortexOnline, setCortexOnline] = useState<boolean | null>(null);
   const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [inferenceConnected, setInferenceConnected] = useState(false);
+  const [embeddingConnected, setEmbeddingConnected] = useState(false);
   const [dreamToggling, setDreamToggling] = useState(false);
   const [reflectToggling, setReflectToggling] = useState(false);
+  const [inferenceModelLabel, setInferenceModelLabel] = useState<string | null>(null);
+  const [embeddingModelLabel, setEmbeddingModelLabel] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/models");
-        const data = await res.json();
-        setCortexOnline(!!data.running);
-        if (data.active) setActiveModel(data.active);
+        const [modelsRes, configRes, statusRes] = await Promise.all([
+          fetch("/api/models"),
+          fetch("/api/config"),
+          fetch("/api/status"),
+        ]);
+        const modelsData = await modelsRes.json();
+        const configData = await configRes.json();
+        const statusData = await statusRes.json();
+        setCortexOnline(!!modelsData.running);
+        if (modelsData.active) setActiveModel(modelsData.active);
+        setInferenceConnected(!!configData.inference?.connected);
+        setEmbeddingConnected(!!configData.embedding?.connected);
+        if (configData.inference?.model) setInferenceModelLabel(`${configData.inference.provider} · ${configData.inference.model.split("/").pop()}`);
+        if (configData.embedding?.model) setEmbeddingModelLabel(`${configData.embedding.provider} · ${configData.embedding.model.split("/").pop()}`);
+        // Sync schedule state from server
+        updateRetrievalSettings({
+          dreamScheduleEnabled: statusData.schedules?.dream ?? false,
+          reflectionScheduleEnabled: statusData.schedules?.reflection ?? false,
+        });
       } catch {
         setCortexOnline(false);
       }
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleDreamSchedule = useCallback(async () => {
     setDreamToggling(true);
@@ -367,6 +471,9 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const handleNodeSelect = useCallback((memoryId: number) => {
     setSelectedEdge(null);
     setDetailsOpen(false);
+    setPathDepth(0);
+    setPathDirection("both");
+    setPathMinStrength(0);
     setSelectedMemoryId((prev) => (prev === memoryId ? null : memoryId));
   }, []);
 
@@ -375,6 +482,9 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     setHighlightedPath(null);
     setHighlightedLinks(null);
     setDetailsOpen(false);
+    setPathDepth(0);
+    setPathDirection("both");
+    setPathMinStrength(0);
     setSelectedEdge(edge);
     neuralGraphRef.current?.clearPinned();
   }, []);
@@ -538,7 +648,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages,
-          model: getActiveModel(),
           conversationId: convId,
           recallLimit: retrievalSettings.recallLimit,
           minImportance: retrievalSettings.minImportance || undefined,
@@ -616,6 +725,24 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     {} as Record<string, number>
   );
 
+  const edgeTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    // Only count edges where both endpoints are visible (filtered) memories
+    const visIds = globalVisibleIds;
+    for (const e of knowledgeGraph.edges) {
+      // If we have a visibility filter, check both endpoints
+      if (visIds) {
+        const srcNum = e.source.startsWith("m_") ? parseInt(e.source.slice(2)) : NaN;
+        const tgtNum = e.target.startsWith("m_") ? parseInt(e.target.slice(2)) : NaN;
+        if (!isNaN(srcNum) && !visIds.has(srcNum)) continue;
+        if (!isNaN(tgtNum) && !visIds.has(tgtNum)) continue;
+      }
+      const t = e.type || "relates";
+      counts[t] = (counts[t] || 0) + 1;
+    }
+    return counts;
+  }, [knowledgeGraph.edges, globalVisibleIds]);
+
   const dreamSourceCounts = memories.reduce(
     (acc, m) => {
       if (!allDreamMemoryIds.has(m.id)) return acc;
@@ -633,361 +760,133 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   return (
     <div ref={containerRef} className="relative flex h-full flex-row overflow-hidden" style={{ background: "var(--bg)" }}>
-      {/* Top bar: filter (left) · Now (center) · status (right) */}
-      <div className="absolute top-16 left-4 right-4 z-30 flex items-start justify-between pointer-events-none">
-        {/* Left: filter card + details button */}
-        <div className="flex flex-col gap-1.5 pointer-events-auto select-none">
-          <div className="space-y-0.5">
-            {/* Viz — horizontal, always visible */}
-            <div className="flex flex-row gap-2 font-mono">
-              <span style={{ color: "var(--text-faint)" }}>viz</span>
-              {(["hero", "cluster"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setVizMode(m)}
-                  className="transition active:scale-95"
-                  style={{ color: vizMode === m ? "var(--accent)" : "var(--text-faint)" }}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-            {/* Focus — horizontal, always visible */}
-            <div className="flex flex-row gap-2 font-mono">
-              <span style={{ color: "var(--text-faint)" }}>focus</span>
-              {(["memories", "edges", "entities"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setFocus(m)}
-                  className="transition active:scale-95"
-                  style={{ color: focus === m ? "var(--accent)" : "var(--text-faint)" }}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-            {/* Filters — collapsible */}
-            <button onClick={() => toggleSection("filters")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--accent)" }}>
-              Filters {(collapsed.filters ?? true) ? "+" : "−"}
+      {/* Left side panel: chat */}
+      {chatOpen && (
+        <div className="w-[33vw] relative z-10 shrink-0 flex flex-col transition-all duration-300" style={{ borderRight: "2px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)", background: "var(--bg)" }}>
+          {/* Chat header */}
+          <div className="flex items-center justify-end px-4 pt-3 pb-1">
+            <button
+              onClick={() => { setChatMessages([]); setChatConvId(null); setHistoryOpen(false); }}
+              className="font-mono transition active:scale-95"
+              style={{ color: "var(--accent)", fontSize: 13, fontWeight: 500 }}
+              title="New chat"
+            >
+              +
             </button>
-            {!(collapsed.filters ?? true) && (
-            <div className="flex flex-col gap-0.5">
-            {/* Mode — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("mode")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                mode {(collapsed.mode ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.mode ?? true) && ([["combined", "combined"], ["reinforced", "reinforced"], ["retrieved", "retrieval"]] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setCenterMode(key)}
-                  className="font-mono transition active:scale-95 text-left pl-2"
-                  style={{ color: centerMode === key ? "var(--accent)" : "var(--text-faint)" }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* Signals — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("signals")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                signals {(collapsed.signals ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.signals ?? true) && ([["all", "all"], ["inputs", "external"], ["outputs", "internal"]] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setMemoryFilter(key)}
-                  className="font-mono transition active:scale-95 text-left pl-2"
-                  style={{ color: memoryFilter === key ? "var(--accent)" : "var(--text-faint)" }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* Memory Types — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("types")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                types {(collapsed.types ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.types ?? true) && ALL_MEMORY_TYPES.map((type) => {
-                const active = enabledTypes.includes(type);
-                const count = typeCounts[type] || 0;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => toggleType(type)}
-                    className="font-mono transition active:scale-95 text-left pl-2"
-                    style={{ color: active ? TYPE_COLORS[type] : "var(--text-faint)" }}
-                  >
-                    {type.replace("_", " ")} {count}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Edges — collapsible */}
-            <div className="flex flex-col gap-0.5">
-              <button onClick={() => toggleSection("edges")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
-                edges {(collapsed.edges ?? true) ? "+" : "−"}
-              </button>
-              {!(collapsed.edges ?? true) && Object.entries(LINK_TYPE_COLORS).map(([type, color]) => {
-                const active = enabledLinkTypes.includes(type);
-                return (
-                  <button
-                    key={type}
-                    onClick={() => toggleLinkType(type)}
-                    className="font-mono transition active:scale-95 text-left pl-2"
-                    style={{ color: active ? color : "var(--text-faint)" }}
-                  >
-                    {type}
-                  </button>
-                );
-              })}
-            </div>
-            </div>
+          </div>
+          {/* Chat messages OR history list */}
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 pt-2 pb-2">
+            {historyOpen ? (
+              <div>
+                {conversations.length === 0 ? (
+                  <p className="font-mono py-8 text-center" style={{ color: "var(--text-faint)", fontSize: 11 }}>
+                    No chats yet
+                  </p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {conversations.map((conv) => {
+                      const isActive = conv.id === chatConvId;
+                      return (
+                        <div
+                          key={conv.id}
+                          className="group flex items-start gap-2 rounded-[6px] px-2 py-2 transition cursor-pointer"
+                          style={{ background: isActive ? "var(--surface-dim)" : "transparent" }}
+                          onClick={() => handleLoadConversation(conv)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-mono truncate" style={{ color: isActive ? "var(--accent)" : "var(--text)", fontSize: 11 }}>
+                              {conv.summary || conv.title}
+                            </p>
+                            <p className="font-mono mt-0.5" style={{ color: "var(--text-faint)", fontSize: 9 }}>
+                              {conv.messages.length} messages · {timeAgo(conv.updatedAt)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 transition rounded-[4px] p-1"
+                            style={{ color: "var(--text-faint)" }}
+                            title="Delete chat"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {conversations.length > 0 && (
+                  <div className="pt-3 mt-3" style={{ borderTop: "1px solid var(--border)" }}>
+                    <button
+                      onClick={handleClearAll}
+                      className="font-mono flex w-full items-center justify-center gap-1.5 rounded-[6px] py-1.5 transition active:scale-95"
+                      style={{ color: "var(--error)", fontSize: 9 }}
+                    >
+                      clear all
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : chatMessages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3">
+                <MessageSquare className="h-8 w-8" style={{ color: "var(--text-faint)", opacity: 0.3 }} />
+                <p className="font-mono text-center" style={{ color: "var(--text-faint)", fontSize: "11px" }}>
+                  Start a conversation from the brain
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={msg.role === "user" ? "text-right" : "text-left"}>
+                    <span className="font-mono t-micro" style={{ color: "var(--text-faint)" }}>
+                      {msg.role === "user" ? "you" : "brain"}
+                    </span>
+                    <p
+                      className="font-mono whitespace-pre-wrap leading-relaxed t-tiny mt-0.5"
+                      style={{ color: msg.role === "user" ? "var(--accent)" : "var(--text)" }}
+                    >
+                      {msg.content}
+                      {chatStreaming &&
+                        i === chatMessages.length - 1 &&
+                        msg.role === "assistant" && (
+                          <span className="ml-0.5 inline-block h-3 w-[2px] animate-pulse" style={{ background: "var(--accent)" }} />
+                        )}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          {/* Details button — only when something is selected */}
-          {(selectedMemoryId || selectedEdge) && (
-            <button
-              onClick={() => { setDetailsOpen((v) => !v); if (!detailsOpen) { setChatOpen(false); setHistoryOpen(false); } }}
-              className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
-              style={{ color: detailsOpen ? "var(--accent)" : "var(--text-faint)" }}
-              title={detailsOpen ? "Hide details" : "See details"}
-            >
-              <Info className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-
-        {/* Now / timeline date — true center, click to toggle clock */}
-        {timeRange.min < timeRange.max && (
-          <button
-            className="absolute left-1/2 -translate-x-1/2 font-mono cursor-pointer pointer-events-auto"
-            style={{ color: "var(--accent)" }}
-            onClick={() => setShowClock((v) => !v)}
-          >
-            {timelineCutoff === Infinity
-              ? (showClock ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Now")
-              : formatTimelineTick(timelineCutoff, timeRange.max - timeRange.min, true)}
-          </button>
-        )}
-
-        {/* Neural Map status — collapsible, right */}
-        {(() => {
-          const memActive = memories.length > 0;
-          const modelActive = !!activeModel;
-          const dreamActive = retrievalSettings.dreamScheduleEnabled;
-          const reflectActive = retrievalSettings.reflectionScheduleEnabled;
-          const activeCount = [memActive, modelActive, dreamActive, reflectActive].filter(Boolean).length;
-          const status = cortexOnline === null ? "..." : !cortexOnline ? "inactive" : activeCount === 4 ? "live" : activeCount > 0 ? "partial" : "inactive";
-          const dotColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : "#ef4444";
-          const textColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : "#ef4444";
-          return (
-            <div className="select-none text-right pointer-events-auto">
-              <div className="flex items-center gap-1.5 ml-auto">
-                <span className="font-mono" style={{ color: "var(--accent)" }}>
-                  Neural Map
-                </span>
-                <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                  {filteredMemories.length}
-                </span>
-                <span
-                  className="h-[5px] w-[5px] rounded-full"
-                  style={{ background: status === "..." ? "var(--text-faint)" : dotColor }}
-                />
-                <span className="font-mono" style={{ color: status === "..." ? "var(--text-faint)" : textColor }}>
-                  {status}
-                </span>
-              </div>
-              <div className="mt-1 space-y-0.5">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>model</span>
-                    <span className="font-mono" style={{ color: modelActive ? "var(--accent)" : "var(--text-faint)" }}>
-                      {activeModel ? activeModel.split("/").pop() : "none"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>memory</span>
-                    <span className="font-mono" style={{ color: memActive ? "var(--accent)" : "var(--text-faint)" }}>
-                      {memActive ? "active" : "inactive"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span
-                      className="h-[5px] w-[5px] rounded-full"
-                      style={{ background: dreamActive ? "#22c55e" : "transparent" }}
-                    />
-                    <button
-                      onClick={toggleDreamSchedule}
-                      disabled={dreamToggling}
-                      className="font-mono transition active:scale-95"
-                      style={{ color: "var(--text-faint)" }}
-                    >
-                      dream
-                    </button>
-                    <span
-                      className="font-mono cursor-pointer"
-                      onClick={toggleDreamSchedule}
-                      style={{ color: dreamActive ? "#22c55e" : "var(--text-faint)" }}
-                    >
-                      {dreamToggling ? "..." : dreamActive ? "active" : "inactive"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <span
-                      className="h-[5px] w-[5px] rounded-full"
-                      style={{ background: reflectActive ? "#22c55e" : "transparent" }}
-                    />
-                    <button
-                      onClick={toggleReflectSchedule}
-                      disabled={reflectToggling}
-                      className="font-mono transition active:scale-95"
-                      style={{ color: "var(--text-faint)" }}
-                    >
-                      reflect
-                    </button>
-                    <span
-                      className="font-mono cursor-pointer"
-                      onClick={toggleReflectSchedule}
-                      style={{ color: reflectActive ? "#22c55e" : "var(--text-faint)" }}
-                    >
-                      {reflectToggling ? "..." : reflectActive ? "active" : "inactive"}
-                    </span>
-                  </div>
-                </div>
+          {/* Chat input — hidden when history is open */}
+          {!historyOpen && <div className="absolute left-0 right-0 px-4" style={{ bottom: 42 }}>
+            <div className="mb-2" style={{ borderTop: "1px solid var(--border)" }} />
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono shrink-0" style={{ color: "var(--accent)", fontSize: "11px" }}>&gt;</span>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendBrainChat()}
+                className="flex-1 bg-transparent outline-none font-mono"
+                style={{ color: "var(--accent)", caretColor: "var(--accent)", fontSize: "11px" }}
+                disabled={chatStreaming}
+              />
+              <button
+                onClick={sendBrainChat}
+                disabled={chatStreaming || !chatInput.trim()}
+                className="shrink-0 font-mono transition active:scale-95 disabled:opacity-20"
+                style={{ color: "var(--accent)", fontSize: "11px" }}
+              >
+                send
+              </button>
             </div>
-          );
-        })()}
-      </div>
-
-      {/* Zoom buttons */}
-      {graphReady && (
-        <div
-          className="absolute z-10 flex flex-col gap-1.5 select-none"
-          style={{ top: "170px", right: "16px" }}
-        >
-          <button
-            onClick={() => neuralGraphRef.current?.zoomIn()}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200 active:scale-95 cursor-pointer"
-            style={{ color: "var(--accent)", background: "transparent", border: "1px solid var(--border)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
-            title="Zoom in"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => neuralGraphRef.current?.zoomOut()}
-            className="flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200 active:scale-95 cursor-pointer"
-            style={{ color: "var(--accent)", background: "transparent", border: "1px solid var(--border)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
-            title="Zoom out"
-          >
-            <Minus className="h-3 w-3" />
-          </button>
+          </div>}
         </div>
       )}
 
-      {/* Floating path controls card — visible when any node or edge selected */}
-      {graphReady && (selectedEdge || selectedMemoryId) && (
-        <div
-          className="absolute z-10 select-none"
-          style={{
-            bottom: 80,
-            left: (() => {
-              const panelPx = detailsOpen && (selectedMemoryId || selectedEdge) ? 280 : 0;
-              return `${panelPx + 16}px`;
-            })(),
-            transition: "left 0.3s ease",
-          }}
-        >
-          <div
-            className="overflow-hidden"
-            style={{
-              background: "rgba(245, 245, 240, 0.65)",
-              backdropFilter: "blur(24px) saturate(1.2)",
-              WebkitBackdropFilter: "blur(24px) saturate(1.2)",
-              border: "1px solid rgba(0, 0, 0, 0.06)",
-              borderRadius: 12,
-              fontFamily: "inherit",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03)",
-              width: 200,
-            }}
-          >
-            {/* Header strip */}
-            <div
-              className="flex items-center justify-between px-3 py-1.5"
-              style={{ borderBottom: "1px solid rgba(0, 0, 0, 0.04)" }}
-            >
-              <span className="t-micro font-mono tracking-widest uppercase" style={{ color: "var(--accent)", opacity: 0.7, fontSize: 9 }}>Path</span>
-              {reachableCount > 1 && (
-                <span className="t-micro font-mono" style={{ color: "var(--accent)", opacity: 0.6, fontSize: 9 }}>
-                  {reachableCount} nodes
-                </span>
-              )}
-            </div>
-
-            <div className="px-3 py-2 space-y-2.5">
-              {/* Depth */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Depth</span>
-                  <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{pathDepth}/{traceMaxDepth}</span>
-                </div>
-                <input
-                  type="range"
-                  min={selectedEdge ? 0 : 1}
-                  max={traceMaxDepth}
-                  value={pathDepth}
-                  onChange={(e) => setPathDepth(Number(e.target.value))}
-                  className="neuro-range w-full h-0.5"
-                />
-              </div>
-
-              {/* Direction */}
-              <div>
-                <span className="t-micro block mb-1" style={{ color: "var(--text-faint)", fontSize: 9 }}>Direction</span>
-                <div className="flex gap-1">
-                  {(["both", "upstream", "downstream"] as const).map((dir) => {
-                    const active = pathDirection === dir;
-                    return (
-                      <button
-                        key={dir}
-                        onClick={() => setPathDirection(dir)}
-                        className="flex-1 py-0.5 rounded-md transition-all duration-200 cursor-pointer"
-                        style={{
-                          background: active ? "var(--accent)" : "rgba(0, 0, 0, 0.03)",
-                          color: active ? "#fff" : "var(--text-faint)",
-                          fontSize: 9,
-                          fontWeight: active ? 500 : 400,
-                          border: "none",
-                          letterSpacing: "0.02em",
-                        }}
-                      >
-                        {dir === "both" ? "All" : dir === "upstream" ? "↑ Up" : "↓ Dn"}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Min Strength */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Min Strength</span>
-                  <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{Math.round(pathMinStrength * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(pathMinStrength * 100)}
-                  onChange={(e) => setPathMinStrength(Number(e.target.value) / 100)}
-                  className="neuro-range w-full h-0.5"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* History panel removed — now inline in chat panel */}
+      {false && (
+        <div />
       )}
-
 
       {/* Left side panel: details */}
       {detailsOpen && (selectedMemory || selectedEdge) && (
@@ -1014,134 +913,11 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         </div>
       )}
 
-      {/* Left side panel: chat */}
-      {chatOpen && (
-        <div className="w-[320px] relative z-10 shrink-0 flex flex-col transition-all duration-300" style={{ borderRight: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
-          {/* Chat messages */}
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 pt-12 pb-2">
-            {chatMessages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3">
-                <MessageSquare className="h-8 w-8" style={{ color: "var(--text-faint)", opacity: 0.3 }} />
-                <p className="t-tiny text-center" style={{ color: "var(--text-faint)" }}>
-                  Start a conversation from the brain
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {chatMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className="max-w-[85%] rounded-[8px] px-3 py-2"
-                      style={msg.role === "user" ? {
-                        background: "var(--accent)",
-                        color: "#fff",
-                      } : {
-                        color: "var(--text)",
-                      }}
-                    >
-                      <p className="whitespace-pre-wrap leading-relaxed t-tiny">
-                        {msg.content}
-                        {chatStreaming &&
-                          i === chatMessages.length - 1 &&
-                          msg.role === "assistant" && (
-                            <span className="ml-1 inline-block h-3 w-0.5 animate-pulse" style={{ background: "var(--accent)" }} />
-                          )}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          {/* Chat input */}
-          <div className="px-4 pb-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendBrainChat()}
-                placeholder="Message..."
-                className="flex-1 bg-transparent outline-none t-tiny"
-                style={{ color: "var(--text)" }}
-                disabled={chatStreaming}
-              />
-              <button
-                onClick={sendBrainChat}
-                disabled={chatStreaming || !chatInput.trim()}
-                className="shrink-0 transition active:scale-95 disabled:opacity-20"
-                style={{ color: "var(--accent)" }}
-              >
-                <Send className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Left side panel: history */}
-      {historyOpen && (
-        <div className="w-[280px] relative z-10 shrink-0 flex flex-col transition-all duration-300" style={{ borderRight: "1px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)" }}>
-          <div className="flex-1 overflow-y-auto px-3 pt-12 pb-2">
-            {conversations.length === 0 ? (
-              <p className="px-2 py-8 text-center t-tiny" style={{ color: "var(--text-faint)" }}>
-                No chats yet
-              </p>
-            ) : (
-              <div className="space-y-0.5">
-                {conversations.map((conv) => {
-                  const isActive = conv.id === chatConvId;
-                  return (
-                    <div
-                      key={conv.id}
-                      className="group flex items-start gap-2 rounded-[6px] px-2 py-2 transition cursor-pointer"
-                      style={{ background: isActive ? "var(--surface-dim)" : "transparent" }}
-                      onClick={() => handleLoadConversation(conv)}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate t-tiny" style={{ color: isActive ? "var(--accent)" : "var(--text)" }}>
-                          {conv.summary || conv.title}
-                        </p>
-                        <p className="mt-0.5 t-micro" style={{ color: "var(--text-faint)" }}>
-                          {conv.messages.length} messages · {timeAgo(conv.updatedAt)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
-                        className="shrink-0 opacity-0 group-hover:opacity-100 transition rounded-[4px] p-1"
-                        style={{ color: "var(--text-faint)" }}
-                        title="Delete chat"
-                      >
-                        <Trash2 className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          {conversations.length > 0 && (
-            <div className="px-3 pb-3 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
-              <button
-                onClick={handleClearAll}
-                className="flex w-full items-center justify-center gap-1.5 rounded-[6px] py-1.5 t-tiny transition active:scale-95"
-                style={{ color: "#ef4444" }}
-              >
-                <Trash2 className="h-2.5 w-2.5" />
-                Clear all
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Graph area */}
+      {/* Graph area — click to close chat panel */}
       <div
         ref={graphContainerRef}
         className="flex-1 min-h-0 min-w-0 transition-all duration-300 relative"
+        onClick={() => { if (chatOpen) setChatOpen(false); if (rightPanel) setRightPanel(null); }}
       >
         {/* Loading indicator — pulsing dot morphs into hero node */}
         <div
@@ -1184,6 +960,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
               hideEdges={timelineDragging}
               selectedEdge={selectedEdge ? { sourceId: selectedEdge.sourceId, targetId: selectedEdge.targetId } : null}
               highlightedPath={highlightedPath}
+              nodeDepthMap={traceNodeDepths.size > 0 ? traceNodeDepths : null}
               onEdgeSelect={handleEdgeSelect}
               onReady={() => setGraphReady(true)}
               onPinnedContentChange={(data) => {
@@ -1200,7 +977,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                 setHighlightedPath(null);
                 setHighlightedLinks(null);
                 setDetailsOpen(false);
-                neuralGraphRef.current?.resetView();
               }}
             />
           )}
@@ -1227,109 +1003,601 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
             </div>
           )}
         </div>
-      </div>
 
+        {/* Top bar: filter (left) · Now (center) · status (right) — each absolutely pinned */}
+        <div className="absolute top-16 left-0 right-0 bottom-0 z-30 pointer-events-none">
+          {/* Left: filter card */}
+          <div className="absolute top-0 left-4 pointer-events-auto select-none flex flex-col gap-1.5">
+            {compact && (
+              /* Compact mode: just "filter +" toggle */
+              <button
+                onClick={() => toggleSection("compactFilter")}
+                className="font-mono transition active:scale-95"
+                style={{ color: "var(--text-faint)" }}
+              >
+                filter {(collapsed.compactFilter ?? true) ? "+" : "−"}
+              </button>
+            )}
+            {(!compact || !(collapsed.compactFilter ?? true)) && (
+            <div className="space-y-0.5">
+              {/* Viz — horizontal, always visible */}
+              <div className="flex flex-row gap-2 font-mono">
+                <span style={{ color: "var(--text-faint)" }}>viz︱</span>
+                {(["zero", "hero", "cluster", "starburst"] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setVizMode(m)}
+                    className="transition active:scale-95"
+                    style={{ color: vizMode === m ? "var(--accent)" : "var(--text-faint)" }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {/* Focus — horizontal, always visible */}
+              <div className="flex flex-row gap-2 font-mono">
+                <span style={{ color: "var(--text-faint)" }}>focus︱</span>
+                {(["memories", "edges", "entities"] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setFocus(m)}
+                    className="transition active:scale-95"
+                    style={{ color: focus === m ? "var(--accent)" : "var(--text-faint)" }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {/* Reorg — horizontal, always visible, same style as viz/focus */}
+              <div className="flex flex-row gap-2 font-mono">
+                <span style={{ color: "var(--text-faint)" }}>reorg︱</span>
+                {(["count", "diversity"] as const).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setReorgMode(m)}
+                    className="transition active:scale-95"
+                    style={{ color: reorgMode === m ? "var(--accent)" : "var(--text-faint)" }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {/* Mode — collapsible */}
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => toggleSection("mode")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                  mode {(collapsed.mode ?? true) ? "+" : "−"}
+                </button>
+                {!(collapsed.mode ?? true) && ([["combined", "combined"], ["reinforced", "reinforced"], ["retrieved", "retrieval"]] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setCenterMode(key)}
+                    className="font-mono transition active:scale-95 text-left pl-2"
+                    style={{ color: centerMode === key ? "var(--accent)" : "var(--text-faint)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Signals — collapsible */}
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => toggleSection("signals")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                  signals {(collapsed.signals ?? true) ? "+" : "−"}
+                </button>
+                {!(collapsed.signals ?? true) && ([["all", "all"], ["inputs", "external"], ["outputs", "internal"]] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setMemoryFilter(key)}
+                    className="font-mono transition active:scale-95 text-left pl-2"
+                    style={{ color: memoryFilter === key ? "var(--accent)" : "var(--text-faint)" }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Memory Types — collapsible */}
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => toggleSection("types")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                  types {(collapsed.types ?? true) ? "+" : "−"}
+                </button>
+                {!(collapsed.types ?? true) && ALL_MEMORY_TYPES.map((type) => {
+                  const active = enabledTypes.includes(type);
+                  const count = typeCounts[type] || 0;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => toggleType(type)}
+                      className="font-mono transition active:scale-95 text-left pl-2"
+                      style={{ color: active ? TYPE_COLORS[type] : "var(--text-faint)" }}
+                    >
+                      {type.replace("_", " ")} {count}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Edges — collapsible */}
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => toggleSection("edges")} className="font-mono transition active:scale-95 text-left" style={{ color: "var(--text-faint)" }}>
+                  edges {(collapsed.edges ?? true) ? "+" : "−"}
+                </button>
+                {!(collapsed.edges ?? true) && Object.entries(LINK_TYPE_COLORS).map(([type, color]) => {
+                  const active = enabledLinkTypes.includes(type);
+                  const count = edgeTypeCounts[type] || 0;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => toggleLinkType(type)}
+                      className="font-mono transition active:scale-95 text-left pl-2"
+                      style={{ color: active ? color : "var(--text-faint)" }}
+                    >
+                      {type} {count}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            )}
+            {/* Details button — only when something is selected */}
+            {(selectedMemoryId || selectedEdge) && (
+              <button
+                onClick={() => { setDetailsOpen((v) => !v); if (!detailsOpen) { setChatOpen(false); setHistoryOpen(false); } }}
+                className="flex h-7 w-7 items-center justify-center rounded-[6px] transition-all duration-200 glass active:scale-95"
+                style={{ color: detailsOpen ? "var(--accent)" : "var(--text-faint)" }}
+                title={detailsOpen ? "Hide details" : "See details"}
+              >
+                <Info className="h-3 w-3" />
+              </button>
+            )}
+          </div>
 
-      {/* Play/pause auto-rotation */}
-      {graphReady && (
-        <button
-          onClick={() => setAutoRotate((v) => !v)}
-          className="absolute z-20 flex h-8 w-8 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none"
-          style={{
-            color: "var(--accent)",
-            background: "transparent",
-            border: "1px solid var(--border)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            ...(() => {
-                  const panelPx = chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px";
-                  return { bottom: 64, left: `calc(${panelPx} + (100% - ${panelPx}) / 2)`, transform: "translateX(-50%)" };
-                })(),
-          }}
-          title={autoRotate ? "Pause rotation" : "Resume rotation"}
-        >
-          {autoRotate ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-        </button>
-      )}
+          {/* Now / timeline date — pinned top-center */}
+          {timeRange.min < timeRange.max && (
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-auto">
+              <button
+                className="font-mono cursor-pointer"
+                style={{ color: "var(--accent)", fontSize: 11 }}
+                onClick={() => setShowClock((v) => !v)}
+              >
+                {timelineCutoff === Infinity
+                  ? (showClock ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Now")
+                  : formatTimelineTick(timelineCutoff, timeRange.max - timeRange.min, true)}
+              </button>
+            </div>
+          )}
 
-      {/* Decay filter — bottom-left, above timeline */}
-      {graphReady && (
-        <div className="absolute z-20" style={{
-          bottom: timeRange.min < timeRange.max ? 52 : 16,
-          left: chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px",
-          width: "25%",
-          paddingLeft: 24,
-          transition: "left 0.3s",
-        }}>
-          <div className="flex items-center gap-2">
-            <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap" }}>decay</span>
-            <div className="relative h-4 flex items-center flex-1">
-              <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+          {/* Neural Map status — pinned top-right */}
+          {(() => {
+            const inferenceActive = inferenceConnected;
+            const embeddingActive = embeddingConnected;
+            const dreamActive = retrievalSettings.dreamScheduleEnabled;
+            const reflectActive = retrievalSettings.reflectionScheduleEnabled;
+            const modelActive = inferenceActive || embeddingActive;
+            const memActive = dreamActive || reflectActive;
+            const activeCount = [modelActive, memActive].filter(Boolean).length;
+            const inactiveGrey = "var(--text-faint)";
+            const status = cortexOnline === null ? "..." : !cortexOnline ? "inactive" : activeCount === 2 ? "live" : activeCount > 0 ? "partial" : "inactive";
+            const dotColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
+            const textColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
+            const modelDot = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
+            const modelText = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
+            const modelLabel = inferenceActive && embeddingActive ? "active" : inferenceActive || embeddingActive ? "partial" : "inactive";
+            const memDot = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
+            const memText = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
+            const memLabel = dreamActive && reflectActive ? "active" : dreamActive || reflectActive ? "partial" : "inactive";
+            return (
+              <div className="absolute top-0 right-4 pointer-events-auto select-none text-right">
+                <div className="flex items-center gap-1.5 justify-end">
+                  {!compact && (
+                    <span className="font-mono" style={{ color: "var(--accent)" }}>
+                      Neural Map
+                    </span>
+                  )}
+                  {!compact && (
+                    <span className="font-mono" style={{ color: "var(--text-faint)" }}>
+                      {filteredMemories.length}
+                    </span>
+                  )}
+                  <span
+                    className="h-[5px] w-[5px] rounded-full"
+                    style={{ background: status === "..." ? "var(--text-faint)" : dotColor }}
+                  />
+                  <span className="font-mono" style={{ color: status === "..." ? "var(--text-faint)" : textColor }}>
+                    {status}
+                  </span>
+                </div>
+                {!compact && (
+                <div className="mt-1 space-y-0.5">
+                    {/* Models section — collapsible */}
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        onClick={() => toggleSection("model")}
+                        className="font-mono transition active:scale-95"
+                        style={{ color: "var(--text-faint)" }}
+                      >
+                        {!(collapsed.model ?? true) ? "−" : "+"} models︱
+                      </button>
+                      <span
+                        className="h-[5px] w-[5px] rounded-full"
+                        style={{ background: modelDot }}
+                      />
+                      <span
+                        className="font-mono cursor-pointer"
+                        onClick={() => toggleSection("model")}
+                        style={{ color: modelText }}
+                      >
+                        {modelLabel}
+                      </span>
+                    </div>
+                    {!(collapsed.model ?? true) && (
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span className="font-mono" style={{ color: "var(--text-faint)" }}>
+                          inference︱
+                        </span>
+                        <span
+                          className="h-[5px] w-[5px] rounded-full"
+                          style={{ background: inferenceActive ? "#22c55e" : "var(--text-faint)" }}
+                        />
+                        <span className="font-mono" style={{ color: inferenceActive ? "#22c55e" : "var(--text-faint)" }}>
+                          {inferenceActive ? "active" : "inactive"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span className="font-mono" style={{ color: "var(--text-faint)" }}>
+                          embedding︱
+                        </span>
+                        <span
+                          className="h-[5px] w-[5px] rounded-full"
+                          style={{ background: embeddingActive ? "#22c55e" : "var(--text-faint)" }}
+                        />
+                        <span className="font-mono" style={{ color: embeddingActive ? "#22c55e" : "var(--text-faint)" }}>
+                          {embeddingActive ? "active" : "inactive"}
+                        </span>
+                      </div>
+                    </div>
+                    )}
+
+                    {/* Memory section — collapsible */}
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        onClick={() => toggleSection("memory")}
+                        className="font-mono transition active:scale-95"
+                        style={{ color: "var(--text-faint)" }}
+                      >
+                        {!(collapsed.memory ?? true) ? "−" : "+"} memory︱
+                      </button>
+                      <span
+                        className="h-[5px] w-[5px] rounded-full"
+                        style={{ background: memDot }}
+                      />
+                      <span
+                        className="font-mono cursor-pointer"
+                        onClick={() => toggleSection("memory")}
+                        style={{ color: memText }}
+                      >
+                        {memLabel}
+                      </span>
+                    </div>
+                    {!(collapsed.memory ?? true) && (
+                    <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        onClick={toggleDreamSchedule}
+                        disabled={dreamToggling}
+                        className="font-mono transition active:scale-95"
+                        style={{ color: "var(--text-faint)" }}
+                      >
+                        dream︱
+                      </button>
+                      <span
+                        className="h-[5px] w-[5px] rounded-full"
+                        style={{ background: dreamActive ? "#22c55e" : "var(--text-faint)" }}
+                      />
+                      <span
+                        className="font-mono cursor-pointer"
+                        onClick={toggleDreamSchedule}
+                        style={{ color: dreamActive ? "#22c55e" : "var(--text-faint)" }}
+                      >
+                        {dreamToggling ? "..." : dreamActive ? "active" : "inactive"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        onClick={toggleReflectSchedule}
+                        disabled={reflectToggling}
+                        className="font-mono transition active:scale-95"
+                        style={{ color: "var(--text-faint)" }}
+                      >
+                        reflect︱
+                      </button>
+                      <span
+                        className="h-[5px] w-[5px] rounded-full"
+                        style={{ background: reflectActive ? "#22c55e" : "var(--text-faint)" }}
+                      />
+                      <span
+                        className="font-mono cursor-pointer"
+                        onClick={toggleReflectSchedule}
+                        style={{ color: reflectActive ? "#22c55e" : "var(--text-faint)" }}
+                      >
+                        {reflectToggling ? "..." : reflectActive ? "active" : "inactive"}
+                      </span>
+                    </div>
+                    </div>
+                    )}
+                </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Zoom buttons */}
+        {graphReady && (
+          <div
+            className="absolute z-10 flex flex-col gap-1.5 select-none"
+            style={{ top: "50%", right: "16px", transform: "translateY(-50%)" }}
+          >
+            <button
+              onClick={() => neuralGraphRef.current?.zoomIn()}
+              className="flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 active:scale-95 cursor-pointer"
+              style={{ color: "var(--accent)", background: "transparent", border: "1px solid var(--border)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
+              title="Zoom in"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => neuralGraphRef.current?.zoomOut()}
+              className="flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 active:scale-95 cursor-pointer"
+              style={{ color: "var(--accent)", background: "transparent", border: "1px solid var(--border)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}
+              title="Zoom out"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Floating path controls card — visible when any node or edge selected */}
+        {graphReady && (selectedEdge || selectedMemoryId) && (
+          <div
+            className="absolute z-10 select-none"
+            style={{ bottom: 80, left: 16 }}
+          >
+            <div
+              className="overflow-hidden"
+              style={{
+                background: "rgba(245, 245, 240, 0.65)",
+                backdropFilter: "blur(24px) saturate(1.2)",
+                WebkitBackdropFilter: "blur(24px) saturate(1.2)",
+                border: "1px solid rgba(0, 0, 0, 0.06)",
+                borderRadius: 12,
+                fontFamily: "inherit",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03)",
+                width: 200,
+              }}
+            >
+              {/* Header strip */}
               <div
-                className="absolute left-0 h-[2px] rounded-full"
-                style={{ width: `${decayCutoff * 100}%`, background: "var(--accent)" }}
+                className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: "1px solid rgba(0, 0, 0, 0.04)" }}
+              >
+                <span className="t-micro font-mono tracking-widest uppercase" style={{ color: "var(--accent)", opacity: 0.7, fontSize: 9 }}>Path</span>
+                {reachableCount > 1 && (
+                  <span className="t-micro font-mono" style={{ color: "var(--accent)", opacity: 0.6, fontSize: 9 }}>
+                    {reachableCount} nodes
+                  </span>
+                )}
+              </div>
+
+              <div className="px-3 py-2 space-y-2.5">
+                {/* Depth */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Depth</span>
+                    <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{pathDepth}/{traceMaxDepth}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, traceMaxDepth)}
+                    value={Math.min(pathDepth, Math.max(0, traceMaxDepth))}
+                    onChange={(e) => setPathDepth(Number(e.target.value))}
+                    className="neuro-range w-full h-0.5"
+                  />
+                </div>
+
+                {/* Direction */}
+                <div>
+                  <span className="t-micro block mb-1" style={{ color: "var(--text-faint)", fontSize: 9 }}>Direction</span>
+                  <div className="flex gap-1">
+                    {(["both", "upstream", "downstream"] as const).map((dir) => {
+                      const active = pathDirection === dir;
+                      return (
+                        <button
+                          key={dir}
+                          onClick={() => setPathDirection(dir)}
+                          className="flex-1 py-0.5 rounded-md transition-all duration-200 cursor-pointer"
+                          style={{
+                            background: active ? "var(--accent)" : "rgba(0, 0, 0, 0.03)",
+                            color: active ? "#fff" : "var(--text-faint)",
+                            fontSize: 9,
+                            fontWeight: active ? 500 : 400,
+                            border: "none",
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          {dir === "both" ? "All" : dir === "upstream" ? "↑ Up" : "↓ Dn"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Min Strength */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Min Strength</span>
+                    <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{Math.round(pathMinStrength * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(pathMinStrength * 100)}
+                    onChange={(e) => setPathMinStrength(Number(e.target.value) / 100)}
+                    className="neuro-range w-full h-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Play/pause (center) · Chat (right) — above timeline */}
+        {graphReady && (
+          <div className="absolute z-20" style={{ bottom: timeRange.min < timeRange.max ? 100 : 16, left: 0, right: 0 }}>
+            {/* Play/pause — center */}
+            <button
+              onClick={() => setAutoRotate((v) => !v)}
+              className="absolute flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none"
+              style={{
+                left: "50%",
+                transform: "translateX(-50%)",
+                color: "var(--accent)",
+                background: "transparent",
+                border: "1px solid var(--border)",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+              }}
+              title={autoRotate ? "Pause rotation" : "Resume rotation"}
+            >
+              {autoRotate ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+
+            {/* Chat toggle — right */}
+            <button
+              onClick={() => setChatOpen((v) => !v)}
+              className="absolute flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none"
+              style={{
+                right: 24,
+                color: chatOpen ? "#fff" : "var(--text-faint)",
+                background: chatOpen ? "var(--accent)" : "transparent",
+                border: chatOpen ? "none" : "1px solid var(--border)",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                transition: "all 0.2s",
+              }}
+              title={chatOpen ? "Close chat" : "Open chat"}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Timeline bar + decay — bottom */}
+        {graphReady && timeRange.min < timeRange.max && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-4 pt-6" style={{ background: "linear-gradient(transparent, var(--bg))" }}>
+            {/* Decay filter — vertical in compact mode */}
+            {compact ? (
+              <div className="absolute z-20 flex flex-col items-center gap-1" style={{ left: 8, bottom: 80, width: 24 }}>
+                <span className="t-micro font-mono" style={{ color: "var(--text-faint)", fontSize: 8 }}>
+                  {Math.round(decayCutoff * 100)}%
+                </span>
+                <div className="relative flex items-center justify-center" style={{ width: 24, height: 80 }}>
+                  <div className="absolute h-full w-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                  <div
+                    className="absolute bottom-0 w-[2px] rounded-full"
+                    style={{ height: `${decayCutoff * 100}%`, background: "var(--accent)" }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={decayCutoff * 100}
+                    onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                    className="neuro-range absolute cursor-pointer"
+                    style={{ width: 80, transform: "rotate(-90deg)", transformOrigin: "center" }}
+                  />
+                </div>
+                <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", fontSize: 8 }}>decay</span>
+              </div>
+            ) : (
+            <div className="flex items-center gap-2 mb-2" style={{ width: "25%" }}>
+              <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap" }}>decay</span>
+              <div className="relative h-4 flex items-center flex-1">
+                <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                <div
+                  className="absolute left-0 h-[2px] rounded-full"
+                  style={{ width: `${decayCutoff * 100}%`, background: "var(--accent)" }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={decayCutoff * 100}
+                  onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                  className="neuro-range absolute inset-0 w-full cursor-pointer"
+                />
+              </div>
+              <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
+                {Math.round(decayCutoff * 100)}%
+              </span>
+            </div>
+            )}
+            {/* Timeline track */}
+            <div className="relative h-5 flex items-center">
+              <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />
+              <div
+                className="absolute left-0 h-[3px] rounded-full"
+                style={{
+                  width: `${(((timelineCutoff === Infinity ? timeRange.max : timelineCutoff) - timeRange.min) / (timeRange.max - timeRange.min)) * 100}%`,
+                  background: "var(--accent)",
+                }}
               />
               <input
                 type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={decayCutoff * 100}
-                onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                min={timeRange.min}
+                max={timeRange.max}
+                step={Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500))}
+                value={timelineCutoff === Infinity ? timeRange.max : timelineCutoff}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  const step = Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500));
+                  setTimelineCutoff(v >= timeRange.max - step ? Infinity : v);
+                }}
+                onPointerDown={() => setTimelineDragging(true)}
+                onPointerUp={() => setTimelineDragging(false)}
                 className="neuro-range absolute inset-0 w-full cursor-pointer"
               />
             </div>
-            <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
-              {Math.round(decayCutoff * 100)}%
-            </span>
+            {/* Tick labels */}
+            <div className="flex justify-between mt-0.5">
+              {Array.from({ length: 4 }, (_, i) => {
+                const ts = timeRange.min + ((timeRange.max - timeRange.min) * i) / 3;
+                return (
+                  <span key={i} className="t-micro" style={{ color: "var(--text-faint)" }}>
+                    {formatTimelineTick(ts, timeRange.max - timeRange.min, false)}
+                  </span>
+                );
+              })}
+            </div>
           </div>
+        )}
+      </div>
+
+      {/* Right panel: settings / models / cortex / import */}
+      {rightPanel && (
+        <div className="w-[33vw] relative z-10 shrink-0 flex flex-col overflow-y-auto transition-all duration-300 font-mono"
+          style={{ borderLeft: "2px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)", background: "var(--bg)" }}>
+          {rightPanel === "settings" && <SettingsPanel onNavigate={(v) => setRightPanel(v as typeof rightPanel)} />}
+          {rightPanel === "models" && <ModelsPanel onBack={() => setRightPanel("settings")} />}
+          {rightPanel === "cortex" && <CortexPanel onBack={() => setRightPanel("settings")} />}
+          {rightPanel === "import" && <ImportPanel onBack={() => setRightPanel("settings")} />}
         </div>
       )}
 
-      {/* Timeline bar — bottom */}
-      {graphReady && timeRange.min < timeRange.max && (
-        <div className="absolute bottom-0 right-0 z-10 px-6 pb-4 pt-6" style={{ left: chatOpen ? "320px" : historyOpen ? "280px" : detailsOpen && (selectedMemoryId || selectedEdge) ? "280px" : "0px", background: "linear-gradient(transparent, var(--bg))", transition: "left 0.3s" }}>
-          {/* Track */}
-          <div className="relative h-5 flex items-center">
-            <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />
-            <div
-              className="absolute left-0 h-[3px] rounded-full"
-              style={{
-                width: `${(((timelineCutoff === Infinity ? timeRange.max : timelineCutoff) - timeRange.min) / (timeRange.max - timeRange.min)) * 100}%`,
-                background: "var(--accent)",
-              }}
-            />
-            <input
-              type="range"
-              min={timeRange.min}
-              max={timeRange.max}
-              step={Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500))}
-              value={timelineCutoff === Infinity ? timeRange.max : timelineCutoff}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                const step = Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500));
-                // Snap to Infinity (= "now") when at or within one step of max
-                setTimelineCutoff(v >= timeRange.max - step ? Infinity : v);
-              }}
-              onPointerDown={() => setTimelineDragging(true)}
-              onPointerUp={() => setTimelineDragging(false)}
-              className="neuro-range absolute inset-0 w-full cursor-pointer"
-            />
-          </div>
-          {/* Tick labels */}
-          <div className="flex justify-between mt-0.5">
-            {Array.from({ length: 4 }, (_, i) => {
-              const ts = timeRange.min + ((timeRange.max - timeRange.min) * i) / 3;
-              return (
-                <span key={i} className="t-micro" style={{ color: "var(--text-faint)" }}>
-                  {formatTimelineTick(ts, timeRange.max - timeRange.min, false)}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* Navigation overlay */}
+      <FloatNav route="brain" onSettingsClick={() => setRightPanel((v) => v ? null : "settings")} />
     </div>
   );
 }

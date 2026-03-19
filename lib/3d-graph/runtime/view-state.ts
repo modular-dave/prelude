@@ -66,7 +66,7 @@ export class ViewStateManager {
     this.state.focus = {
       targetType: "global",
       anchor: { x: 0, y: 0, z: 0 },
-      radius: this.state.focus.radius,
+      radius: 400, // reset to global radius so residency engine keeps all tiles
     };
     this.state.topology.mode = "global";
     this.dirty = true;

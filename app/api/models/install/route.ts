@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import {
-  installModel as installMLXModel,
+  spawnInstallModel as spawnMLXInstall,
 } from "@/lib/mlx-server";
 import {
   isOllamaRunning,
@@ -146,17 +146,20 @@ function streamMLXInstall(model: string): Response {
   const stream = new ReadableStream({
     start(controller) {
       const send = (data: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // stream may be closed
+        }
       };
 
       send({ status: "downloading", percent: 0 });
-      const result = installMLXModel(model);
-      if (result.success) {
-        send({ status: "done" });
-      } else {
-        send({ status: "error", error: result.error || "Install failed" });
-      }
-      controller.close();
+
+      spawnMLXInstall(
+        model,
+        (progress) => send(progress),
+        () => controller.close(),
+      );
     },
   });
 

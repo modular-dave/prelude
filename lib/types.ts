@@ -98,4 +98,5 @@ export interface FilterBag {
   timelineCutoff: number;
   decayCutoff: number; // 0–1, hide nodes with decayFactor below this
   visibleMemoryIds: Set<number> | null; // null = show all
+  reorgMode: "count" | "diversity"; // count = access/degree, diversity = link type + neighbor type variety
 }

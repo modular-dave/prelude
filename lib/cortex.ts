@@ -122,22 +122,38 @@ function patchEmbeddingsForCustomEndpoint(baseUrl: string): void {
   }
 }
 
+/** Resolve the inference URL based on provider assignment */
+function resolveInferenceUrl(): string | null {
+  const provider = process.env.INFERENCE_CHAT_PROVIDER;
+  if (provider === "mlx") return "http://127.0.0.1:8899/v1";
+  if (provider === "ollama") return "http://127.0.0.1:11434/v1";
+  return process.env.VENICE_BASE_URL || null;
+}
+
 export async function ensureCortex(): Promise<Cortex> {
   if (!brain) {
     const embBaseUrl = process.env.EMBEDDING_BASE_URL;
     const isCustomEmbeddingEndpoint = !!embBaseUrl && !embBaseUrl.includes("voyageai.com") && !embBaseUrl.includes("openai.com") && !embBaseUrl.includes("venice.ai");
+    const inferenceUrl = resolveInferenceUrl();
+
+    // Patch VENICE_BASE_URL so the SDK's Venice client uses the correct endpoint
+    // (it reads process.env.VENICE_BASE_URL at module load time)
+    if (inferenceUrl) {
+      process.env.VENICE_BASE_URL = inferenceUrl;
+    }
 
     brain = new Cortex({
       supabase: {
         url: process.env.SUPABASE_URL!,
         serviceKey: process.env.SUPABASE_SERVICE_KEY!,
       },
-      // Venice/MLX inference via OpenAI-compatible endpoint —
+      // Inference via OpenAI-compatible endpoint —
       // Cortex uses this for dream cycles, scoreImportance, reflect, etc.
-      anthropic: process.env.VENICE_BASE_URL
+      // Routed to MLX/Ollama/Venice based on INFERENCE_CHAT_PROVIDER.
+      anthropic: inferenceUrl
         ? {
             apiKey: process.env.VENICE_API_KEY || "local",
-            model: process.env.VENICE_MODEL || "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+            model: process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL || "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
           }
         : undefined,
       // Embedding config — for native providers (voyage/openai/venice) the SDK

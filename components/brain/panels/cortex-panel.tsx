@@ -7,12 +7,10 @@ import {
   Loader2,
   Power,
 } from "lucide-react";
-import Link from "next/link";
 import { useMemory } from "@/lib/memory-context";
 import { NeuroSlider } from "@/components/ui/neuro-slider";
 import { TypeFilterToggles } from "@/components/ui/type-filter-toggles";
 import { DEFAULT_RETRIEVAL_SETTINGS } from "@/lib/retrieval-settings";
-import { FloatNav } from "@/components/shell/float-nav";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -28,9 +26,9 @@ interface CortexConfig {
   features: Record<string, boolean>;
 }
 
-// ── Page ────────────────────────────────────────────────────────────
+// ── Panel ───────────────────────────────────────────────────────────
 
-export default function CortexPage() {
+export function CortexPanel({ onBack }: { onBack: () => void }) {
   const [config, setConfig] = useState<CortexConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,7 +36,6 @@ export default function CortexPage() {
   const [supabaseOpen, setSupabaseOpen] = useState(false);
   const [tuningOpen, setTuningOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
-
 
   // Supabase form
   const [sbUrl, setSbUrl] = useState("");
@@ -139,16 +136,22 @@ export default function CortexPage() {
   }
 
   return (
-    <div className="relative h-full overflow-y-auto p-6 pt-20 font-mono" style={{ background: "var(--bg)" }}>
-      <FloatNav route="brain" />
+    <div className="font-mono">
+      <p
+        className="text-btn font-mono"
+        onClick={onBack}
+        style={{ fontSize: "9px", fontWeight: 400, color: "var(--text-faint)", cursor: "pointer" }}
+      >
+        &larr; settings
+      </p>
 
-      <div className="animate-fade-slide-up">
-        <h1
+      <div className="mt-3">
+        <h2
           className="font-mono font-medium"
-          style={{ fontSize: "16px", color: "var(--text)" }}
+          style={{ fontSize: "13px", color: "var(--text)" }}
         >
-          Cortex
-        </h1>
+          cortex
+        </h2>
         <p
           className="mt-1 font-mono"
           style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-faint)" }}

@@ -122,7 +122,8 @@ function lensBias(
       // Hero prefers coarse clusters + few exemplars
       return tileLevel <= 1 ? 1.0 : tileLevel === 2 ? 0.3 : 0.1;
     case "cluster":
-      // Cluster prefers mid-level hierarchy
+    case "starburst":
+      // Cluster/starburst prefers mid-level hierarchy
       return tileLevel === 1 ? 1.0 : tileLevel === 2 ? 0.8 : 0.3;
     case "zeroG":
       // ZeroG prefers whatever's in the frustum, all levels equal

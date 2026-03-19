@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMemory } from "@/lib/memory-context";
-import { Send, PenSquare, Clock } from "lucide-react";
+import { X } from "lucide-react";
 import { BrainScanline } from "@/components/brain/brain-scanline";
 import { ChatHistory } from "@/components/chat/chat-history";
 import {
@@ -142,7 +142,6 @@ export function ChatPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages,
-          model: getActiveModel(),
           conversationId: convId,
           recallLimit: retrievalSettings.recallLimit,
           minImportance: retrievalSettings.minImportance || undefined,
@@ -229,11 +228,11 @@ export function ChatPanel() {
       {/* Top-left: History button (below navbar) */}
       <button
         onClick={() => setHistoryOpen(true)}
-        className="absolute top-[68px] left-5 z-30 transition active:scale-95"
-        style={{ color: "var(--text-faint)" }}
+        className="absolute top-[68px] left-5 z-30 font-mono transition active:scale-95"
+        style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
         title="Chat history"
       >
-        <Clock className="h-4 w-4" />
+        history
       </button>
 
       {/* Messages */}
@@ -242,38 +241,39 @@ export function ChatPanel() {
           <div className="flex h-full flex-col items-center justify-center gap-5 animate-fade-slide-up">
             <BrainScanline size={120} />
             <div className="text-center">
-              <p className="t-small" style={{ color: "var(--text-muted)" }}>
+              <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
                 Start a new chat
               </p>
-              <p className="mt-1.5 t-small" style={{ color: "var(--text-faint)" }}>
+              <p className="font-mono mt-1.5" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                 Messages become memories in the neural map
               </p>
             </div>
           </div>
         )}
-        <div className="mx-auto max-w-xl space-y-4 pb-4">
+        <div className="mx-auto max-w-xl space-y-3 pb-4">
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
             >
-              <div
-                className={`max-w-[80%] rounded-[8px] px-4 py-2.5 ${
-                  msg.role === "user" ? "" : ""
-                }`}
-                style={msg.role === "user" ? {
-                  background: "var(--accent)",
-                  color: "#fff",
-                } : {
-                  color: "var(--text)",
-                }}
-              >
-                <p className="whitespace-pre-wrap leading-relaxed">
+              <span className="font-mono mb-0.5" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                {msg.role === "user" ? "you" : "brain"}
+              </span>
+              <div className="max-w-[80%]">
+                <p
+                  className="font-mono whitespace-pre-wrap"
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 400,
+                    lineHeight: 1.5,
+                    color: msg.role === "user" ? "var(--accent)" : "var(--text)",
+                  }}
+                >
                   {msg.content}
                   {streaming &&
                     i === messages.length - 1 &&
                     msg.role === "assistant" && (
-                      <span className="ml-1 inline-block h-3.5 w-0.5 animate-pulse" style={{ background: "var(--accent)" }} />
+                      <span className="ml-1 inline-block h-3 w-px animate-pulse" style={{ background: "var(--accent)" }} />
                     )}
                 </p>
               </div>
@@ -285,8 +285,9 @@ export function ChatPanel() {
       {/* Input */}
       <div className="px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-xl items-center gap-3 py-3"
-          style={{ borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "var(--border)" }}
+          style={{ borderTop: "1px solid var(--border)" }}
         >
+          <span className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>&gt;</span>
           <input
             type="text"
             value={input}
@@ -295,25 +296,25 @@ export function ChatPanel() {
               e.key === "Enter" && !e.shiftKey && sendMessage()
             }
             placeholder="Type a message..."
-            className="flex-1 bg-transparent outline-none"
-            style={{ color: "var(--text)" }}
+            className="flex-1 bg-transparent outline-none font-mono"
+            style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}
             disabled={streaming}
           />
           <button
             onClick={sendMessage}
             disabled={streaming || !input.trim()}
-            className="shrink-0 transition active:scale-95 disabled:opacity-20"
-            style={{ color: "var(--accent)" }}
+            className="shrink-0 font-mono transition active:scale-95 disabled:opacity-20"
+            style={{ fontSize: 9, fontWeight: 400, color: "var(--accent)" }}
           >
-            <Send className="h-3.5 w-3.5" />
+            send
           </button>
           <button
             onClick={handleNewChat}
-            className="shrink-0 transition active:scale-95"
-            style={{ color: "var(--text-faint)" }}
+            className="shrink-0 font-mono transition active:scale-95"
+            style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
             title="New chat"
           >
-            <PenSquare className="h-3.5 w-3.5" />
+            new
           </button>
         </div>
       </div>

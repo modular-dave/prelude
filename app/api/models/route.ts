@@ -26,7 +26,7 @@ import {
   clearAssignmentsForModel,
   type CogFunc,
 } from "@/lib/active-model-store";
-import { swapVeniceModel } from "@/lib/cortex";
+import { swapVeniceModel, resetCortex } from "@/lib/cortex";
 
 const CONFIGURED_MODEL = process.env.VENICE_MODEL || null;
 
@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
     if (action === "switch") {
       const fn = cognitiveFunction || "chat";
       setAssignment(fn, model, "ollama");
+      resetCortex(); // Re-init Cortex with correct provider URL
       if (fn === "dream" || fn === "reflect") {
         swapVeniceModel(model);
       }
@@ -175,6 +176,7 @@ export async function POST(req: NextRequest) {
   if (action === "switch") {
     const fn = cognitiveFunction || "chat";
     setAssignment(fn, model, provider || "mlx");
+    resetCortex(); // Re-init Cortex with correct provider URL
     if (fn === "dream" || fn === "reflect") {
       swapVeniceModel(model);
     }

@@ -148,14 +148,22 @@ export async function dream(opts?: { onEmergence?: (text: string) => Promise<voi
   return brain.dream(opts);
 }
 
+// Use globalThis to share state across Next.js API route module boundaries
+const g = globalThis as unknown as { __dreamScheduleActive?: boolean; __reflectionScheduleActive?: boolean };
+
+export function isDreamScheduleActive(): boolean { return g.__dreamScheduleActive ?? false; }
+export function isReflectionScheduleActive(): boolean { return g.__reflectionScheduleActive ?? false; }
+
 export async function startDreamSchedule() {
   const brain = await ensureCortex();
   brain.startDreamSchedule();
+  g.__dreamScheduleActive = true;
 }
 
 export async function stopDreamSchedule() {
   const brain = await ensureCortex();
   brain.stopDreamSchedule();
+  g.__dreamScheduleActive = false;
 }
 
 // ── Active Reflection ──────────────────────────────────────────
@@ -168,11 +176,13 @@ export async function reflect(opts?: { onReflection?: (journal: unknown) => Prom
 export async function startReflectionSchedule() {
   const brain = await ensureCortex();
   brain.startReflectionSchedule();
+  g.__reflectionScheduleActive = true;
 }
 
 export async function stopReflectionSchedule() {
   const brain = await ensureCortex();
   brain.stopReflectionSchedule();
+  g.__reflectionScheduleActive = false;
 }
 
 // ── Entity Graph ───────────────────────────────────────────────

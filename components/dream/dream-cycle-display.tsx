@@ -1,22 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  Moon, Loader2, CheckCircle2, Circle, Sparkles, Calendar, Play,
-  Layers, Eye, AlertTriangle, ChevronDown, ChevronRight,
-  Clock, MemoryStick, ArrowRight, Trash2,
-} from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, Play, Trash2 } from "lucide-react";
 import { useMemory } from "@/lib/memory-context";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ── Phase metadata ──────────────────────────────────────────
 
 const PHASES = [
-  { key: "consolidation", name: "Consolidation", roman: "I", color: "#3b82f6", icon: Layers, desc: "Synthesize focal-point insights from recent memories" },
-  { key: "compaction", name: "Compaction", roman: "II", color: "#8b5cf6", icon: MemoryStick, desc: "Summarize old faded memories into semantic knowledge" },
-  { key: "reflection", name: "Reflection", roman: "III", color: "#22c55e", icon: Eye, desc: "Review self-model against accumulated knowledge" },
-  { key: "contradiction_resolution", name: "Contradiction Resolution", roman: "IV", color: "#f59e0b", icon: AlertTriangle, desc: "Find and resolve conflicting memories" },
-  { key: "emergence", name: "Emergence", roman: "V", color: "#f43f5e", icon: Sparkles, desc: "Discover unexpected connections and novel insights" },
+  { key: "consolidation", name: "Consolidation", roman: "I", desc: "Synthesize focal-point insights from recent memories" },
+  { key: "compaction", name: "Compaction", roman: "II", desc: "Summarize old faded memories into semantic knowledge" },
+  { key: "reflection", name: "Reflection", roman: "III", desc: "Review self-model against accumulated knowledge" },
+  { key: "contradiction_resolution", name: "Contradiction Resolution", roman: "IV", desc: "Find and resolve conflicting memories" },
+  { key: "emergence", name: "Emergence", roman: "V", desc: "Discover unexpected connections and novel insights" },
 ] as const;
 
 type PhaseKey = (typeof PHASES)[number]["key"];
@@ -72,14 +68,6 @@ function timeAgo(iso: string): string {
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
 }
-
-const TYPE_COLORS: Record<string, string> = {
-  semantic: "#3b82f6",
-  procedural: "#8b5cf6",
-  self_model: "#f43f5e",
-  episodic: "#22c55e",
-  introspective: "#f59e0b",
-};
 
 // ── Component ───────────────────────────────────────────────
 
@@ -207,11 +195,10 @@ export function DreamCycleDisplay() {
       {/* Header + actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="flex items-center gap-2 t-heading font-mono" style={{ color: "var(--text)" }}>
-            <Moon className="h-4 w-4" />
+          <h2 className="font-mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
             Dream Cycle
           </h2>
-          <p className="mt-0.5 t-small" style={{ color: "var(--text-faint)" }}>
+          <p className="font-mono mt-0.5" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
             5-phase LLM-powered memory consolidation via Cortex
           </p>
         </div>
@@ -220,8 +207,8 @@ export function DreamCycleDisplay() {
             <button
               onClick={() => setConfirmClearAll(true)}
               disabled={clearing}
-              className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
-              style={{ color: "#ef4444" }}
+              className="font-mono rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
+              style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
             >
               {clearing ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -236,19 +223,20 @@ export function DreamCycleDisplay() {
           <button
             onClick={toggleDreamSchedule}
             disabled={scheduleLoading}
-            className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
+            className="font-mono rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
             style={{
-              color: dreamScheduleActive ? "#22c55e" : "var(--text)",
+              fontSize: 11,
+              fontWeight: 500,
+              color: dreamScheduleActive ? "var(--success)" : "var(--text)",
               borderWidth: 1,
               borderStyle: "solid",
-              borderColor: dreamScheduleActive ? "rgba(34,197,94,0.4)" : "var(--border)",
+              borderColor: dreamScheduleActive ? "var(--success)" : "var(--border)",
             }}
           >
             {scheduleLoading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <span className="flex items-center gap-1.5">
-                <Calendar className="h-3 w-3" />
                 {dreamScheduleActive ? "Schedule On" : "Schedule Off"}
               </span>
             )}
@@ -256,8 +244,8 @@ export function DreamCycleDisplay() {
           <button
             onClick={runDream}
             disabled={running || memories.length === 0}
-            className="rounded-[6px] px-4 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
-            style={{ color: "var(--text)" }}
+            className="font-mono rounded-[6px] px-4 py-2 transition active:scale-95 disabled:opacity-40 glass"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
           >
             {running ? (
               <span className="flex items-center gap-1.5">
@@ -279,45 +267,43 @@ export function DreamCycleDisplay() {
         {PHASES.map((phase) => {
           const phaseResult = result?.phases.find((p) => p.phase === phase.key);
           const isComplete = !!phaseResult;
-          const Icon = running ? Loader2 : isComplete ? CheckCircle2 : Circle;
           return (
             <button
               key={phase.key}
               onClick={() => phaseResult && setExpandedPhase(expandedPhase === phase.key ? null : phase.key)}
-              className="rounded-[6px] p-4 text-left transition-all duration-200"
+              className="font-mono rounded-[6px] p-4 text-left transition-all duration-200"
               style={{
                 background: "var(--surface-dim)",
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: "var(--border)",
                 borderTopWidth: isComplete ? 2 : 1,
-                borderTopStyle: "solid",
-                borderTopColor: isComplete ? phase.color : "var(--border)",
-                borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
-                borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
-                borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+                borderTopColor: isComplete ? "var(--accent)" : "var(--border)",
                 cursor: phaseResult ? "pointer" : "default",
               }}
             >
               <div className="flex items-center gap-2">
-                <span className="t-small" style={{ color: phase.color, opacity: 0.6 }}>
+                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
                   {phase.roman}
                 </span>
-                <Icon
-                  className={`h-3.5 w-3.5 ${running ? "animate-spin text-blue-500" : isComplete ? "text-green-500" : ""}`}
-                  style={!running && !isComplete ? { color: "var(--text-faint)" } : undefined}
-                />
+                {running && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />}
+                {!running && isComplete && (
+                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--success)" }}>done</span>
+                )}
               </div>
-              <p className="mt-2" style={{ color: "var(--text)" }}>
+              <p className="mt-2" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
                 {phase.name}
               </p>
-              <p className="mt-1 t-tiny leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              <p className="mt-1 leading-relaxed" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                 {phase.desc}
               </p>
               {phaseResult && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="t-tiny" style={{ color: phase.color }}>
+                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
                     {phaseResult.inputCount} in
                   </span>
-                  <ArrowRight className="h-2 w-2" style={{ color: "var(--text-faint)" }} />
-                  <span className="t-tiny" style={{ color: phase.color }}>
+                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>&rarr;</span>
+                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
                     {phaseResult.newMemoryIds.length} out
                   </span>
                 </div>
@@ -335,26 +321,26 @@ export function DreamCycleDisplay() {
         const phaseMemories = result.newMemories.filter((m) => phaseResult.newMemoryIds.includes(m.id));
         return (
           <div
-            className="rounded-[8px] p-5 animate-fade-slide-up"
+            className="font-mono rounded-[8px] p-5 animate-fade-slide-up"
             style={{
               background: "var(--surface-dim)",
-              borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: meta.color,
-              borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
-              borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
-              borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: "var(--border)",
+              borderTopWidth: 2,
+              borderTopColor: "var(--accent)",
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <meta.icon className="h-3.5 w-3.5" style={{ color: meta.color }} />
-              <h3 className="t-heading" style={{ color: meta.color }}>{meta.name}</h3>
-              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+              <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{meta.name}</h3>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                 {phaseResult.inputCount} memories analyzed
               </span>
             </div>
 
             {/* Phase output */}
             <div className="rounded-[6px] p-3 mb-3" style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
-              <p className="t-small leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
+              <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
                 {phaseResult.output}
               </p>
             </div>
@@ -362,7 +348,7 @@ export function DreamCycleDisplay() {
             {/* New memories created */}
             {phaseMemories.length > 0 && (
               <div>
-                <p className="t-tiny mb-2" style={{ color: "var(--text-faint)" }}>
+                <p className="mb-2" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                   {phaseMemories.length} memories created
                 </p>
                 <div className="space-y-1.5">
@@ -372,23 +358,19 @@ export function DreamCycleDisplay() {
                       className="flex items-start gap-2 rounded-[6px] p-2.5"
                       style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
                     >
-                      <div
-                        className="mt-1 h-[6px] w-[6px] rounded-full shrink-0"
-                        style={{ backgroundColor: TYPE_COLORS[m.type] || "var(--text-faint)" }}
-                      />
                       <div className="min-w-0 flex-1">
-                        <p className="t-small leading-relaxed" style={{ color: "var(--text)" }}>
+                        <p style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
                           {m.summary}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="t-micro" style={{ color: TYPE_COLORS[m.type] || "var(--text-faint)" }}>
+                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
                             {m.type}
                           </span>
-                          <span className="t-micro" style={{ color: "var(--text-faint)" }}>
+                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                             imp: {m.importance.toFixed(2)}
                           </span>
                           {m.tags.slice(0, 3).map((t) => (
-                            <span key={t} className="t-micro" style={{ color: "var(--text-faint)" }}>
+                            <span key={t} style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                               #{t}
                             </span>
                           ))}
@@ -405,28 +387,28 @@ export function DreamCycleDisplay() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-[8px] p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
-          <p className="t-small text-red-500">{error}</p>
+        <div className="rounded-[8px] p-4" style={{ background: "var(--bg)", border: "1px solid var(--error)" }}>
+          <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
         </div>
       )}
 
       {/* Emergence highlight */}
       {result?.emergence && (
         <div
-          className="rounded-[8px] p-5 animate-fade-slide-up"
+          className="font-mono rounded-[8px] p-5 animate-fade-slide-up"
           style={{
             background: "var(--surface-dim)",
-            borderTopWidth: 2, borderTopStyle: "solid", borderTopColor: "#f43f5e",
-            borderRightWidth: 1, borderRightStyle: "solid", borderRightColor: "var(--border)",
-            borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "var(--border)",
-            borderLeftWidth: 1, borderLeftStyle: "solid", borderLeftColor: "var(--border)",
+            borderWidth: 1,
+            borderStyle: "solid",
+            borderColor: "var(--border)",
+            borderTopWidth: 2,
+            borderTopColor: "var(--accent)",
           }}
         >
           <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="h-3.5 w-3.5 text-rose-500" />
-            <h3 className="t-heading text-rose-500">Emergence</h3>
+            <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>Emergence</h3>
           </div>
-          <p className="leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <p className="leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
             {result.emergence}
           </p>
         </div>
@@ -434,7 +416,7 @@ export function DreamCycleDisplay() {
 
       {/* Stats summary */}
       {result && (
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 font-mono">
           <Stat label="Phases" value={result.stats.totalPhases} />
           <Stat label="Memories analyzed" value={result.stats.totalInputMemories} />
           <Stat label="Memories created" value={result.stats.totalNewMemories} />
@@ -443,7 +425,7 @@ export function DreamCycleDisplay() {
 
       {/* Dream history */}
       <div>
-        <h3 className="t-heading mb-3" style={{ color: "var(--text)" }}>
+        <h3 className="font-mono mb-3" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
           Dream History{" "}
           {dreamSessions.length > 0 && (
             <span style={{ color: "var(--text-faint)" }}>({dreamSessions.length})</span>
@@ -452,10 +434,10 @@ export function DreamCycleDisplay() {
         {historyLoading ? (
           <div className="flex items-center gap-2 py-4">
             <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-faint)" }} />
-            <span className="t-small" style={{ color: "var(--text-faint)" }}>Loading...</span>
+            <span className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>Loading...</span>
           </div>
         ) : dreamSessions.length === 0 ? (
-          <p className="t-small py-4" style={{ color: "var(--text-faint)" }}>
+          <p className="font-mono py-4" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
             No dream cycles recorded yet. Run your first dream cycle above.
           </p>
         ) : (
@@ -499,8 +481,8 @@ export function DreamCycleDisplay() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p className="t-title" style={{ color: "var(--text)" }}>{value}</p>
-      <p className="t-tiny" style={{ color: "var(--text-faint)" }}>{label}</p>
+      <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{value}</p>
+      <p style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</p>
     </div>
   );
 }
@@ -515,7 +497,6 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
   const [open, setOpen] = useState(false);
   const totalIn = session.logs.reduce((s, l) => s + (l.input_memory_ids?.length || 0), 0);
   const totalOut = session.logs.reduce((s, l) => s + (l.new_memories_created?.length || 0), 0);
-  const hasEmergence = session.logs.some((l) => l.session_type === "emergence" && l.output);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -524,7 +505,7 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
 
   return (
     <div
-      className="rounded-[6px] overflow-hidden"
+      className="font-mono rounded-[6px] overflow-hidden"
       style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-center">
@@ -539,35 +520,20 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <Clock className="h-2.5 w-2.5" style={{ color: "var(--text-faint)" }} />
-              <span className="t-small" style={{ color: "var(--text)" }}>
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
                 {new Date(session.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
-              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                 {timeAgo(session.timestamp)}
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1">
-              {/* Phase dots */}
-              <div className="flex items-center gap-1">
-                {session.logs.map((l) => {
-                  const meta = phaseMeta(l.session_type);
-                  return (
-                    <div
-                      key={l.id}
-                      className="h-[5px] w-[5px] rounded-full"
-                      style={{ backgroundColor: meta.color }}
-                      title={meta.name}
-                    />
-                  );
-                })}
-              </div>
-              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                {session.logs.length} phases
+              </span>
+              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
                 {totalIn} in &rarr; {totalOut} out
               </span>
-              {hasEmergence && (
-                <Sparkles className="h-2.5 w-2.5 text-rose-500" />
-              )}
             </div>
           </div>
         </button>
@@ -588,14 +554,13 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
             return (
               <div key={log.id} className="pt-2">
                 <div className="flex items-center gap-1.5 mb-1">
-                  <div className="h-[5px] w-[5px] rounded-full" style={{ backgroundColor: meta.color }} />
-                  <span className="t-tiny" style={{ color: meta.color }}>{meta.name}</span>
-                  <span className="t-micro" style={{ color: "var(--text-faint)" }}>
-                    {(log.input_memory_ids?.length || 0)} in → {(log.new_memories_created?.length || 0)} out
+                  <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{meta.name}</span>
+                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                    {(log.input_memory_ids?.length || 0)} in &rarr; {(log.new_memories_created?.length || 0)} out
                   </span>
                 </div>
-                <p className="t-tiny leading-relaxed whitespace-pre-wrap pl-3" style={{ color: "var(--text-muted)" }}>
-                  {log.output.length > 400 ? log.output.slice(0, 400) + "…" : log.output}
+                <p className="leading-relaxed whitespace-pre-wrap pl-3" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
+                  {log.output.length > 400 ? log.output.slice(0, 400) + "\u2026" : log.output}
                 </p>
               </div>
             );

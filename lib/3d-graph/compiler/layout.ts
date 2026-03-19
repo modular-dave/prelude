@@ -358,6 +358,7 @@ function computeDisplayOffsets(
   return {
     hero: { x: heroCart.x - baseCart.x, y: heroCart.y - baseCart.y, z: heroCart.z - baseCart.z },
     cluster: { x: 0, y: 0, z: 0 }, // cluster lens uses canonical positions
+    starburst: { x: 0, y: 0, z: 0 }, // starburst uses viz-layout positions
     zeroG: { x: zeroGCart.x - baseCart.x, y: zeroGCart.y - baseCart.y, z: zeroGCart.z - baseCart.z },
   };
 }

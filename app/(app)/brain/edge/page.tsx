@@ -30,7 +30,7 @@ function BrainEdgeInner() {
   return (
     <div className="relative h-full">
       <BrainView initialEdge={initialEdge} />
-      <FloatNav route="brain" />
+      <FloatNav route="brain" /> {/* edge deep-link still uses brain route for nav highlight */}
     </div>
   );
 }

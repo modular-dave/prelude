@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, Loader2, Play, Calendar, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Play, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FloatNav } from "@/components/shell/float-nav";
 import { useMemory } from "@/lib/memory-context";
@@ -109,10 +109,10 @@ export default function JournalPage() {
   };
 
   return (
-    <div className="relative h-full overflow-y-auto p-6 pt-16" style={{ background: "var(--bg)" }}>
+    <div className="relative h-full overflow-y-auto p-6 pt-16 font-mono" style={{ background: "var(--bg)" }}>
       <div className="animate-fade-slide-up">
-        <h1 className="t-heading" style={{ color: "var(--text)" }}>Journal</h1>
-        <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>
+        <h1 style={{ fontSize: 16, fontWeight: 500, color: "var(--text)" }}>Journal</h1>
+        <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
           Introspective reflections and self-model journaling via Cortex
         </p>
       </div>
@@ -122,8 +122,8 @@ export default function JournalPage() {
         <button
           onClick={triggerReflection}
           disabled={reflectionLoading}
-          className="rounded-[6px] px-4 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
-          style={{ color: "var(--text)" }}
+          className="rounded-[6px] px-4 py-2 transition active:scale-95 disabled:opacity-40 glass"
+          style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
         >
           {reflectionLoading ? (
             <span className="flex items-center gap-1.5">
@@ -141,19 +141,20 @@ export default function JournalPage() {
         <button
           onClick={toggleSchedule}
           disabled={scheduleLoading}
-          className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
+          className="rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
           style={{
-            color: scheduleActive ? "#22c55e" : "var(--text)",
+            fontSize: 11,
+            fontWeight: 500,
+            color: scheduleActive ? "var(--success)" : "var(--text)",
             borderWidth: 1,
             borderStyle: "solid",
-            borderColor: scheduleActive ? "rgba(34,197,94,0.4)" : "var(--border)",
+            borderColor: scheduleActive ? "var(--success)" : "var(--border)",
           }}
         >
           {scheduleLoading ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
             <span className="flex items-center gap-1.5">
-              <Calendar className="h-3 w-3" />
               {scheduleActive ? "Auto-Reflect On" : "Auto-Reflect Off"}
             </span>
           )}
@@ -163,8 +164,8 @@ export default function JournalPage() {
           <button
             onClick={() => setConfirmClear(true)}
             disabled={clearing}
-            className="rounded-[6px] px-3 py-2 t-btn transition active:scale-95 disabled:opacity-40 glass"
-            style={{ color: "#ef4444" }}
+            className="rounded-[6px] px-3 py-2 transition active:scale-95 disabled:opacity-40 glass"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
           >
             {clearing ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -180,8 +181,8 @@ export default function JournalPage() {
 
       {/* Error */}
       {error && (
-        <div className="mt-4 rounded-[8px] p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
-          <p className="t-small text-red-500">{error}</p>
+        <div className="mt-4 rounded-[8px] p-4" style={{ background: "var(--bg)", border: "1px solid var(--error)" }}>
+          <p style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
         </div>
       )}
 
@@ -193,7 +194,9 @@ export default function JournalPage() {
       {/* Past journal entries */}
       {pastJournals.length > 0 && (
         <div className="mt-8">
-          <h2 className="label mb-3">Past Reflections ({pastJournals.length})</h2>
+          <h2 className="mb-3" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+            Past Reflections ({pastJournals.length})
+          </h2>
           <div className="space-y-3">
             {pastJournals.map((m) => (
               <JournalMemoryCard key={m.id} memory={m} onDelete={(id) => setConfirmDeleteId(id)} />
@@ -205,9 +208,8 @@ export default function JournalPage() {
       {/* Empty state */}
       {!currentJournal && pastJournals.length === 0 && (
         <div className="mt-16 flex flex-col items-center justify-center text-center">
-          <BookOpen className="h-10 w-10 mb-4" style={{ color: "var(--text-faint)", opacity: 0.3 }} />
-          <p className="t-heading" style={{ color: "var(--text-muted)" }}>No journal entries yet</p>
-          <p className="mt-1 t-small" style={{ color: "var(--text-faint)" }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-muted)" }}>No journal entries yet</p>
+          <p className="mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
             Trigger a reflection to generate the first introspective journal entry
           </p>
         </div>
@@ -243,34 +245,32 @@ function JournalCard({ journal, isNew }: { journal: ReflectionJournal; isNew?: b
       className={`mt-4 rounded-[8px] p-5 ${isNew ? "animate-fade-slide-up" : ""}`}
       style={{
         background: "var(--surface-dim)",
-        borderTop: "2px solid #8b5cf6",
-        border: "1px solid var(--border)",
-        borderTopColor: "#8b5cf6",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: "var(--border)",
         borderTopWidth: 2,
+        borderTopColor: "var(--accent)",
       }}
     >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-3.5 w-3.5 text-purple-500" />
-          <h3 className="t-btn text-purple-500">
-            {journal.title}
-          </h3>
-        </div>
-        <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+        <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--accent)" }}>
+          {journal.title}
+        </h3>
+        <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
           {new Date(journal.timestamp).toLocaleString()}
         </span>
       </div>
-      <p className="leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-muted)" }}>
+      <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
         {journal.text}
       </p>
       {journal.seedMemoryIds && journal.seedMemoryIds.length > 0 && (
         <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-          <span className="t-tiny" style={{ color: "var(--text-faint)" }}>Seed memories:</span>
+          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>Seed memories:</span>
           {journal.seedMemoryIds.map((id) => (
             <span
               key={id}
-              className="rounded-[3px] px-1.5 py-0.5 t-tiny font-mono"
-              style={{ background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
+              className="rounded-[3px] px-1.5 py-0.5"
+              style={{ fontSize: 9, fontWeight: 400, background: "var(--surface-dimmer)", color: "var(--text-muted)" }}
             >
               #{id}
             </span>
@@ -296,7 +296,7 @@ function JournalMemoryCard({ memory, onDelete }: { memory: Memory; onDelete?: (i
         background: "var(--surface-dim)",
         border: "1px solid var(--border)",
         borderLeftWidth: 3,
-        borderLeftColor: "#8b5cf6",
+        borderLeftColor: "var(--accent)",
       }}
       onClick={() => setOpen((v) => !v)}
     >
@@ -307,16 +307,15 @@ function JournalMemoryCard({ memory, onDelete }: { memory: Memory; onDelete?: (i
           ) : (
             <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--text-faint)" }} />
           )}
-          <BookOpen className="h-3 w-3 text-purple-500 shrink-0" />
-          <span className="truncate" style={{ color: "var(--text)" }}>
+          <span className="truncate" style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
             {memory.summary || "Reflection"}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
-          <span className="t-tiny font-mono" style={{ color: "var(--text-faint)" }}>
+          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
             imp: {(memory.importance ?? 0).toFixed(2)}
           </span>
-          <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
+          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
             {new Date(memory.created_at).toLocaleDateString()}
           </span>
           <button
@@ -331,16 +330,15 @@ function JournalMemoryCard({ memory, onDelete }: { memory: Memory; onDelete?: (i
       </div>
       {open && (
         <div className="px-4 pb-4 animate-fade-slide-up" style={{ borderTop: "1px solid var(--border)" }}>
-          <p className="t-small leading-relaxed whitespace-pre-wrap pt-3" style={{ color: "var(--text-muted)" }}>
+          <p className="leading-relaxed whitespace-pre-wrap pt-3" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
             {memory.content}
           </p>
           {memory.tags && memory.tags.length > 0 && (
-            <div className="mt-2 flex items-center gap-1 flex-wrap">
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
               {memory.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-[3px] px-1.5 py-0.5 t-micro"
-                  style={{ background: "var(--surface-dimmer)", color: "var(--text-faint)" }}
+                  style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
                 >
                   {tag}
                 </span>

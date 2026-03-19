@@ -61,6 +61,7 @@ export interface ClusterStats {
 export interface DisplayOffsets {
   hero?: Vec3;
   cluster?: Vec3;
+  starburst?: Vec3;
   zeroG?: Vec3;
 }
 
