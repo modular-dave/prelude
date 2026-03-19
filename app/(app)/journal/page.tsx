@@ -1,8 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+
+/** Lightweight inline markdown → HTML (bold, italic, code, headings, lists) */
+function renderMd(text: string): string {
+  return text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")  // escape HTML
+    .replace(/^### (.+)$/gm, '<span style="font-size:13px;font-weight:500">$1</span>')
+    .replace(/^## (.+)$/gm, '<span style="font-size:14px;font-weight:500">$1</span>')
+    .replace(/^# (.+)$/gm, '<span style="font-size:16px;font-weight:500">$1</span>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code style="color:var(--accent)">$1</code>')
+    .replace(/^- (.+)$/gm, '  · $1')
+    .replace(/^\d+\. (.+)$/gm, '  $1');
+}
+
+function Md({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
+  const html = useMemo(() => renderMd(text), [text]);
+  return <div className={className} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
+}
 import { FloatNav } from "@/components/shell/float-nav";
 import { useMemory } from "@/lib/memory-context";
 import type { Memory } from "@/lib/types";
@@ -234,9 +253,7 @@ function JournalEntry({ journal, isNew }: { journal: ReflectionJournal; isNew?: 
           {new Date(journal.timestamp).toLocaleString()}
         </span>
       </div>
-      <p className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }}>
-        {journal.text}
-      </p>
+      <Md text={journal.text} className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }} />
       {journal.seedMemoryIds && journal.seedMemoryIds.length > 0 && (
         <div className="mt-2 flex items-center gap-1.5 flex-wrap">
           <span className="t-micro" style={{ color: "var(--text-faint)" }}>seeds︱</span>
@@ -289,9 +306,7 @@ function MemoryEntry({ memory, onDelete }: { memory: Memory; onDelete?: (id: num
       </div>
       {open && (
         <div className="pl-4 mt-1 animate-fade-slide-up">
-          <p className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }}>
-            {memory.content}
-          </p>
+          <Md text={memory.content} className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }} />
           {memory.tags && memory.tags.length > 0 && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
               {memory.tags.map((tag) => (
