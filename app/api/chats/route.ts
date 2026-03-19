@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { apiError } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(conversations);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -65,6 +66,6 @@ export async function POST(req: NextRequest) {
       source: data.source ?? "internal",
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

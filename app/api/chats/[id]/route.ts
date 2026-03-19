@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { apiError } from "@/lib/api-utils";
 
 export async function GET(
   _req: NextRequest,
@@ -14,7 +15,7 @@ export async function GET(
       .single();
 
     if (error) throw error;
-    if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!data) return apiError("Not found", 404);
 
     return NextResponse.json({
       id: data.id,
@@ -25,7 +26,7 @@ export async function GET(
       updatedAt: data.updated_at,
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -60,7 +61,7 @@ export async function PATCH(
       updatedAt: data.updated_at,
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -88,6 +89,6 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

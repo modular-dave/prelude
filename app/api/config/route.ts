@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import os from "os";
 import { persistEnv } from "@/lib/env-persist";
 import { resetCortex } from "@/lib/cortex";
+import { apiError } from "@/lib/api-utils";
 
 /** Expose current Cortex configuration (read-only, no secrets). */
 export async function GET() {
@@ -219,7 +220,7 @@ export async function POST(req: NextRequest) {
   if (action === "save") {
     const config = body.config as Record<string, string>;
     if (!config || typeof config !== "object") {
-      return NextResponse.json({ error: "config object required" }, { status: 400 });
+      return apiError("config object required");
     }
     config.PRELUDE_SETUP_COMPLETE = "true";
     await persistEnv(config);
@@ -227,5 +228,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  return NextResponse.json({ error: "Unknown action. Use: probe, detect, save" }, { status: 400 });
+  return apiError("Unknown action. Use: probe, detect, save");
 }

@@ -5,6 +5,7 @@ import { TYPE_COLORS } from "@/lib/types";
 import { ENTITY_COLORS, DEFAULT_ENTITY_COLOR } from "@/lib/3d-graph/constants";
 import { compileGraph, memoryContextToRawGraph } from "@/lib/3d-graph/compiler/build";
 import type { CompilerOutput } from "@/lib/3d-graph/compiler/build";
+import { apiError } from "@/lib/api-utils";
 
 // In-memory cache of the most recent compilation
 let cachedOutput: CompilerOutput | null = null;
@@ -22,7 +23,7 @@ export async function POST() {
     ]);
 
     if (!memories) {
-      return NextResponse.json({ error: "Failed to fetch memories" }, { status: 500 });
+      return apiError("Failed to fetch memories", 500);
     }
 
     // Convert to raw graph format
@@ -45,13 +46,13 @@ export async function POST() {
     });
   } catch (err: any) {
     console.error("Graph compilation failed:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiError(err.message, 500);
   }
 }
 
 export async function GET() {
   if (!cachedOutput) {
-    return NextResponse.json({ error: "No compiled graph. POST to /api/graph/compile first." }, { status: 404 });
+    return apiError("No compiled graph. POST to /api/graph/compile first.", 404);
   }
 
   return NextResponse.json({

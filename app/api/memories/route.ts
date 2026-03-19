@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { recallMemories, getStats, storeMemory } from "@/lib/clude";
+import { apiError } from "@/lib/api-utils";
 
 function supabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
         .contains("tags", [tag])
         .order("created_at", { ascending: true })
         .limit(limit);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json(data ?? []);
     }
 
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     const memories = await recallMemories(query, { limit, minImportance, minDecay, types });
     return NextResponse.json(memories);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -95,47 +96,44 @@ export async function DELETE(req: NextRequest) {
           break;
         }
         default:
-          return NextResponse.json(
-            { error: `Unknown scope: ${body.scope}. Use chat|dream|introspection|all` },
-            { status: 400 }
-          );
+          return apiError(`Unknown scope: ${body.scope}. Use chat|dream|introspection|all`);
       }
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.scope });
     }
 
     if (body.all) {
       // Delete ALL memories (legacy, same as scope: "all")
       const { error } = await db.from("memories").delete().neq("id", 0);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: "all" });
     }
 
     if (body.tag) {
       // Delete memories containing a specific tag
       const { error } = await db.from("memories").delete().contains("tags", [body.tag]);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.tag });
     }
 
     if (body.id) {
       // Delete a single memory by ID
       const { error } = await db.from("memories").delete().eq("id", body.id);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.id });
     }
 
     if (body.ids && Array.isArray(body.ids)) {
       // Delete multiple memories by IDs
       const { error } = await db.from("memories").delete().in("id", body.ids);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return apiError(error.message, 500);
       return NextResponse.json({ deleted: body.ids.length });
     }
 
-    return NextResponse.json({ error: "Provide 'scope', 'all', 'tag', 'id', or 'ids'" }, { status: 400 });
+    return apiError("Provide 'scope', 'all', 'tag', 'id', or 'ids'");
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -151,6 +149,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ id });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }

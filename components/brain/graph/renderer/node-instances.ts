@@ -587,35 +587,6 @@ export class NodeInstances {
     setCount(count);
   }
 
-  private updateClusterInstances(clusters: CanonicalEntity[]): void {
-    this.clusterIndex.clear();
-    this.clusterEntities.length = 0;
-
-    const count = Math.min(clusters.length, 256);
-    this.clusterSpheres.count = count;
-
-    for (let i = 0; i < count; i++) {
-      const e = clusters[i];
-      this.clusterIndex.set(e.id, i);
-      this.clusterEntities[i] = e.id;
-
-      // Cluster scale based on node count
-      const nodeCount = e.clusterStats?.nodeCount || 1;
-      const s = 20 + Math.cbrt(nodeCount) * 15;
-      _position.set(e.cartesian.x, e.cartesian.y, e.cartesian.z);
-      _scale.set(s, s, s);
-      _matrix.compose(_position, _quaternion, _scale);
-      this.clusterSpheres.setMatrixAt(i, _matrix);
-
-      _color.set(e.color);
-      this.clusterSpheres.setColorAt(i, _color);
-    }
-
-    this.clusterSpheres.instanceMatrix.needsUpdate = true;
-    if (this.clusterSpheres.instanceColor) this.clusterSpheres.instanceColor.needsUpdate = true;
-    this.clusterCount = count;
-  }
-
   // ── Selection / hover halos ───────────────────────────────────
 
   updateHighlights(config: NodeInstancesConfig): void {

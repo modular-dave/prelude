@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureCortex, swapVeniceModel } from "@/lib/cortex";
 import { getAssignment } from "@/lib/active-model-store";
 import { supabase } from "@/lib/supabase";
+import { apiError } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,12 +15,12 @@ export async function GET(req: NextRequest) {
       .limit(limit);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiError(error.message, 500);
     }
 
     return NextResponse.json({ logs: logs || [] });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
@@ -41,7 +42,7 @@ export async function DELETE(req: NextRequest) {
         .from("dream_logs")
         .delete()
         .in("id", body.logIds);
-      if (logErr) return NextResponse.json({ error: logErr.message }, { status: 500 });
+      if (logErr) return apiError(logErr.message, 500);
 
       if (memIds.length > 0) {
         await supabase.from("memories").delete().in("id", memIds);
@@ -55,28 +56,25 @@ export async function DELETE(req: NextRequest) {
       .from("dream_logs")
       .delete()
       .neq("id", 0);
-    if (logErr) return NextResponse.json({ error: logErr.message }, { status: 500 });
+    if (logErr) return apiError(logErr.message, 500);
 
     // Also clear dream-generated memories
     const { error: memErr } = await supabase
       .from("memories")
       .delete()
       .or("source.eq.consolidation,source.eq.emergence,tags.cs.{consolidation},tags.cs.{emergence}");
-    if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 });
+    if (memErr) return apiError(memErr.message, 500);
 
     return NextResponse.json({ deleted: "dreams" });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
 
 export async function POST() {
   try {
     if (!process.env.VENICE_BASE_URL) {
-      return NextResponse.json(
-        { error: "Dream cycles require an inference backend. Set VENICE_BASE_URL (and optionally VENICE_API_KEY / VENICE_MODEL) in your environment." },
-        { status: 400 }
-      );
+      return apiError("Dream cycles require an inference backend. Set VENICE_BASE_URL (and optionally VENICE_API_KEY / VENICE_MODEL) in your environment.");
     }
 
     // Swap to dream-assigned model if configured
@@ -143,9 +141,6 @@ export async function POST() {
       },
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    );
+    return apiError(String(err), 500);
   }
 }
