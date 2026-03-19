@@ -400,25 +400,37 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   useEffect(() => {
     (async () => {
       try {
-        const [modelsRes, configRes, statusRes] = await Promise.all([
-          fetch("/api/models"),
+        // Fetch config (env vars) + status (schedules) immediately for fast render
+        const [configRes, statusRes] = await Promise.all([
           fetch("/api/config"),
           fetch("/api/status"),
         ]);
-        const modelsData = await modelsRes.json();
         const configData = await configRes.json();
         const statusData = await statusRes.json();
-        setCortexOnline(!!modelsData.running);
-        if (modelsData.active) setActiveModel(modelsData.active);
-        setInferenceConnected(!!configData.inference?.connected);
-        setEmbeddingConnected(!!configData.embedding?.connected);
         if (configData.inference?.model) setInferenceModelLabel(`${configData.inference.provider} · ${configData.inference.model.split("/").pop()}`);
         if (configData.embedding?.model) setEmbeddingModelLabel(`${configData.embedding.provider} · ${configData.embedding.model.split("/").pop()}`);
-        // Sync schedule state from server
         updateRetrievalSettings({
           dreamScheduleEnabled: statusData.schedules?.dream ?? false,
           reflectionScheduleEnabled: statusData.schedules?.reflection ?? false,
         });
+
+        // Then probe actual service availability (slower but accurate)
+        const probeRes = await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "probe" }),
+        });
+        const probe = await probeRes.json();
+        setCortexOnline(probe.supabase?.ok ?? false);
+        setInferenceConnected(probe.inference?.ok ?? false);
+        setEmbeddingConnected(probe.embedding?.ok ?? false);
+        if (probe.inference?.ok && probe.inference.model) {
+          setActiveModel(probe.inference.model);
+          setInferenceModelLabel(`${probe.inference.provider} · ${probe.inference.model.split("/").pop()}`);
+        }
+        if (probe.embedding?.ok && probe.embedding.model) {
+          setEmbeddingModelLabel(`${probe.embedding.provider} · ${probe.embedding.model.split("/").pop()}`);
+        }
       } catch {
         setCortexOnline(false);
       }
@@ -1231,26 +1243,26 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5 justify-end">
                         <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                          inference︱
+                          {inferenceModelLabel || "inference"}︱
                         </span>
                         <span
                           className="h-[5px] w-[5px] rounded-full"
                           style={{ background: inferenceActive ? "#22c55e" : "var(--text-faint)" }}
                         />
                         <span className="font-mono" style={{ color: inferenceActive ? "#22c55e" : "var(--text-faint)" }}>
-                          {inferenceActive ? "active" : "inactive"}
+                          {inferenceActive ? "live" : "offline"}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 justify-end">
                         <span className="font-mono" style={{ color: "var(--text-faint)" }}>
-                          embedding︱
+                          {embeddingModelLabel || "embedding"}︱
                         </span>
                         <span
                           className="h-[5px] w-[5px] rounded-full"
                           style={{ background: embeddingActive ? "#22c55e" : "var(--text-faint)" }}
                         />
                         <span className="font-mono" style={{ color: embeddingActive ? "#22c55e" : "var(--text-faint)" }}>
-                          {embeddingActive ? "active" : "inactive"}
+                          {embeddingActive ? "live" : "offline"}
                         </span>
                       </div>
                     </div>
