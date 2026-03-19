@@ -68,7 +68,9 @@ export function CortexContent({
       setConfig(data);
       // Pre-fill supabase URL if available
       if (data.supabase?.url) setSbUrl(data.supabase.url);
-    } catch {}
+    } catch (e) {
+      console.warn("[cortex] Failed to load config:", e);
+    }
     setLoading(false);
   }, []);
 
@@ -103,7 +105,9 @@ export function CortexContent({
         body: JSON.stringify({ action: "save", url: sbUrl, serviceKey: sbKey }),
       });
       await refreshConfig();
-    } catch {}
+    } catch (e) {
+      console.warn("[cortex] Failed to save Supabase config:", e);
+    }
     setSbSaving(false);
   };
 
@@ -125,7 +129,9 @@ export function CortexContent({
         });
       }
       await refreshConfig();
-    } catch {}
+    } catch (e) {
+      console.warn("[cortex] Failed to disconnect service:", e);
+    }
   };
 
   // ── Render ──

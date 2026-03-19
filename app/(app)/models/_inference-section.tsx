@@ -78,8 +78,11 @@ export function InferenceSection() {
           }
           setHostedConnected(connected);
         }
-      } catch {}
-    } catch {
+      } catch (e) {
+        console.warn("[models] Failed to fetch hosted provider status:", e);
+      }
+    } catch (e) {
+      console.warn("[models] Failed to refresh models:", e);
       setBackendOnline(false);
     }
   }, []);
@@ -229,7 +232,7 @@ export function InferenceSection() {
             } else if (evt.status === "error") {
               setModelError(evt.error || "Install failed");
             }
-          } catch {}
+          } catch { /* partial SSE chunk — expected, skip */ }
         }
       }
       addKnownModel(trimmed);

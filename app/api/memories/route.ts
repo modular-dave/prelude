@@ -9,7 +9,7 @@ function supabase() {
 
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q") ?? "";
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10);
+  const limit = Math.min(Math.max(parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10) || 20, 1), 1000);
 
   try {
     if (query === "__stats__") {
@@ -137,15 +137,24 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+const VALID_MEMORY_TYPES = new Set(["episodic", "semantic", "procedural", "autobiographical", "reflection", "dream", "emergence"]);
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    if (!body.content || typeof body.content !== "string") {
+      return apiError("'content' is required and must be a string");
+    }
+    if (body.content.length > 100_000) {
+      return apiError("'content' exceeds maximum length of 100,000 characters");
+    }
+    const type = VALID_MEMORY_TYPES.has(body.type) ? body.type : "semantic";
     const id = await storeMemory({
-      type: body.type ?? "semantic",
+      type,
       content: body.content,
       summary: body.summary ?? body.content.slice(0, 100),
-      tags: body.tags ?? [],
-      importance: body.importance ?? 0.6,
+      tags: Array.isArray(body.tags) ? body.tags.filter((t: unknown) => typeof t === "string").slice(0, 50) : [],
+      importance: Math.min(Math.max(Number(body.importance) || 0.6, 0), 1),
     });
     return NextResponse.json({ id });
   } catch (err) {

@@ -105,14 +105,16 @@ export function ChatPanel() {
   };
 
   const handleClearAll = async () => {
-    // Delete all memories from the brain
-    fetch("/api/memories", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    }).then(() => refresh());
-
-    await clearAllConversations();
+    // Delete all memories from the brain — await both operations to prevent race conditions
+    await Promise.all([
+      fetch("/api/memories", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      }),
+      clearAllConversations(),
+    ]);
+    await refresh();
     setConversations([]);
     setActiveId(null);
     setMessages([]);
@@ -157,7 +159,7 @@ export function ChatPanel() {
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "");
         let msg = "Failed to connect";
-        try { msg = JSON.parse(text).message || msg; } catch {}
+        try { msg = JSON.parse(text).message || msg; } catch { /* non-JSON error response */ }
         throw new Error(msg);
       }
 
@@ -187,9 +189,7 @@ export function ChatPanel() {
                 return updated;
               });
             }
-          } catch {
-            // skip
-          }
+          } catch { /* partial SSE chunk — expected during streaming */ }
         }
       }
 

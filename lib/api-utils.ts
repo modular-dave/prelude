@@ -9,13 +9,22 @@ export function apiError(message: string, status = 400): NextResponse {
 }
 
 /**
- * Parse an integer from a query/path param with a fallback.
+ * Parse an integer from a query/path param with a fallback and optional bounds.
  * Returns the fallback if the value is null, undefined, or not a valid integer.
+ * Clamps to [min, max] when provided.
  */
-export function parseIntParam(value: string | null | undefined, fallback: number): number {
+export function parseIntParam(
+  value: string | null | undefined,
+  fallback: number,
+  min?: number,
+  max?: number,
+): number {
   if (value == null) return fallback;
-  const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? fallback : parsed;
+  let parsed = parseInt(value, 10);
+  if (isNaN(parsed)) return fallback;
+  if (min !== undefined) parsed = Math.max(min, parsed);
+  if (max !== undefined) parsed = Math.min(max, parsed);
+  return parsed;
 }
 
 /**

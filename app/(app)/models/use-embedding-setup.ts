@@ -141,7 +141,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
         }
         setEmbTypeAssignments(assignments);
       }
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to refresh config:", e);
+    }
   }, []);
 
   const refreshEmbeddingStatus = useCallback(async () => {
@@ -154,7 +156,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
       const data = await res.json();
       setEmbRunning(data.running ?? false);
       if (data.dimensions) setEmbDims(data.dimensions);
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to refresh status:", e);
+    }
   }, [embPort]);
 
   const refreshSlotHealth = useCallback(async (cfg: EmbeddingConfig | null) => {
@@ -188,7 +192,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
       });
       setEmbRunning(false);
       setEmbDims(null);
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to stop server:", e);
+    }
   };
 
   const handleEmbeddingTest = async () => {
@@ -222,7 +228,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
         }),
       });
       await refreshEmbeddingConfig();
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to save config:", e);
+    }
     setEmbSaving(false);
   };
 
@@ -414,7 +422,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
       setEmbRunning(false);
       setEmbDims(null);
       await refreshEmbeddingConfig();
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to disconnect:", e);
+    }
   };
 
   const handleEmbCancel = (providerId: string, modelId: string) => {
@@ -434,7 +444,9 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
         body: JSON.stringify({ action: "save-key", provider: providerId, apiKey }),
       });
       await refreshEmbeddingConfig();
-    } catch {}
+    } catch (e) {
+      console.warn("[embedding] Failed to save API key:", e);
+    }
     setEmbKeySaving(null);
   };
 

@@ -113,7 +113,9 @@ export default function SetupPage() {
           setEmbDims(em?.models[0]?.dims || 768);
           setEmbBaseUrl(em?.baseUrl || "http://127.0.0.1:11434/v1");
         }
-      } catch {} finally { setDetecting(false); }
+      } catch (e) {
+        console.warn("[setup] Backend detection failed:", e);
+      } finally { setDetecting(false); }
     })();
   }, []);
 

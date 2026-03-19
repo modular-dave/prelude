@@ -66,7 +66,7 @@ export function spawnEmbeddingServer(
   // Kill anything on the port first
   const existingPid = findEmbeddingProcess(port);
   if (existingPid) {
-    try { process.kill(existingPid, "SIGTERM"); } catch {}
+    try { process.kill(existingPid, "SIGTERM"); } catch { /* process already exited */ }
   }
 
   console.log(`[embedding] Spawning: ${PYTHON} ${SCRIPT} --model ${model} --port ${port}`);
@@ -145,10 +145,10 @@ export function stopEmbeddingServer(port = DEFAULT_PORT): boolean {
     }
     try {
       process.kill(pid, "SIGKILL");
-    } catch {}
+    } catch { /* process already exited after SIGKILL */ }
     return true;
   } catch {
-    return false;
+    return false; /* SIGTERM failed — process not found */
   }
 }
 

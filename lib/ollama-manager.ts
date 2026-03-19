@@ -34,11 +34,12 @@ export async function startOllamaServer(): Promise<boolean> {
       try {
         const res = await fetch(`${OLLAMA_API}/tags`, { signal: AbortSignal.timeout(1000) });
         if (res.ok) return true;
-      } catch {}
+      } catch { /* server not ready yet — expected during polling */ }
       await new Promise((r) => setTimeout(r, 500));
     }
     return false;
-  } catch {
+  } catch (e) {
+    console.warn("[ollama] Failed to start:", e instanceof Error ? e.message : e);
     return false;
   }
 }

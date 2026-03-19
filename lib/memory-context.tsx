@@ -134,8 +134,8 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
         return prevFp === nextFp ? prev : nextMems;
       });
       setStats(statsData);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[memory] Failed to refresh memories:", e);
     } finally {
       setLoading(false);
     }
@@ -195,8 +195,8 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
 
       // Cache for instant hydration on next page load
       try { sessionStorage.setItem("prelude:graph-bundle", JSON.stringify({ graph: kgData, stats: gsData })); } catch { /* quota */ }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[memory] Failed to refresh graph:", e);
     }
   }, [mergeGraphLinks]);
 

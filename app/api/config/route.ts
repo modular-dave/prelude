@@ -162,7 +162,9 @@ export async function POST(req: NextRequest) {
         const r = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(3000) });
         const data = await r.json();
         ollamaModels = (data.models || []).map((m: any) => m.name);
-      } catch {}
+      } catch (e) {
+        console.warn("[config] Failed to fetch Ollama models:", e instanceof Error ? e.message : e);
+      }
     }
 
     let mlxModel: string | null = null;
@@ -171,7 +173,9 @@ export async function POST(req: NextRequest) {
         const r = await fetch("http://127.0.0.1:8899/v1/models", { signal: AbortSignal.timeout(3000) });
         const data = await r.json();
         mlxModel = data.data?.[0]?.id || null;
-      } catch {}
+      } catch (e) {
+        console.warn("[config] Failed to fetch MLX model:", e instanceof Error ? e.message : e);
+      }
     }
 
     let mlxEmbedModel: string | null = null;
@@ -182,7 +186,9 @@ export async function POST(req: NextRequest) {
         const data = await r.json();
         mlxEmbedModel = data.model || null;
         mlxEmbedDims = data.dimensions || null;
-      } catch {}
+      } catch (e) {
+        console.warn("[config] Failed to fetch MLX embedding status:", e instanceof Error ? e.message : e);
+      }
     }
 
     const cloudConfigured = !!(process.env.VENICE_API_KEY && process.env.VENICE_API_KEY !== "local");

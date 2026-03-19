@@ -44,11 +44,20 @@ function buildAdjacency(nodeIds: string[], edges: RawEdge[]): {
   for (const edge of edges) {
     if (!neighbors.has(edge.source) || !neighbors.has(edge.target)) continue;
     const w = edge.weight || 1;
-    neighbors.get(edge.source)!.set(edge.target, (neighbors.get(edge.source)!.get(edge.target) || 0) + w);
-    neighbors.get(edge.target)!.set(edge.source, (neighbors.get(edge.target)!.get(edge.source) || 0) + w);
-    degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
-    degrees.set(edge.target, (degrees.get(edge.target) || 0) + w);
-    totalWeight += w;
+
+    if (edge.source === edge.target) {
+      // Self-loop: contributes w to degree once, and w to internal community weight
+      neighbors.get(edge.source)!.set(edge.source, (neighbors.get(edge.source)!.get(edge.source) || 0) + w);
+      degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
+      totalWeight += w;
+    } else {
+      // Normal edge: bidirectional adjacency, w to each endpoint's degree
+      neighbors.get(edge.source)!.set(edge.target, (neighbors.get(edge.source)!.get(edge.target) || 0) + w);
+      neighbors.get(edge.target)!.set(edge.source, (neighbors.get(edge.target)!.get(edge.source) || 0) + w);
+      degrees.set(edge.source, (degrees.get(edge.source) || 0) + w);
+      degrees.set(edge.target, (degrees.get(edge.target) || 0) + w);
+      totalWeight += w;
+    }
   }
 
   return { neighbors, totalWeight, degrees };

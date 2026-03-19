@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { parseIntParam } from "@/lib/api-utils";
 import type { MemoryType } from "@/lib/types";
 
 const PAGE_SIZE = 1000; // Supabase PostgREST max_rows default
+const VALID_MEMORY_TYPES = new Set(["episodic", "semantic", "procedural", "autobiographical", "reflection", "dream", "emergence"]);
 
 export async function GET(req: NextRequest) {
   try {
-    const hours = parseInt(req.nextUrl.searchParams.get("hours") ?? "24", 10);
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "100000", 10);
+    const hours = parseIntParam(req.nextUrl.searchParams.get("hours"), 24, 1, 87600);
+    const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 100000, 1, 100000);
     const typesParam = req.nextUrl.searchParams.get("types");
-    const types = typesParam ? typesParam.split(",") as MemoryType[] : undefined;
+    const types = typesParam
+      ? (typesParam.split(",").filter(t => VALID_MEMORY_TYPES.has(t)) as MemoryType[])
+      : undefined;
 
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     const allMemories: any[] = [];

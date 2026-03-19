@@ -109,7 +109,9 @@ export async function POST(req: NextRequest) {
       try {
         const { execSync } = await import("child_process");
         execSync("pkill -f 'ollama serve'", { timeout: 5000 });
-      } catch {}
+      } catch (e) {
+        console.warn("[models] pkill ollama failed (may already be stopped):", e instanceof Error ? e.message : e);
+      }
       return NextResponse.json({ ok: true });
     }
     killMLXServer();

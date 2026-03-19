@@ -26,7 +26,9 @@ export function SettingsSheet({
       const res = await fetch("/api/models");
       const data = await res.json();
       setActiveModelState(data.active || null);
-    } catch {}
+    } catch (e) {
+      console.warn("[settings] Failed to fetch active model:", e);
+    }
   }, []);
 
   const refreshCortexSummary = useCallback(async () => {
