@@ -262,13 +262,14 @@ function MemoryEntry({ memory, onDelete }: { memory: Memory; onDelete?: (id: num
   return (
     <div
       className="cursor-pointer transition py-1"
+      style={{ borderBottom: "1px solid var(--border)" }}
       onClick={() => setOpen((v) => !v)}
     >
       <div className="flex items-center gap-2">
         <span className="t-body" style={{ color: "var(--text-faint)" }}>
           {open ? "−" : "+"}
         </span>
-        <span className="truncate t-body" style={{ color: "var(--text)" }}>
+        <span className="truncate t-heading" style={{ color: "var(--text)" }}>
           {memory.summary || "Reflection"}
         </span>
         <span className="t-micro shrink-0" style={{ color: "var(--text-faint)" }}>
