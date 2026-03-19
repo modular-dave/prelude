@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Loader2, Play, Trash2 } from "lucide-react";
 import { useMemory } from "@/lib/memory-context";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useDreamCycle, type DreamLog, type DreamSession } from "./use-dream-cycle";
 
 // ── Phase metadata ──────────────────────────────────────────
 
@@ -14,45 +15,6 @@ const PHASES = [
   { key: "contradiction_resolution", name: "Contradiction Resolution", roman: "IV", desc: "Find and resolve conflicting memories" },
   { key: "emergence", name: "Emergence", roman: "V", desc: "Discover unexpected connections and novel insights" },
 ] as const;
-
-type PhaseKey = (typeof PHASES)[number]["key"];
-
-interface PhaseResult {
-  id: number;
-  phase: PhaseKey;
-  output: string;
-  inputCount: number;
-  newMemoryIds: number[];
-  createdAt: string;
-}
-
-interface NewMemory {
-  id: number;
-  type: string;
-  summary: string;
-  importance: number;
-  tags: string[];
-  source: string;
-  createdAt: string;
-}
-
-interface DreamResult {
-  emergence: string | null;
-  phases: PhaseResult[];
-  newMemories: NewMemory[];
-  stats: { totalPhases: number; totalNewMemories: number; totalInputMemories: number };
-}
-
-interface DreamLog {
-  id: number;
-  session_type: PhaseKey;
-  input_memory_ids: number[];
-  output: string;
-  new_memories_created: number[];
-  created_at: string;
-}
-
-// ── Helpers ─────────────────────────────────────────────────
 
 function phaseMeta(key: string) {
   return PHASES.find((p) => p.key === key) ?? PHASES[0];
@@ -73,122 +35,7 @@ function timeAgo(iso: string): string {
 
 export function DreamCycleDisplay() {
   const { memories, refresh } = useMemory();
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<DreamResult | null>(null);
-  const [dreamScheduleActive, setDreamScheduleActive] = useState(false);
-  const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
-
-  // Dream history
-  const [history, setHistory] = useState<DreamLog[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
-
-  const loadHistory = useCallback(async () => {
-    try {
-      const res = await fetch("/api/dream?limit=200");
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.logs || []);
-      }
-    } catch {
-      // silent
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadHistory();
-    // Poll every 10s so history updates while cycles run externally
-    const interval = setInterval(loadHistory, 10_000);
-    return () => clearInterval(interval);
-  }, [loadHistory]);
-
-  const toggleDreamSchedule = async () => {
-    setScheduleLoading(true);
-    setError(null);
-    try {
-      if (dreamScheduleActive) {
-        const res = await fetch("/api/dream/schedule", { method: "DELETE" });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(data.error || "Failed to stop dream schedule");
-          return;
-        }
-        setDreamScheduleActive(false);
-      } else {
-        const res = await fetch("/api/dream/schedule", { method: "POST" });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(data.error || "Failed to start dream schedule");
-          return;
-        }
-        setDreamScheduleActive(true);
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setScheduleLoading(false);
-    }
-  };
-
-  const runDream = async () => {
-    if (running) return;
-    setRunning(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const res = await fetch("/api/dream", { method: "POST" });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Dream cycle failed");
-      } else {
-        setResult(data);
-        await refresh();
-        await loadHistory();
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const [clearing, setClearing] = useState(false);
-  const [confirmClearAll, setConfirmClearAll] = useState(false);
-  const [confirmSessionDelete, setConfirmSessionDelete] = useState<number[] | null>(null);
-
-  const clearDreams = async () => {
-    setClearing(true);
-    try {
-      await fetch("/api/dream", { method: "DELETE" });
-      setResult(null);
-      await refresh();
-      await loadHistory();
-    } catch {
-      setError("Failed to clear dreams");
-    } finally {
-      setClearing(false);
-      setConfirmClearAll(false);
-    }
-  };
-
-  const deleteSession = async (logIds: number[]) => {
-    await fetch("/api/dream", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ logIds }),
-    });
-    await refresh();
-    await loadHistory();
-    setConfirmSessionDelete(null);
-  };
-
-  // Group history by dream session (group consecutive logs within 15 min)
-  const dreamSessions = groupIntoSessions(history);
+  const dream = useDreamCycle(refresh, memories.length);
 
   return (
     <div className="space-y-6">
@@ -203,14 +50,14 @@ export function DreamCycleDisplay() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {dreamSessions.length > 0 && (
+          {dream.dreamSessions.length > 0 && (
             <button
-              onClick={() => setConfirmClearAll(true)}
-              disabled={clearing}
+              onClick={() => dream.setConfirmClearAll(true)}
+              disabled={dream.clearing}
               className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
               style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
             >
-              {clearing ? (
+              {dream.clearing ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
                 <span className="flex items-center gap-1.5">
@@ -221,33 +68,33 @@ export function DreamCycleDisplay() {
             </button>
           )}
           <button
-            onClick={toggleDreamSchedule}
-            disabled={scheduleLoading}
+            onClick={dream.toggleDreamSchedule}
+            disabled={dream.scheduleLoading}
             className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
             style={{
               fontSize: 11,
               fontWeight: 500,
-              color: dreamScheduleActive ? "var(--success)" : "var(--text)",
+              color: dream.dreamScheduleActive ? "var(--success)" : "var(--text)",
               borderWidth: 1,
               borderStyle: "solid",
-              borderColor: dreamScheduleActive ? "var(--success)" : "var(--border)",
+              borderColor: dream.dreamScheduleActive ? "var(--success)" : "var(--border)",
             }}
           >
-            {scheduleLoading ? (
+            {dream.scheduleLoading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <span className="flex items-center gap-1.5">
-                {dreamScheduleActive ? "Schedule On" : "Schedule Off"}
+                {dream.dreamScheduleActive ? "Schedule On" : "Schedule Off"}
               </span>
             )}
           </button>
           <button
-            onClick={runDream}
-            disabled={running || memories.length === 0}
+            onClick={dream.runDream}
+            disabled={dream.running || memories.length === 0}
             className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
             style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
           >
-            {running ? (
+            {dream.running ? (
               <span className="flex items-center gap-1.5">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Dreaming...
@@ -265,12 +112,12 @@ export function DreamCycleDisplay() {
       {/* Phase overview cards */}
       <div className="grid gap-3 sm:grid-cols-5">
         {PHASES.map((phase) => {
-          const phaseResult = result?.phases.find((p) => p.phase === phase.key);
+          const phaseResult = dream.result?.phases.find((p) => p.phase === phase.key);
           const isComplete = !!phaseResult;
           return (
             <button
               key={phase.key}
-              onClick={() => phaseResult && setExpandedPhase(expandedPhase === phase.key ? null : phase.key)}
+              onClick={() => phaseResult && dream.setExpandedPhase(dream.expandedPhase === phase.key ? null : phase.key)}
               className="font-mono py-2 text-left transition-all duration-200"
               style={{
                 background: "transparent",
@@ -282,8 +129,8 @@ export function DreamCycleDisplay() {
                 <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
                   {phase.roman}
                 </span>
-                {running && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />}
-                {!running && isComplete && (
+                {dream.running && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />}
+                {!dream.running && isComplete && (
                   <span style={{ fontSize: 9, fontWeight: 400, color: "var(--success)" }}>done</span>
                 )}
               </div>
@@ -310,11 +157,11 @@ export function DreamCycleDisplay() {
       </div>
 
       {/* Expanded phase detail */}
-      {expandedPhase && result && (() => {
-        const phaseResult = result.phases.find((p) => p.phase === expandedPhase);
+      {dream.expandedPhase && dream.result && (() => {
+        const phaseResult = dream.result.phases.find((p) => p.phase === dream.expandedPhase);
         if (!phaseResult) return null;
-        const meta = phaseMeta(expandedPhase);
-        const phaseMemories = result.newMemories.filter((m) => phaseResult.newMemoryIds.includes(m.id));
+        const meta = phaseMeta(dream.expandedPhase);
+        const phaseMemories = dream.result.newMemories.filter((m) => phaseResult.newMemoryIds.includes(m.id));
         return (
           <div
             className="font-mono mt-4 animate-fade-slide-up"
@@ -349,25 +196,16 @@ export function DreamCycleDisplay() {
                 </p>
                 <div className="space-y-1.5">
                   {phaseMemories.map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex items-start gap-2 py-1"
-                    >
+                    <div key={m.id} className="flex items-start gap-2 py-1">
                       <div className="min-w-0 flex-1">
                         <p style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
                           {m.summary}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
-                            {m.type}
-                          </span>
-                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
-                            imp: {m.importance.toFixed(2)}
-                          </span>
+                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>{m.type}</span>
+                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>imp: {m.importance.toFixed(2)}</span>
                           {m.tags.slice(0, 3).map((t) => (
-                            <span key={t} style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
-                              #{t}
-                            </span>
+                            <span key={t} style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>#{t}</span>
                           ))}
                         </div>
                       </div>
@@ -381,14 +219,14 @@ export function DreamCycleDisplay() {
       })()}
 
       {/* Error */}
-      {error && (
+      {dream.error && (
         <div className="mt-4">
-          <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{error}</p>
+          <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{dream.error}</p>
         </div>
       )}
 
       {/* Emergence highlight */}
-      {result?.emergence && (
+      {dream.result?.emergence && (
         <div
           className="font-mono mt-4 animate-fade-slide-up"
           style={{
@@ -404,17 +242,17 @@ export function DreamCycleDisplay() {
             <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>Emergence</h3>
           </div>
           <p className="leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
-            {result.emergence}
+            {dream.result.emergence}
           </p>
         </div>
       )}
 
       {/* Stats summary */}
-      {result && (
+      {dream.result && (
         <div className="flex items-center gap-6 font-mono">
-          <Stat label="Phases" value={result.stats.totalPhases} />
-          <Stat label="Memories analyzed" value={result.stats.totalInputMemories} />
-          <Stat label="Memories created" value={result.stats.totalNewMemories} />
+          <Stat label="Phases" value={dream.result.stats.totalPhases} />
+          <Stat label="Memories analyzed" value={dream.result.stats.totalInputMemories} />
+          <Stat label="Memories created" value={dream.result.stats.totalNewMemories} />
         </div>
       )}
 
@@ -422,26 +260,26 @@ export function DreamCycleDisplay() {
       <div>
         <h3 className="font-mono mb-3" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
           Dream History{" "}
-          {dreamSessions.length > 0 && (
-            <span style={{ color: "var(--text-faint)" }}>({dreamSessions.length})</span>
+          {dream.dreamSessions.length > 0 && (
+            <span style={{ color: "var(--text-faint)" }}>({dream.dreamSessions.length})</span>
           )}
         </h3>
-        {historyLoading ? (
+        {dream.historyLoading ? (
           <div className="flex items-center gap-2 py-4">
             <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-faint)" }} />
             <span className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>Loading...</span>
           </div>
-        ) : dreamSessions.length === 0 ? (
+        ) : dream.dreamSessions.length === 0 ? (
           <p className="font-mono py-4" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
             No dream cycles recorded yet. Run your first dream cycle above.
           </p>
         ) : (
           <div className="space-y-2">
-            {dreamSessions.map((session) => (
+            {dream.dreamSessions.map((session) => (
               <DreamSessionCard
                 key={session.id}
                 session={session}
-                onDelete={(logIds) => setConfirmSessionDelete(logIds)}
+                onDelete={(logIds) => dream.setConfirmSessionDelete(logIds)}
               />
             ))}
           </div>
@@ -449,22 +287,22 @@ export function DreamCycleDisplay() {
       </div>
 
       {/* Confirm dialogs */}
-      {confirmClearAll && (
+      {dream.confirmClearAll && (
         <ConfirmDialog
           title="Clear all dreams?"
           message="This will delete all dream logs and dream-generated memories. This cannot be undone."
           confirmLabel="Clear All"
-          onConfirm={clearDreams}
-          onCancel={() => setConfirmClearAll(false)}
+          onConfirm={dream.clearDreams}
+          onCancel={() => dream.setConfirmClearAll(false)}
         />
       )}
-      {confirmSessionDelete && (
+      {dream.confirmSessionDelete && (
         <ConfirmDialog
           title="Delete this dream session?"
           message="This will delete the dream logs and any memories created during this session."
           confirmLabel="Delete"
-          onConfirm={() => deleteSession(confirmSessionDelete)}
-          onCancel={() => setConfirmSessionDelete(null)}
+          onConfirm={() => dream.deleteSession(dream.confirmSessionDelete!)}
+          onCancel={() => dream.setConfirmSessionDelete(null)}
         />
       )}
     </div>
@@ -480,12 +318,6 @@ function Stat({ label, value }: { label: string; value: number }) {
       <p style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</p>
     </div>
   );
-}
-
-interface DreamSession {
-  id: string;
-  timestamp: string;
-  logs: DreamLog[];
 }
 
 function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDelete?: (logIds: number[]) => void }) {
@@ -562,41 +394,4 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
       )}
     </div>
   );
-}
-
-// ── Grouping utility ────────────────────────────────────────
-
-function groupIntoSessions(logs: DreamLog[]): DreamSession[] {
-  if (logs.length === 0) return [];
-
-  // Logs arrive sorted desc. Reverse to ascending for cycle detection.
-  const asc = [...logs].reverse();
-
-  const sessions: DreamSession[] = [];
-  let current: DreamLog[] = [asc[0]];
-
-  for (let i = 1; i < asc.length; i++) {
-    // A new "consolidation" after any other phase signals the start of a new dream cycle.
-    // Also split if there's a >15 min gap (safety net for partial cycles).
-    const gap = new Date(asc[i].created_at).getTime() - new Date(asc[i - 1].created_at).getTime();
-    const isNewCycle = asc[i].session_type === "consolidation" && current[current.length - 1].session_type !== "consolidation";
-    if (isNewCycle || gap > 15 * 60 * 1000) {
-      sessions.push({
-        id: String(current[0].id),
-        timestamp: current[current.length - 1].created_at, // use latest timestamp for display
-        logs: current,
-      });
-      current = [asc[i]];
-    } else {
-      current.push(asc[i]);
-    }
-  }
-  sessions.push({
-    id: String(current[0].id),
-    timestamp: current[current.length - 1].created_at,
-    logs: current,
-  });
-
-  // Return newest first
-  return sessions.reverse();
 }

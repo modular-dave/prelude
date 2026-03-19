@@ -3,6 +3,7 @@ import { reflect, getStats, startReflectionSchedule, stopReflectionSchedule } fr
 import { getAssignment } from "@/lib/active-model-store";
 import { swapVeniceModel } from "@/lib/cortex";
 import { supabase } from "@/lib/supabase";
+import { apiError } from "@/lib/api-utils";
 
 const MIN_MEMORIES_FOR_REFLECTION = 5;
 
@@ -58,24 +59,14 @@ export async function POST(req: NextRequest) {
 
     // Pre-check: inference backend must be configured
     if (!process.env.VENICE_BASE_URL) {
-      return NextResponse.json(
-        {
-          error: "Reflection requires an inference backend. Set VENICE_BASE_URL (and optionally VENICE_API_KEY / VENICE_MODEL) in your environment to enable dream cycles and reflections.",
-        },
-        { status: 400 }
-      );
+      return apiError("Reflection requires an inference backend. Set VENICE_BASE_URL (and optionally VENICE_API_KEY / VENICE_MODEL) in your environment to enable dream cycles and reflections.");
     }
 
     // Pre-check: need enough memories to reflect on
     const stats = await getStats();
     const total = stats.total ?? 0;
     if (total < MIN_MEMORIES_FOR_REFLECTION) {
-      return NextResponse.json(
-        {
-          error: `Need at least ${MIN_MEMORIES_FOR_REFLECTION} memories to reflect (currently ${total}). Have some conversations first.`,
-        },
-        { status: 400 }
-      );
+      return apiError(`Need at least ${MIN_MEMORIES_FOR_REFLECTION} memories to reflect (currently ${total}). Have some conversations first.`);
     }
 
     // Swap to reflect-assigned model if configured
@@ -85,12 +76,7 @@ export async function POST(req: NextRequest) {
     // Default: run a single reflection session
     const journal = await reflect() as { text?: string; title?: string; memoryId?: number | null; [k: string]: unknown } | null;
     if (!journal) {
-      return NextResponse.json(
-        {
-          error: `Reflection produced no output. The system found too few qualifying seed memories. Try having more varied conversations first.`,
-        },
-        { status: 400 }
-      );
+      return apiError("Reflection produced no output. The system found too few qualifying seed memories. Try having more varied conversations first.");
     }
 
     // Post-process: generate a clean LLM title and update the stored memory
@@ -109,6 +95,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, journal });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiError(String(err), 500);
   }
 }
