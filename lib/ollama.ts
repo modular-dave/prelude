@@ -1,6 +1,6 @@
 import { getActiveModel, getAssignment } from "@/lib/active-model-store";
 
-const DEFAULT_MODEL = process.env.VENICE_MODEL || process.env.LLM_MODEL || "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+const DEFAULT_MODEL = process.env.VENICE_MODEL || process.env.LLM_MODEL || "phi3:mini";
 
 /** Resolve LLM base URL based on provider assignment */
 function resolveLLMBase(cogFunc: "chat" | "dream" | "reflect" = "chat"): string {
@@ -8,7 +8,7 @@ function resolveLLMBase(cogFunc: "chat" | "dream" | "reflect" = "chat"): string 
   if (assignment?.provider === "mlx") return "http://127.0.0.1:8899/v1";
   if (assignment?.provider === "ollama") return "http://127.0.0.1:11434/v1";
   // Fallback to env (for hosted providers like Venice/OpenRouter)
-  const base = process.env.VENICE_BASE_URL || process.env.LLM_BASE_URL || "http://127.0.0.1:8899/v1";
+  const base = process.env.VENICE_BASE_URL || process.env.LLM_BASE_URL || "http://127.0.0.1:11434/v1";
   // Ensure it ends with /v1
   return base.endsWith("/v1") ? base : `${base}/v1`;
 }

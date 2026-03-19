@@ -154,7 +154,12 @@ export function ChatPanel() {
         }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Failed to connect");
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => "");
+        let msg = "Failed to connect";
+        try { msg = JSON.parse(text).message || msg; } catch {}
+        throw new Error(msg);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -214,8 +219,8 @@ export function ChatPanel() {
 
       refresh();
     } catch (err) {
-      const errorMsg = `Error: ${err instanceof Error ? err.message : "Connection failed"}. Is the MLX server running?`;
-      const finalMessages = [...newMessages, { role: "assistant" as const, content: errorMsg }];
+      const msg = err instanceof Error ? err.message : "Connection failed";
+      const finalMessages = [...newMessages, { role: "assistant" as const, content: msg }];
       setMessages(finalMessages);
       await persistConversation(finalMessages, convId);
     } finally {
