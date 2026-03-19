@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { apiError } from "@/lib/api-utils";
+import { apiError, parseIntParam } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "100", 10);
+    const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 100, 1, 1000);
 
     const { data, error } = await supabase
       .from("conversations")

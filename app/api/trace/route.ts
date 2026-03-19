@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trace, explain } from "@/lib/clude";
-import { apiError } from "@/lib/api-utils";
+import { apiError, parseIntParam } from "@/lib/api-utils";
 
 export async function GET(req: NextRequest) {
   try {
-    const memoryId = parseInt(req.nextUrl.searchParams.get("memoryId") ?? "", 10);
+    const memoryId = parseIntParam(req.nextUrl.searchParams.get("memoryId"), NaN, 1);
     if (isNaN(memoryId)) {
       return apiError("memoryId required");
     }
-    const maxDepth = parseInt(req.nextUrl.searchParams.get("maxDepth") ?? "3", 10);
+    const maxDepth = parseIntParam(req.nextUrl.searchParams.get("maxDepth"), 3, 1, 10);
 
     const result = await trace(memoryId, maxDepth);
     if (!result) {

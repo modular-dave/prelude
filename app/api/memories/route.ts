@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { recallMemories, getStats, storeMemory } from "@/lib/clude";
-import { apiError } from "@/lib/api-utils";
+import { apiError, parseIntParam } from "@/lib/api-utils";
 
 function supabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
@@ -9,7 +9,7 @@ function supabase() {
 
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q") ?? "";
-  const limit = Math.min(Math.max(parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10) || 20, 1), 1000);
+  const limit = parseIntParam(req.nextUrl.searchParams.get("limit"), 20, 1, 1000);
 
   try {
     if (query === "__stats__") {
