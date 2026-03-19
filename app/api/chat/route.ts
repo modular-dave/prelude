@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
             content: fullText,
             conversationId,
             linkToIds: userMemId ? [userMemId] : undefined,
-          }).catch(() => {});
+          }).catch(() => { /* memory storage failure is non-fatal — stream already delivered */ });
         }
       },
     });

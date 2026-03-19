@@ -214,7 +214,7 @@ export function ChatPanel() {
               updateConversation(convId, { summary }).then(() => refreshConversations());
             }
           })
-          .catch(() => {});
+          .catch(() => { /* summary generation is best-effort — non-fatal */ });
       }
 
       refresh();
