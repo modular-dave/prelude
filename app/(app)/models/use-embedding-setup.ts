@@ -6,6 +6,7 @@ import {
   EMB_HOSTED,
   EMB_TYPES,
 } from "./_types";
+import { PORTS } from "@/lib/provider-registry";
 import type { EmbType, EmbeddingConfig } from "./_types";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -68,6 +69,8 @@ export interface EmbeddingSetupState {
   handleEmbCancel: (providerId: string, modelId: string) => void;
   handleEmbSaveKey: (providerId: string) => Promise<void>;
   getEmbTypeTags: (providerId: string, modelId: string) => EmbType[];
+  embMigrating: boolean;
+  embMigrationProgress: { phase: string; done?: number; total?: number; percent?: number } | null;
   handleEmbTypeSelect: (
     providerId: string,
     modelId: string,
@@ -88,7 +91,7 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
   const [embApiKeys, setEmbApiKeys] = useState<Record<string, string>>({});
   const [embKeySaving, setEmbKeySaving] = useState<string | null>(null);
   const [embModel, setEmbModel] = useState("sentence-transformers/all-MiniLM-L6-v2");
-  const [embPort, setEmbPort] = useState("11435");
+  const [embPort, setEmbPort] = useState(String(PORTS.mlxEmbedding));
   const [embRunning, setEmbRunning] = useState(false);
   const [embDims, setEmbDims] = useState<number | null>(null);
   const [embLoadingModels, setEmbLoadingModels] = useState<Set<string>>(new Set());
@@ -105,12 +108,16 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
     Record<EmbType, SlotHealth | null>
   >({ test: null, publish: null });
 
+  // Migration
+  const [embMigrating, setEmbMigrating] = useState(false);
+  const [embMigrationProgress, setEmbMigrationProgress] = useState<{ phase: string; done?: number; total?: number; percent?: number } | null>(null);
+
   // ── Helpers ──
 
   const resolveProvider = (baseUrl: string | null): string | null => {
     if (!baseUrl) return null;
-    if (baseUrl.includes(":11435")) return "mlx";
-    if (baseUrl.includes(":11434")) return "ollama";
+    if (baseUrl.includes(`:${PORTS.mlxEmbedding}`)) return "mlx";
+    if (baseUrl.includes(`:${PORTS.ollama}`)) return "ollama";
     if (baseUrl.includes("openai.com")) return "openai";
     if (baseUrl.includes("voyageai.com")) return "voyage";
     return null;
@@ -244,7 +251,7 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
   const activeEmbProvider = (() => {
     const url = embConfig?.embedding?.baseUrl || "";
     if (embRunning) return "mlx";
-    if (url.includes(":11434")) return "ollama";
+    if (url.includes(`:${PORTS.ollama}`)) return "ollama";
     if (url.includes("openai.com")) return "openai";
     if (url.includes("voyageai.com")) return "voyage";
     return null;
@@ -398,6 +405,59 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
         }));
       }
       setEmbResult({ ok: true, provider: providerId });
+
+      // ── Step 5: Check if dimension migration is needed ──
+      try {
+        const checkRes = await fetch("/api/cortex/embedding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "migrate-check", dimensions: dims }),
+        });
+        const check = await checkRes.json();
+
+        if (check.dimensionMismatch) {
+          setEmbMigrating(true);
+          setEmbMigrationProgress(null);
+
+          const migrateRes = await fetch("/api/cortex/embedding", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "migrate-execute",
+              dimensions: dims,
+              embeddingBaseUrl: baseUrl,
+              embeddingModel: modelId,
+              embeddingApiKey: apiKey || "local",
+            }),
+          });
+
+          if (migrateRes.body) {
+            const reader = migrateRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, { stream: true });
+              const lines = buf.split("\n");
+              buf = lines.pop() || "";
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                try {
+                  const ev = JSON.parse(line.slice(6));
+                  setEmbMigrationProgress(ev);
+                } catch { /* skip */ }
+              }
+            }
+          }
+          setEmbMigrating(false);
+          setEmbMigrationProgress(null);
+        }
+      } catch (e) {
+        console.warn("[models] Embedding migration failed:", e);
+        setEmbMigrating(false);
+      }
+
       await refreshEmbeddingConfig();
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") {
@@ -506,5 +566,7 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
     handleEmbSaveKey,
     getEmbTypeTags,
     handleEmbTypeSelect,
+    embMigrating,
+    embMigrationProgress,
   };
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resetCortex, activateEmbeddingSlot } from "@/lib/cortex";
 import { persistEnv, removeEnv } from "@/lib/env-persist";
+import { PORTS } from "@/lib/provider-registry";
 import {
   startEmbeddingServer,
   spawnEmbeddingServer,
@@ -11,14 +12,87 @@ import {
   testEmbedding,
   testEmbeddingEndpoint,
 } from "@/lib/embedding-server";
+import {
+  checkMigration,
+  migrateSchema,
+  reembedBatch,
+  type MigrationProgress,
+} from "@/lib/embedding-migration";
 
 export async function POST(req: Request) {
   const body = await req.json();
   const { action, model, port } = body as {
-    action: "test" | "save" | "start" | "stop" | "status" | "disconnect" | "verify" | "health" | "spawn" | "poll" | "save-key" | "delete-key";
+    action: "test" | "save" | "start" | "stop" | "status" | "disconnect" | "verify" | "health" | "spawn" | "poll" | "save-key" | "delete-key" | "migrate-check" | "migrate-execute";
     model?: string;
     port?: number;
   };
+
+  // ── Migration check ──────────────────────────────────────────
+  if (action === "migrate-check") {
+    const { dimensions } = body as { dimensions: number };
+    if (!dimensions || dimensions < 1) {
+      return NextResponse.json({ error: "dimensions required" }, { status: 400 });
+    }
+    try {
+      const result = await checkMigration(dimensions);
+      return NextResponse.json(result);
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "check failed" }, { status: 500 });
+    }
+  }
+
+  // ── Migration execute (SSE streaming) ────────────────────────
+  if (action === "migrate-execute") {
+    const { dimensions, embeddingBaseUrl, embeddingModel, embeddingApiKey } = body as {
+      dimensions: number;
+      embeddingBaseUrl: string;
+      embeddingModel: string;
+      embeddingApiKey: string;
+    };
+
+    if (!dimensions || !embeddingBaseUrl || !embeddingModel) {
+      return NextResponse.json({ error: "dimensions, embeddingBaseUrl, embeddingModel required" }, { status: 400 });
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: MigrationProgress) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        };
+
+        try {
+          // Schema migration (includes clearing old embeddings)
+          const schemaResult = await migrateSchema(dimensions, send);
+          if (!schemaResult.ok) {
+            send({ phase: "error", error: schemaResult.error });
+            controller.close();
+            return;
+          }
+
+          // Re-embed existing memories
+          await reembedBatch({
+            embeddingBaseUrl,
+            embeddingModel,
+            embeddingApiKey: embeddingApiKey || "local",
+            onProgress: send,
+          });
+        } catch (e) {
+          send({ phase: "error", error: e instanceof Error ? e.message : "migration failed" });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }
 
   // Save/delete a hosted provider API key
   if (action === "save-key") {
@@ -57,7 +131,7 @@ export async function POST(req: Request) {
 
   // Non-blocking spawn + poll for progress
   if (action === "spawn") {
-    const p = port ?? 11435;
+    const p = port ?? PORTS.mlxEmbedding;
     const running = await isEmbeddingServerRunning(p);
     if (running) {
       const status = await getEmbeddingStatus(p);
@@ -71,7 +145,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "poll") {
-    const p = port ?? 11435;
+    const p = port ?? PORTS.mlxEmbedding;
     const running = await isEmbeddingServerRunning(p);
     if (running) {
       const status = await getEmbeddingStatus(p);
@@ -148,7 +222,7 @@ export async function POST(req: Request) {
       dimensions?: number;
       slot?: "test" | "publish";
     };
-    const p = port ?? 11435;
+    const p = port ?? PORTS.mlxEmbedding;
     const prov = embProvider || "openai";
     const bUrl = baseUrl || `http://127.0.0.1:${p}/v1`;
     const aKey = apiKey || process.env[`EMBEDDING_${prov.toUpperCase()}_API_KEY`] || "local";

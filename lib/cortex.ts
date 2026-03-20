@@ -1,5 +1,6 @@
 import { Cortex } from "clude-bot";
 import { loadEngineConfig, applyEngineConfigToSDK } from "./engine-config";
+import { resolveBaseUrl } from "./provider-registry";
 
 let brain: Cortex | null = null;
 let initialized = false;
@@ -163,8 +164,10 @@ function patchEmbeddingsForCustomEndpoint(baseUrl: string): void {
 /** Resolve the inference URL based on provider assignment */
 function resolveInferenceUrl(): string | null {
   const provider = process.env.INFERENCE_CHAT_PROVIDER;
-  if (provider === "mlx") return "http://127.0.0.1:8899/v1";
-  if (provider === "ollama") return "http://127.0.0.1:11434/v1";
+  if (provider) {
+    const url = resolveBaseUrl(provider, "inference");
+    if (url) return url;
+  }
   return process.env.VENICE_BASE_URL || null;
 }
 

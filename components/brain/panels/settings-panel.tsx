@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { loadSystemPrompt, saveSystemPrompt } from "@/lib/system-prompt";
-import { modelDisplayName } from "@/lib/model-settings";
+import { modelDisplayName } from "@/lib/model-display";
 
 export function SettingsPanel({
   onNavigate,

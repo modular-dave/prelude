@@ -1,8 +1,9 @@
 import { execSync, spawn } from "child_process";
+import { PORTS } from "@/lib/provider-registry";
 
 const PYTHON = "/Users/dav/.pyenv/versions/lewagon/bin/python";
 const MLX_SERVER = "/Users/dav/.pyenv/versions/lewagon/bin/mlx_lm.server";
-const PORT = 8899;
+const PORT = PORTS.mlxInference;
 const LLM_BASE = `http://127.0.0.1:${PORT}`;
 
 /** Check if mlx_lm is installed */

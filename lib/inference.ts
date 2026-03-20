@@ -1,6 +1,7 @@
 import { getActiveModel, getAssignment } from "@/lib/active-model-store";
 import { loadEngineConfig } from "@/lib/engine-config";
 import { recordMeterEvent } from "@/lib/cortex";
+import { resolveBaseUrl, PROVIDER_URLS } from "@/lib/provider-registry";
 
 const DEFAULT_MODEL = process.env.VENICE_MODEL || process.env.LLM_MODEL || "phi3:mini";
 
@@ -14,11 +15,12 @@ export interface ChatMessage {
 /** Resolve LLM base URL based on provider assignment */
 function resolveLLMBase(cogFunc: "chat" | "dream" | "reflect" = "chat"): string {
   const assignment = getAssignment(cogFunc as "chat" | "dream" | "reflect");
-  if (assignment?.provider === "mlx") return "http://127.0.0.1:8899/v1";
-  if (assignment?.provider === "ollama") return "http://127.0.0.1:11434/v1";
+  if (assignment?.provider) {
+    const url = resolveBaseUrl(assignment.provider, "inference");
+    if (url) return url;
+  }
   // Fallback to env (for hosted providers like Venice/OpenRouter)
-  const base = process.env.VENICE_BASE_URL || process.env.LLM_BASE_URL || "http://127.0.0.1:11434/v1";
-  // Ensure it ends with /v1
+  const base = process.env.VENICE_BASE_URL || process.env.LLM_BASE_URL || PROVIDER_URLS.ollama.inference;
   return base.endsWith("/v1") ? base : `${base}/v1`;
 }
 

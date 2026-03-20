@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ImportOverlay } from "@/components/shell/import-overlay";
 import { loadPromptConfig, savePromptConfig, previewPrompt, type PromptConfig } from "@/lib/prompt-builder";
 import { loadEngineConfig, saveEngineConfig, resetEngineConfig, DEFAULT_ENGINE_CONFIG, type EngineConfig } from "@/lib/engine-config";
-import { modelDisplayName } from "@/lib/model-settings";
+import { modelDisplayName } from "@/lib/model-display";
 import { RotateCcw } from "lucide-react";
 
 // ── Slider component ──

@@ -13,7 +13,6 @@ import {
   clearAllConversations,
   generateTitle,
 } from "@/lib/chat-store";
-import { getActiveModel } from "@/lib/model-settings";
 import { loadPromptConfig, assembleSystemPrompt } from "@/lib/prompt-builder";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
 

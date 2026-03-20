@@ -9,9 +9,18 @@ import {
 } from "./_types";
 import type { EmbType } from "./_types";
 import { useEmbeddingSetup } from "./use-embedding-setup";
+import { usePlatform } from "@/lib/hooks/use-platform";
 
 export function EmbeddingSection() {
   const emb = useEmbeddingSetup();
+  const { capabilities } = usePlatform();
+
+  const localProviders = capabilities
+    ? (capabilities.isMobile ? [] : EMB_LOCAL.filter((p) => !p.guard || p.guard(capabilities)))
+    : EMB_LOCAL;
+  const hostedProviders = capabilities
+    ? EMB_HOSTED.filter((p) => !p.guard || p.guard(capabilities))
+    : EMB_HOSTED;
 
   return (
     <>
@@ -61,7 +70,7 @@ export function EmbeddingSection() {
               <div className="flex items-center gap-2 px-1">
                 <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Local</span>
               </div>
-              {EMB_LOCAL.map((prov) => (
+              {localProviders.map((prov) => (
                 <EmbProviderCard key={prov.id} prov={prov} emb={emb} variant="local" />
               ))}
             </div>
@@ -71,7 +80,7 @@ export function EmbeddingSection() {
               <div className="flex items-center gap-2 px-1">
                 <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Hosted</span>
               </div>
-              {EMB_HOSTED.map((prov) => (
+              {hostedProviders.map((prov) => (
                 <EmbProviderCard key={prov.id} prov={prov} emb={emb} variant="hosted" />
               ))}
             </div>

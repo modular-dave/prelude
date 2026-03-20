@@ -1,4 +1,6 @@
 import type { CogFunc } from "@/lib/active-model-store";
+import type { PlatformCapabilities } from "@/lib/detect-platform";
+import { PROVIDER_URLS } from "@/lib/provider-registry";
 
 // ── Provider Definitions ────────────────────────────────────────
 
@@ -9,6 +11,8 @@ export interface ProviderDef {
   url: string;
   envVars: { key: string; label: string; required: boolean; placeholder: string }[];
   models: { id: string; name: string; description: string; size?: string; ram?: string }[];
+  /** Return false to hide this provider given current platform capabilities */
+  guard?: (caps: PlatformCapabilities) => boolean;
 }
 
 export const LOCAL_PROVIDERS: ProviderDef[] = [
@@ -37,6 +41,7 @@ export const LOCAL_PROVIDERS: ProviderDef[] = [
     name: "MLX (Apple Silicon)",
     description: "Native Apple Silicon inference via mlx-lm. macOS only, fastest on M-series chips.",
     url: "https://github.com/ml-explore/mlx-lm",
+    guard: (caps) => caps.canRunMLX,
     envVars: [
       { key: "VENICE_BASE_URL", label: "Base URL", required: true, placeholder: "http://127.0.0.1:8080/v1" },
       { key: "VENICE_API_KEY", label: "API Key", required: false, placeholder: "local" },
@@ -148,6 +153,8 @@ export interface EmbProvider {
   url?: string;
   baseUrl: string;
   models: EmbModel[];
+  /** Return false to hide this provider given current platform capabilities */
+  guard?: (caps: PlatformCapabilities) => boolean;
 }
 
 export interface EmbeddingConfig {
@@ -170,7 +177,8 @@ export const EMB_LOCAL: EmbProvider[] = [
     id: "ollama",
     name: "Ollama (Windows, Linux)",
     desc: "Uses Ollama server (shared with inference)",
-    baseUrl: "http://127.0.0.1:11434/v1",
+    guard: (caps) => !caps.ollamaEmbeddingBroken,
+    baseUrl: PROVIDER_URLS.ollama.embedding,
     models: [
       { id: "nomic-embed-text", name: "nomic-embed-text", dims: 768, size: "274 MB", desc: "Best overall ︱ 0.3 GB RAM" },
       { id: "mxbai-embed-large", name: "mxbai-embed-large", dims: 1024, size: "670 MB", desc: "High quality, large ︱ 0.7 GB RAM" },
@@ -182,7 +190,8 @@ export const EMB_LOCAL: EmbProvider[] = [
     id: "mlx",
     name: "MLX (Apple Silicon)",
     desc: "Dedicated server via mlx_embeddings",
-    baseUrl: "http://127.0.0.1:11435/v1",
+    guard: (caps) => caps.canRunMLX,
+    baseUrl: PROVIDER_URLS.mlx.embedding,
     models: [
       { id: "sentence-transformers/all-MiniLM-L6-v2", name: "all-MiniLM-L6-v2", dims: 384, size: "91 MB", desc: "Fast, best for general use ︱ 0.1 GB RAM" },
       { id: "nomic-ai/nomic-embed-text-v1.5", name: "nomic-embed-text-v1.5", dims: 768, size: "548 MB", desc: "High quality, Matryoshka ︱ 0.5 GB RAM" },
