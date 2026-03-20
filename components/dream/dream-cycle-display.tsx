@@ -247,12 +247,20 @@ export function DreamCycleDisplay() {
         </div>
       )}
 
-      {/* Stats summary */}
+      {/* Stats summary + model provenance */}
       {dream.result && (
         <div className="flex items-center gap-6 font-mono">
           <Stat label="Phases" value={dream.result.stats.totalPhases} />
           <Stat label="Memories analyzed" value={dream.result.stats.totalInputMemories} />
           <Stat label="Memories created" value={dream.result.stats.totalNewMemories} />
+          {(dream.result as any).model && (
+            <div>
+              <p style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                Model: {(dream.result as any).model}
+                {(dream.result as any).provider && ` (${(dream.result as any).provider})`}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

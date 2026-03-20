@@ -6,11 +6,12 @@ import { Settings } from "lucide-react";
 import { SettingsSheet } from "@/components/shell/settings-sheet";
 import { Logo } from "@/components/ui/logo";
 
-type Route = "chat" | "brain" | "dreams" | "journal" | "history" | "stats";
+type Route = "chat" | "brain" | "dreams" | "journal" | "packs" | "history" | "stats";
 
 const NAV_ITEMS: { label: string; href: string; route: Route }[] = [
   { label: "journal", href: "/journal", route: "journal" },
   { label: "dreams", href: "/dreams", route: "dreams" },
+  { label: "packs", href: "/packs", route: "packs" },
 ];
 
 export function FloatNav({ route, onSettingsClick }: { route: Route; onSettingsClick?: () => void }) {

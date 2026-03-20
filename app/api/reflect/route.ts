@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reflect, getStats, startReflectionSchedule, stopReflectionSchedule } from "@/lib/clude";
 import { getAssignment } from "@/lib/active-model-store";
-import { swapVeniceModel } from "@/lib/cortex";
+import { swapVeniceModel, recordMeterEvent } from "@/lib/cortex";
 import { supabase } from "@/lib/supabase";
 import { apiError } from "@/lib/api-utils";
-
-const MIN_MEMORIES_FOR_REFLECTION = 5;
+import { loadEngineConfig } from "@/lib/engine-config";
 
 /** Generate a short title for a reflection via inference */
 async function summarizeTitle(text: string): Promise<string | null> {
@@ -63,18 +62,24 @@ export async function POST(req: NextRequest) {
     }
 
     // Pre-check: need enough memories to reflect on
+    const config = loadEngineConfig();
+    const minMemories = config.reflectionMinMemories;
     const stats = await getStats();
     const total = stats.total ?? 0;
-    if (total < MIN_MEMORIES_FOR_REFLECTION) {
-      return apiError(`Need at least ${MIN_MEMORIES_FOR_REFLECTION} memories to reflect (currently ${total}). Have some conversations first.`);
+    if (total < minMemories) {
+      return apiError(`Need at least ${minMemories} memories to reflect (currently ${total}). Have some conversations first.`);
     }
 
     // Swap to reflect-assigned model if configured
     const reflectAssign = getAssignment("reflect");
+    const reflectModel = reflectAssign?.model || null;
+    const reflectProvider = reflectAssign?.provider || process.env.INFERENCE_CHAT_PROVIDER || "auto";
     if (reflectAssign) swapVeniceModel(reflectAssign.model);
 
+    recordMeterEvent("reflect", { provider: reflectProvider, model: reflectModel || undefined });
+
     // Default: run a single reflection session
-    const journal = await reflect() as { text?: string; title?: string; memoryId?: number | null; [k: string]: unknown } | null;
+    const journal = await reflect() as { text?: string; title?: string; memoryId?: number | null; seedMemoryIds?: number[]; [k: string]: unknown } | null;
     if (!journal) {
       return apiError("Reflection produced no output. The system found too few qualifying seed memories. Try having more varied conversations first.");
     }
@@ -93,7 +98,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, journal });
+    return NextResponse.json({
+      success: true,
+      journal,
+      // Model provenance
+      model: reflectModel,
+      provider: reflectProvider,
+    });
   } catch (err) {
     return apiError(String(err), 500);
   }

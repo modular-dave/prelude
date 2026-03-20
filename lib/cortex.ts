@@ -1,7 +1,45 @@
 import { Cortex } from "clude-bot";
+import { loadEngineConfig, applyEngineConfigToSDK } from "./engine-config";
 
 let brain: Cortex | null = null;
 let initialized = false;
+
+// ── Metering buffer (CortexV2-style event collection) ──
+const meterBuffer: Array<{ operation: string; tokens?: number; provider?: string; model?: string; timestamp: string }> = [];
+
+export function getMeterLog() { return [...meterBuffer]; }
+export function getMeterSummary(): Record<string, number> {
+  const summary: Record<string, number> = {};
+  for (const evt of meterBuffer) {
+    summary[evt.operation] = (summary[evt.operation] || 0) + 1;
+  }
+  return summary;
+}
+export function recordMeterEvent(operation: string, extra?: { tokens?: number; provider?: string; model?: string }) {
+  meterBuffer.push({ operation, ...extra, timestamp: new Date().toISOString() });
+  // Cap buffer size
+  if (meterBuffer.length > 10000) meterBuffer.splice(0, meterBuffer.length - 5000);
+}
+
+// ── Privacy policy (persisted via engine config API) ──
+let privacyPolicy = {
+  defaultVisibility: "private" as "private" | "shared" | "public",
+  alwaysPrivateTypes: ["self_model"],
+  veniceOnly: false,
+  encryptAtRest: false,
+};
+
+export function getPrivacyPolicy() { return { ...privacyPolicy }; }
+export function setPrivacyPolicy(policy: typeof privacyPolicy) { privacyPolicy = { ...policy }; }
+
+// ── Cognitive routing (function → model mapping) ──
+let cognitiveRoutes: Record<string, { provider: string; model: string }> = {};
+
+export function getCognitiveRoutes() { return { ...cognitiveRoutes }; }
+export function setCognitiveRoute(fn: string, route: { provider: string; model: string }) {
+  cognitiveRoutes[fn] = route;
+}
+export function resetCognitiveRoutes() { cognitiveRoutes = {}; }
 
 /** Reset the Cortex singleton so the next ensureCortex() re-inits with fresh env. */
 export function resetCortex(): void {
@@ -178,6 +216,10 @@ export async function ensureCortex(): Promise<Cortex> {
     if (isCustomEmbeddingEndpoint && process.env.EMBEDDING_PROVIDER) {
       patchEmbeddingsForCustomEndpoint(embBaseUrl!);
     }
+
+    // Apply engine config to SDK constants
+    const config = loadEngineConfig();
+    applyEngineConfigToSDK(config);
   }
   if (!initialized) {
     await brain.init();

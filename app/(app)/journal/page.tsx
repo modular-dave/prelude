@@ -32,6 +32,8 @@ interface ReflectionJournal {
   timestamp: string;
   seedMemoryIds?: number[];
   memoryId?: number | null;
+  model?: string | null;
+  provider?: string | null;
 }
 
 export default function JournalPage() {
@@ -62,6 +64,8 @@ export default function JournalPage() {
           timestamp: new Date().toISOString(),
           seedMemoryIds: data.journal?.seedMemoryIds || data.seedMemoryIds,
           memoryId: data.journal?.memoryId || data.memoryId,
+          model: data.model || null,
+          provider: data.provider || null,
         });
       }
     } catch (err) {
@@ -254,16 +258,23 @@ function JournalEntry({ journal, isNew }: { journal: ReflectionJournal; isNew?: 
         </span>
       </div>
       <Md text={journal.text} className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }} />
-      {journal.seedMemoryIds && journal.seedMemoryIds.length > 0 && (
-        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-          <span className="t-micro" style={{ color: "var(--text-faint)" }}>seeds︱</span>
-          {journal.seedMemoryIds.map((id) => (
-            <span key={id} className="t-micro" style={{ color: "var(--text-faint)" }}>
-              #{id}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        {journal.seedMemoryIds && journal.seedMemoryIds.length > 0 && (
+          <>
+            <span className="t-micro" style={{ color: "var(--text-faint)" }}>seeds︱</span>
+            {journal.seedMemoryIds.map((id) => (
+              <span key={id} className="t-micro" style={{ color: "var(--text-faint)" }}>
+                #{id}
+              </span>
+            ))}
+          </>
+        )}
+        {journal.model && (
+          <span className="t-micro" style={{ color: "var(--text-faint)" }}>
+            model: {journal.model}{journal.provider ? ` (${journal.provider})` : ""}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

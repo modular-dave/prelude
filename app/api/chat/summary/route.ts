@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chat, type ChatMessage } from "@/lib/ollama";
+import { chat, type ChatMessage } from "@/lib/inference";
 
 export async function POST(req: NextRequest) {
   const { messages } = (await req.json()) as { messages: ChatMessage[] };
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   ];
 
   try {
-    const summary = await chat(prompt);
+    const summary = await chat(prompt, { cogFunc: "summarize" });
     // Clean up: take first line, remove quotes/punctuation, limit length
     const cleaned = summary
       .split("\n")[0]

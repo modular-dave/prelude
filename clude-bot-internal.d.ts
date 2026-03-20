@@ -204,3 +204,169 @@ declare module "clude-bot/dist/core/database" {
   }
   export function getDb(): SupabaseClient;
 }
+
+// ── CortexV2 SDK ──
+
+declare module "clude-bot/dist/sdk/cortex-v2" {
+  export interface CortexV2Options {
+    supabase: { url: string; serviceKey: string };
+    anthropic?: { apiKey: string; model: string };
+    embedding?: { provider: string; apiKey: string; model?: string; dimensions?: number };
+    ownerWallet?: string;
+    router?: {
+      routes: Record<string, { provider: string; model: string }>;
+      fallback: { provider: string; model: string };
+    };
+    privacy?: PrivacyPolicy;
+    onMeter?: (event: MeterEvent) => void;
+  }
+
+  export interface PrivacyPolicy {
+    defaultVisibility: "private" | "shared" | "public";
+    alwaysPrivateTypes: string[];
+    veniceOnly: boolean;
+    encryptAtRest: boolean;
+  }
+
+  export interface MeterEvent {
+    operation: string;
+    tokens?: number;
+    provider?: string;
+    model?: string;
+    timestamp: string;
+  }
+
+  export class CortexV2 {
+    constructor(opts: CortexV2Options);
+    init(): Promise<void>;
+    store(opts: any): Promise<number | null>;
+    recall(opts: any): Promise<any[]>;
+    recallSummaries(opts: any): Promise<any[]>;
+    hydrate(ids: number[]): Promise<any[]>;
+    recent(hours: number, types?: string[], limit?: number): Promise<any[]>;
+    selfModel(): Promise<any[]>;
+    stats(): Promise<any>;
+    scoreImportance(description: string): Promise<number>;
+    formatContext(memories: any[]): Promise<string>;
+    inferConcepts(summary: string, source: string, tags: string[]): Promise<string[]>;
+    link(sourceId: number, targetId: number, type: string, strength?: number): Promise<any>;
+    decay(): Promise<number>;
+    dream(opts?: any): Promise<any>;
+    startDreamSchedule(): void;
+    stopDreamSchedule(): void;
+    reflect(opts?: any): Promise<any>;
+    startReflectionSchedule(): void;
+    stopReflectionSchedule(): void;
+    verifyOnChain(memoryId: number): Promise<boolean>;
+    on(event: string, handler: (...args: any[]) => void): void;
+    // CortexV2-specific
+    getRouter(): Record<string, { provider: string; model: string }>;
+    setRoute(fn: string, route: { provider: string; model: string }): void;
+    getPrivacy(): PrivacyPolicy;
+    setPrivacy(policy: PrivacyPolicy): void;
+    exportPack(opts?: any): Promise<any>;
+    importPack(pack: any, opts?: any): Promise<any>;
+    getMeterLog(): MeterEvent[];
+    getMeterSummary(): Record<string, number>;
+  }
+}
+
+// ── Core Inference ──
+
+declare module "clude-bot/dist/core/inference" {
+  export function generate(prompt: string, opts?: any): Promise<string>;
+  export function ask(messages: any[], opts?: any): Promise<string>;
+  export function configureInference(opts: {
+    primary?: string;
+    fallback?: string;
+    maxTokens?: number;
+  }): void;
+}
+
+// ── Core Guardrails ──
+
+declare module "clude-bot/dist/core/guardrails" {
+  export interface GuardrailResult {
+    safe: boolean;
+    reason?: string;
+    filtered?: string;
+  }
+  export function checkOutput(text: string): GuardrailResult;
+  export function sanitizeOutput(text: string): string;
+}
+
+// ── Core Input Guardrails ──
+
+declare module "clude-bot/dist/core/input-guardrails" {
+  export interface InputGuardrailResult {
+    safe: boolean;
+    reason?: string;
+    spoofResponse?: string;
+  }
+  export function checkInput(text: string): InputGuardrailResult;
+  export function getCASpoofResponse(text: string): string | null;
+}
+
+// ── Core Venice Client ──
+
+declare module "clude-bot/dist/core/venice-client" {
+  export function initVenice(opts: { apiKey: string; model: string }): void;
+  export function getModelForFunction(fn: string): string | null;
+  export function isVeniceEnabled(): boolean;
+  export function getVeniceStats(): {
+    totalCalls: number;
+    totalTokens: number;
+    byFunction: Record<string, { calls: number; tokens: number }>;
+  };
+  export function generateVeniceResponseWithSearch(
+    messages: any[],
+    opts?: { query?: string; maxTokens?: number }
+  ): Promise<{ content: string; citations: string[] }>;
+}
+
+// ── Core Embeddings ──
+
+declare module "clude-bot/dist/core/embeddings" {
+  export function isEmbeddingEnabled(): boolean;
+  export function generateEmbedding(text: string): Promise<number[] | null>;
+  export function generateQueryEmbedding(text: string): Promise<number[] | null>;
+  export function generateEmbeddings(texts: string[]): Promise<(number[] | null)[]>;
+  export function getCachedEmbedding(text: string): number[] | null;
+  export function setCachedEmbedding(text: string, embedding: number[]): void;
+}
+
+// ── Core Encryption ──
+
+declare module "clude-bot/dist/core/encryption" {
+  export function encrypt(plaintext: string): string;
+  export function decrypt(ciphertext: string): string;
+  export function isEncryptionEnabled(): boolean;
+}
+
+// ── Utils Constants ──
+
+declare module "clude-bot/dist/utils/constants" {
+  export let RETRIEVAL_WEIGHT_RECENCY: number;
+  export let RETRIEVAL_WEIGHT_RELEVANCE: number;
+  export let RETRIEVAL_WEIGHT_IMPORTANCE: number;
+  export let RETRIEVAL_WEIGHT_VECTOR: number;
+  export let RETRIEVAL_WEIGHT_GRAPH: number;
+  export let RETRIEVAL_WEIGHT_COOCCURRENCE: number;
+  export let RECENCY_DECAY_BASE: number;
+  export let VECTOR_MATCH_THRESHOLD: number;
+  export let LINK_SIMILARITY_THRESHOLD: number;
+  export let MAX_AUTO_LINKS: number;
+  export let LINK_CO_RETRIEVAL_BOOST: number;
+}
+
+// ── Features: Dream Cycle ──
+
+declare module "clude-bot/dist/features/dream-cycle" {
+  export function runDreamCycle(opts?: any): Promise<any>;
+}
+
+// ── Features: Active Reflection ──
+
+declare module "clude-bot/dist/features/active-reflection" {
+  export function runReflection(opts?: any): Promise<any>;
+}
