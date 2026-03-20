@@ -8,12 +8,12 @@ const guardrailStats = {
   reasons: {} as Record<string, number>,
 };
 
-export function recordInputBlock(reason: string) {
+function recordInputBlock(reason: string) {
   guardrailStats.inputBlocked++;
   guardrailStats.reasons[reason] = (guardrailStats.reasons[reason] || 0) + 1;
 }
 
-export function recordOutputBlock(reason: string) {
+function recordOutputBlock(reason: string) {
   guardrailStats.outputBlocked++;
   guardrailStats.reasons[reason] = (guardrailStats.reasons[reason] || 0) + 1;
 }

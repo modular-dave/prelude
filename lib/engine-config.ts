@@ -170,7 +170,7 @@ export function loadEngineConfig(): EngineConfig {
     }
     const parsed = JSON.parse(raw);
     cachedConfig = deepMerge(DEFAULT_ENGINE_CONFIG, parsed);
-    return cachedConfig;
+    return cachedConfig!;
   } catch {
     cachedConfig = { ...DEFAULT_ENGINE_CONFIG };
     return cachedConfig;
