@@ -1,16 +1,17 @@
 """
-Lightweight MLX-LM inference server with Ollama-compatible API.
+Lightweight MLX-LM inference server with OpenAI-compatible + Ollama-compatible APIs.
 Runs on Apple Silicon natively via MLX.
 """
 import json
 import sys
 import time
+import uuid
 from flask import Flask, request, Response, jsonify
 from mlx_lm import load, generate, stream_generate
 
 app = Flask(__name__)
 
-MODEL_NAME = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+MODEL_NAME = sys.argv[2] if len(sys.argv) > 2 else "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
 print(f"Loading model: {MODEL_NAME}...")
 model, tokenizer = load(MODEL_NAME)
 print("Model loaded!")
@@ -31,6 +32,64 @@ def build_prompt(messages: list[dict]) -> str:
     parts.append("<|assistant|>\n")
     return "\n".join(parts)
 
+
+# ── OpenAI-compatible endpoints ──────────────────────────────────
+
+@app.route("/v1/chat/completions", methods=["POST"])
+def openai_chat():
+    data = request.json
+    messages = data.get("messages", [])
+    stream = data.get("stream", False)
+    max_tokens = data.get("max_tokens", 512)
+    prompt = build_prompt(messages)
+    req_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+
+    if stream:
+        def generate_stream():
+            for response in stream_generate(model, tokenizer, prompt, max_tokens=max_tokens):
+                chunk = {
+                    "id": req_id,
+                    "object": "chat.completion.chunk",
+                    "model": MODEL_NAME,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": response.text},
+                        "finish_reason": None,
+                    }],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+            # Final chunk
+            yield f"data: {json.dumps({'id': req_id, 'object': 'chat.completion.chunk', 'model': MODEL_NAME, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return Response(generate_stream(), mimetype="text/event-stream")
+    else:
+        result = generate(model, tokenizer, prompt, max_tokens=max_tokens, verbose=False)
+        return jsonify({
+            "id": req_id,
+            "object": "chat.completion",
+            "model": MODEL_NAME,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": result},
+                "finish_reason": "stop",
+            }],
+        })
+
+
+@app.route("/v1/models", methods=["GET"])
+def openai_models():
+    return jsonify({
+        "object": "list",
+        "data": [{
+            "id": MODEL_NAME,
+            "object": "model",
+            "owned_by": "local",
+        }],
+    })
+
+
+# ── Ollama-compatible endpoints ──────────────────────────────────
 
 @app.route("/api/chat", methods=["POST"])
 def chat():

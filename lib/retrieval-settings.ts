@@ -1,4 +1,5 @@
 import type { MemoryType } from "./types";
+import { loadEngineConfig, saveEngineConfig } from "./engine-config";
 
 export interface RetrievalSettings {
   recallLimit: number;
@@ -32,24 +33,55 @@ export const DEFAULT_RETRIEVAL_SETTINGS: RetrievalSettings = {
   reflectionScheduleEnabled: false,
 };
 
-const STORAGE_KEY = "prelude:retrieval-settings";
-
+/** Load retrieval settings from unified EngineConfig store */
 export function loadSettings(): RetrievalSettings {
-  if (typeof window === "undefined") return { ...DEFAULT_RETRIEVAL_SETTINGS };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_RETRIEVAL_SETTINGS };
-    return { ...DEFAULT_RETRIEVAL_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULT_RETRIEVAL_SETTINGS };
-  }
+  const ec = loadEngineConfig();
+  return {
+    recallLimit: ec.recallLimit,
+    minImportance: ec.minImportance,
+    minDecay: ec.minDecay,
+    enabledTypes: ec.enabledTypes as MemoryType[],
+    clinamenLimit: ec.clinamenLimit,
+    clinamenMinImportance: ec.clinamenMinImportance,
+    clinamenMaxRelevance: ec.clinamenMaxRelevance,
+    dreamScheduleEnabled: ec.dreamScheduleEnabled,
+    reflectionScheduleEnabled: ec.reflectionScheduleEnabled,
+  };
 }
 
+/** Save retrieval settings to unified EngineConfig store (auto-syncs to API via useEngineConfig) */
 export function saveSettings(s: RetrievalSettings): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {
-    // quota exceeded or private browsing
+  const ec = loadEngineConfig();
+  const updated = {
+    ...ec,
+    recallLimit: s.recallLimit,
+    minImportance: s.minImportance,
+    minDecay: s.minDecay,
+    enabledTypes: s.enabledTypes,
+    clinamenLimit: s.clinamenLimit,
+    clinamenMinImportance: s.clinamenMinImportance,
+    clinamenMaxRelevance: s.clinamenMaxRelevance,
+    dreamScheduleEnabled: s.dreamScheduleEnabled,
+    reflectionScheduleEnabled: s.reflectionScheduleEnabled,
+  };
+  saveEngineConfig(updated);
+
+  // Sync to API
+  if (typeof window !== "undefined") {
+    fetch("/api/cortex/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recallLimit: s.recallLimit,
+        minImportance: s.minImportance,
+        minDecay: s.minDecay,
+        enabledTypes: s.enabledTypes,
+        clinamenLimit: s.clinamenLimit,
+        clinamenMinImportance: s.clinamenMinImportance,
+        clinamenMaxRelevance: s.clinamenMaxRelevance,
+        dreamScheduleEnabled: s.dreamScheduleEnabled,
+        reflectionScheduleEnabled: s.reflectionScheduleEnabled,
+      }),
+    }).catch(() => {});
   }
 }

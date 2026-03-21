@@ -120,7 +120,7 @@ export function memoryContextToRawGraph(
     importance: (e.size || 1) / 10,
     isEntity: true,
     numericId: null,
-    accessCount: 0,
+    accessCount: e.size || 1,
     decayFactor: 1,
   }));
 
@@ -164,6 +164,96 @@ export function memoryContextToRawGraph(
   }
 
   return { nodes, edges: [...linkMap.values()] };
+}
+
+// ── Incremental node injection ──────────────────────────────────────
+// Adds a single new memory to an existing compiled graph without
+// full recompilation. Used for instant feedback after chat messages.
+
+export function injectNode(
+  existing: CompilerOutput,
+  memory: { id: number; summary?: string; memory_type?: string; importance?: number; access_count?: number; decay_factor?: number },
+  typeColors: Record<string, string>,
+): CompilerOutput {
+  const nodeId = `m_${memory.id}`;
+
+  // Already exists — skip
+  if (existing.entities.has(nodeId)) return existing;
+
+  const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+  const R = existing.manifest.bubbleRadius;
+
+  // Position using Fibonacci sphere at index = current raw node count
+  const rawCount = [...existing.entities.values()].filter(e => e.hierarchyLevel === 3).length;
+  const index = rawCount;
+  const total = rawCount + 1;
+  const y = 1 - (2 * index + 1) / total;
+  const theta = Math.acos(Math.max(-1, Math.min(1, y)));
+  const phi = ((GOLDEN_ANGLE * index) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+
+  const importance = memory.importance || 0.5;
+  const rMin = R * 0.15;
+  const rMax = R * 0.85;
+  const r = rMin + importance * (rMax - rMin);
+
+  const sinTheta = Math.sin(theta);
+  const cartesian = {
+    x: r * sinTheta * Math.cos(phi),
+    y: r * Math.cos(theta),
+    z: r * sinTheta * Math.sin(phi),
+  };
+
+  const canonical = { r, theta, phi };
+  const memType = memory.memory_type || "episodic";
+
+  const entity: CanonicalEntity = {
+    id: nodeId,
+    type: memType,
+    parentId: null,
+    childrenIds: [],
+    hierarchyLevel: 3,
+    canonical,
+    cartesian,
+    importance,
+    clusterStats: null,
+    adjacencyChunkRefs: [],
+    pathChunkRefs: [],
+    label: memory.summary?.slice(0, 60) || "memory",
+    color: typeColors[memType] || "#666",
+    nodeCategory: "memory",
+    numericId: memory.id,
+    memoryType: memType,
+    accessCount: memory.access_count ?? 0,
+    decayFactor: memory.decay_factor ?? 1,
+    displayOffsets: null,
+  };
+
+  // Add to entities map
+  existing.entities.set(nodeId, entity);
+
+  // Find the matching spatial tile and add entity
+  let targetTile: SpatialTile | null = null;
+  for (const tile of existing.tiles.values()) {
+    if (tile.level === 3) {
+      targetTile = tile;
+      break;
+    }
+  }
+  if (!targetTile && existing.tiles.size > 0) {
+    targetTile = existing.tiles.values().next().value!;
+  }
+  if (targetTile) {
+    targetTile.entities.push(entity);
+  }
+
+  // Update manifest counts
+  existing.manifest.totalNodes++;
+  existing.manifest.entityIndex[nodeId] = {
+    tileId: targetTile?.id || "",
+    hierarchyLevel: 3,
+  };
+
+  return existing;
 }
 
 // ── Serialization helpers ───────────────────────────────────────────

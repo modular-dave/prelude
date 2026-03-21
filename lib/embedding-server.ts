@@ -1,9 +1,10 @@
 import { execSync, spawn } from "child_process";
 import path from "path";
+import { PORTS } from "@/lib/provider-registry";
 
 const PYTHON = process.env.PYTHON_PATH || "python3";
 const SCRIPT = path.join(process.cwd(), "scripts/embedding-server.py");
-const DEFAULT_PORT = 11435;
+const DEFAULT_PORT: number = PORTS.mlxEmbedding;
 const DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
 
 /** Find PID of embedding server running on our port */

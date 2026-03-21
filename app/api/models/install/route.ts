@@ -6,8 +6,9 @@ import {
   isOllamaRunning,
   startOllamaServer,
 } from "@/lib/ollama-manager";
+import { PORTS } from "@/lib/provider-registry";
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+const OLLAMA_HOST = process.env.OLLAMA_HOST || `http://127.0.0.1:${PORTS.ollama}`;
 
 /**
  * GET /api/models/install?model=X&provider=Y

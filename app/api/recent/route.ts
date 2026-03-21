@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       const to = Math.min(from + PAGE_SIZE - 1, limit - 1);
       let query = supabase
         .from("memories")
-        .select("*")
+        .select("id, content, summary, memory_type, importance, emotional_valence, access_count, decay_factor, tags, source, metadata, created_at, last_accessed")
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .range(from, to);

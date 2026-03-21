@@ -1,11 +1,23 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useMemory } from "@/lib/memory-context";
 import { GitBranch, TrendingUp, Repeat } from "lucide-react";
 import { TYPE_COLORS, TYPE_LABELS } from "@/lib/types";
+import { loadEngineConfig } from "@/lib/engine-config";
 
 export function HebbianPanel() {
   const { memories, knowledgeGraph, graphStats } = useMemory();
+  const [impBoost, setImpBoost] = useState(0.01);
+  const [coRetBoost, setCoRetBoost] = useState(0.05);
+  const [linkThreshold, setLinkThreshold] = useState(0.6);
+
+  useEffect(() => {
+    const config = loadEngineConfig();
+    setImpBoost(config.importanceBoostPerRecall);
+    setCoRetBoost(config.coRetrievalBoost);
+    setLinkThreshold(config.linkSimilarityThreshold);
+  }, []);
 
   // Compute Hebbian stats
   const totalAccesses = memories.reduce(
@@ -15,12 +27,12 @@ export function HebbianPanel() {
   const avgAccess =
     memories.length > 0 ? totalAccesses / memories.length : 0;
 
-  // Importance growth: estimate based on access_count * 0.01 (capped at 1.0)
+  // Importance growth: estimate based on access_count * impBoost (capped at 1.0)
   const memoriesWithGrowth = memories
     .filter((m) => (m.access_count || 0) > 0)
     .map((m) => ({
       ...m,
-      estimatedGrowth: Math.min((m.access_count || 0) * 0.01, 1 - m.importance),
+      estimatedGrowth: Math.min((m.access_count || 0) * impBoost, 1 - m.importance),
     }))
     .sort((a, b) => b.estimatedGrowth - a.estimatedGrowth);
 
@@ -47,19 +59,19 @@ export function HebbianPanel() {
       {/* Reinforcement rules */}
       <div className="mt-4 grid grid-cols-3 gap-2">
         <div className="rounded-[4px] p-3 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="font-mono t-heading text-amber-500">+0.01</p>
+          <p className="font-mono t-heading text-amber-500">+{impBoost}</p>
           <p className="mt-1 t-small" style={{ color: "var(--text-muted)" }}>
             importance per recall
           </p>
         </div>
         <div className="rounded-[4px] p-3 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="font-mono t-heading text-purple-500">+0.05</p>
+          <p className="font-mono t-heading text-purple-500">+{coRetBoost}</p>
           <p className="mt-1 t-small" style={{ color: "var(--text-muted)" }}>
             link strength on co-retrieval
           </p>
         </div>
         <div className="rounded-[4px] p-3 text-center" style={{ background: "var(--surface-dimmer)" }}>
-          <p className="font-mono t-heading text-cyan-500">&ge;0.6</p>
+          <p className="font-mono t-heading text-cyan-500">&ge;{linkThreshold}</p>
           <p className="mt-1 t-small" style={{ color: "var(--text-muted)" }}>
             vector sim auto-link
           </p>

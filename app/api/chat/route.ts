@@ -1,15 +1,45 @@
 import { NextRequest } from "next/server";
-import { streamChat, type ChatMessage } from "@/lib/ollama";
+import { streamChat, searchChat, type ChatMessage } from "@/lib/inference";
 import {
   recallMemories,
   formatContext,
   clinamen,
 } from "@/lib/clude";
 import { processConversationMessage } from "@/lib/memory-pipeline";
+import { recordMeterEvent } from "@/lib/cortex";
+
+// Guardrail helpers — gracefully degrade if SDK modules unavailable
+let checkInput: ((text: string) => { safe: boolean; reason?: string }) | null = null;
+let checkOutput: ((text: string) => { safe: boolean; reason?: string; filtered?: string }) | null = null;
+try {
+  // eslint-disable-next-line no-eval, @typescript-eslint/no-require-imports
+  const { createRequire } = eval("require")("module");
+  const internalRequire = createRequire(eval("require").resolve("clude-bot"));
+  const inputGuardrails = internalRequire("../core/input-guardrails");
+  const outputGuardrails = internalRequire("../core/guardrails");
+  if (inputGuardrails?.checkInput) checkInput = inputGuardrails.checkInput;
+  if (outputGuardrails?.checkOutput) checkOutput = outputGuardrails.checkOutput;
+} catch {
+  // Guardrails not available — proceed without them
+}
+
+function createSafeSSEStream(message: string, meta?: Record<string, unknown>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: message })}\n\n`));
+      if (meta) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ meta })}\n\n`));
+      }
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, recallLimit, minImportance, minDecay, types, conversationId, systemPrompt, clinamenLimit, clinamenMinImportance, clinamenMaxRelevance } = (await req.json()) as {
+    const { messages, recallLimit, minImportance, minDecay, types, conversationId, systemPrompt, clinamenLimit, clinamenMinImportance, clinamenMaxRelevance, webSearchEnabled } = (await req.json()) as {
       messages: ChatMessage[];
       recallLimit?: number;
       minImportance?: number;
@@ -20,11 +50,28 @@ export async function POST(req: NextRequest) {
       clinamenLimit?: number;
       clinamenMinImportance?: number;
       clinamenMaxRelevance?: number;
+      webSearchEnabled?: boolean;
     };
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
 
+    // ── Input guardrail check ──
+    if (checkInput && lastUserMsg) {
+      const inputResult = checkInput(lastUserMsg.content);
+      if (!inputResult.safe) {
+        recordMeterEvent("guardrail_input_block");
+        return new Response(createSafeSSEStream("I can't process that request."), {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+    }
+
     // ── Recall relevant memories via Cortex (non-critical) ──
     let context = "";
+    let recalledCount = 0;
     if (lastUserMsg) {
       try {
         const memories = await recallMemories(lastUserMsg.content, {
@@ -36,9 +83,11 @@ export async function POST(req: NextRequest) {
         const filtered = conversationId
           ? memories.filter((m: any) => !m.tags?.includes(`conv:${conversationId}`))
           : memories;
+        recalledCount = filtered.length;
         if (filtered.length > 0) {
           context = await formatContext(filtered);
         }
+        recordMeterEvent("recall", { tokens: filtered.length });
       } catch {
         // Non-critical — proceed without memory context
       }
@@ -46,6 +95,7 @@ export async function POST(req: NextRequest) {
 
     // ── Fetch clinamen (divergent) memories (non-critical) ──
     let clinamenContext = "";
+    let clinamenCount = 0;
     if (lastUserMsg && clinamenLimit && clinamenLimit > 0) {
       try {
         const clinamenMemories = await clinamen({
@@ -54,6 +104,7 @@ export async function POST(req: NextRequest) {
           minImportance: clinamenMinImportance,
           maxRelevance: clinamenMaxRelevance,
         });
+        clinamenCount = clinamenMemories.length;
         if (clinamenMemories.length > 0) {
           const lines = clinamenMemories.map(
             (m) => `- [clinamen, importance=${m.importance.toFixed(2)}, similarity=${m._relevanceSim.toFixed(2)}] ${m.summary}`
@@ -86,15 +137,51 @@ export async function POST(req: NextRequest) {
         content: lastUserMsg.content,
         conversationId,
       }).catch(() => null);
+      recordMeterEvent("store");
+    }
+
+    // ── Web search path (non-streaming, Venice only) ──
+    if (webSearchEnabled) {
+      const query = lastUserMsg?.content;
+      const { content, citations } = await searchChat(llmMessages, { query });
+
+      // Store assistant memory
+      if (content.trim().length > 50) {
+        await processConversationMessage({
+          role: "assistant",
+          content,
+          conversationId,
+          linkToIds: userMemId ? [userMemId] : undefined,
+        }).catch(() => {});
+      }
+
+      // Return as SSE with citations in meta
+      return new Response(
+        createSafeSSEStream(content, {
+          recalled: recalledCount,
+          clinamen: clinamenCount,
+          citations,
+        }),
+        {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        }
+      );
     }
 
     // ── Stream LLM response ──
     const stream = await streamChat(llmMessages);
 
-    // ── Collect assistant response and store as episodic memory ──
+    // ── Collect assistant response, apply output guardrails, store as memory ──
     let fullText = "";
+    let guardrailTriggered = false;
     const transform = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
+        if (guardrailTriggered) return; // stop forwarding if guardrail tripped
+
         controller.enqueue(chunk);
         const text = new TextDecoder().decode(chunk, { stream: true });
         for (const line of text.split("\n")) {
@@ -109,9 +196,30 @@ export async function POST(req: NextRequest) {
             // skip
           }
         }
+
+        // Check output guardrail periodically (every ~500 chars)
+        if (checkOutput && fullText.length > 0 && fullText.length % 500 < 50) {
+          const result = checkOutput(fullText);
+          if (!result.safe) {
+            guardrailTriggered = true;
+            recordMeterEvent("guardrail_output_block");
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: "\n\n[Response filtered by safety guardrails]" })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          }
+        }
       },
-      async flush() {
-        if (fullText.trim() && fullText.trim().length > 50) {
+      async flush(controller) {
+        // Send meta event with recall/clinamen/provider info
+        const encoder = new TextEncoder();
+        const meta = {
+          recalled: recalledCount,
+          clinamen: clinamenCount,
+          guardrail: guardrailTriggered,
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ meta })}\n\n`));
+
+        if (fullText.trim() && fullText.trim().length > 50 && !guardrailTriggered) {
           await processConversationMessage({
             role: "assistant",
             content: fullText,
@@ -133,9 +241,11 @@ export async function POST(req: NextRequest) {
     // Top-level catch — classify the error for the client
     const msg = err instanceof Error ? err.message : String(err);
 
-    if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
+    if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed") || msg.includes("LLM error")) {
+      const provider = process.env.INFERENCE_CHAT_PROVIDER || "unknown";
+      const model = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL || "unknown";
       return Response.json(
-        { error: "inference_unavailable", message: "Cannot reach Ollama. Start with: ollama serve" },
+        { error: "inference_unavailable", message: `Cannot reach ${provider} inference (model: ${model}). Check that your server is running.` },
         { status: 503 }
       );
     }

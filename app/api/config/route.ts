@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import os from "os";
 import { persistEnv } from "@/lib/env-persist";
 import { resetCortex } from "@/lib/cortex";
 import { apiError } from "@/lib/api-utils";
+import { detectPlatform } from "@/lib/detect-platform";
+import { resolveBaseUrl } from "@/lib/provider-registry";
 
 /** Expose current Cortex configuration (read-only, no secrets). */
 export async function GET() {
@@ -78,14 +79,6 @@ async function probeEndpoint(url: string, body: object, timeoutMs: number): Prom
   }
 }
 
-async function probeHealth(url: string, timeoutMs = 3000): Promise<boolean> {
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
 
 /** POST /api/config — actions: probe, detect, save */
 export async function POST(req: NextRequest) {
@@ -113,14 +106,19 @@ export async function POST(req: NextRequest) {
       results.supabase = { ok: false, error: "not configured" };
     }
 
-    // Inference
-    const infUrl = process.env.VENICE_BASE_URL;
-    const infModel = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL;
+    // Inference — resolve URL using same chain as lib/inference.ts resolveLLMBase()
     const infProvider = process.env.INFERENCE_CHAT_PROVIDER || "unknown";
+    const infModel = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL;
+    let infUrl: string | null = null;
+    if (process.env.INFERENCE_CHAT_PROVIDER) {
+      const resolved = resolveBaseUrl(process.env.INFERENCE_CHAT_PROVIDER, "inference");
+      if (resolved) infUrl = resolved;
+    }
+    if (!infUrl) infUrl = process.env.VENICE_BASE_URL || null;
     if (infUrl && infModel) {
       const r = await probeEndpoint(`${infUrl}/chat/completions`, {
         model: infModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1, stream: false,
-      }, 15000);
+      }, 5000);
       results.inference = { ok: r.ok && !!r.data?.choices, provider: infProvider, model: infModel, ms: r.ms };
       if (!r.ok) results.inference.error = r.data?.error?.message || r.error || "failed";
     } else {
@@ -143,83 +141,8 @@ export async function POST(req: NextRequest) {
 
   // ── DETECT: discover platform + available backends ──
   if (action === "detect") {
-    const platform = {
-      os: os.platform(),
-      arch: os.arch(),
-      isAppleSilicon: os.platform() === "darwin" && os.arch() === "arm64",
-      cpuModel: os.cpus()[0]?.model || "unknown",
-    };
-
-    const [mlxInference, mlxEmbedding, ollamaHealth] = await Promise.all([
-      probeHealth("http://127.0.0.1:8899/"),
-      probeHealth("http://127.0.0.1:11435/health"),
-      probeHealth("http://127.0.0.1:11434/api/tags"),
-    ]);
-
-    let ollamaModels: string[] = [];
-    if (ollamaHealth) {
-      try {
-        const r = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(3000) });
-        const data = await r.json();
-        ollamaModels = (data.models || []).map((m: any) => m.name);
-      } catch (e) {
-        console.warn("[config] Failed to fetch Ollama models:", e instanceof Error ? e.message : e);
-      }
-    }
-
-    let mlxModel: string | null = null;
-    if (mlxInference) {
-      try {
-        const r = await fetch("http://127.0.0.1:8899/v1/models", { signal: AbortSignal.timeout(3000) });
-        const data = await r.json();
-        mlxModel = data.data?.[0]?.id || null;
-      } catch (e) {
-        console.warn("[config] Failed to fetch MLX model:", e instanceof Error ? e.message : e);
-      }
-    }
-
-    let mlxEmbedModel: string | null = null;
-    let mlxEmbedDims: number | null = null;
-    if (mlxEmbedding) {
-      try {
-        const r = await fetch("http://127.0.0.1:11435/health", { signal: AbortSignal.timeout(3000) });
-        const data = await r.json();
-        mlxEmbedModel = data.model || null;
-        mlxEmbedDims = data.dimensions || null;
-      } catch (e) {
-        console.warn("[config] Failed to fetch MLX embedding status:", e instanceof Error ? e.message : e);
-      }
-    }
-
-    const cloudConfigured = !!(process.env.VENICE_API_KEY && process.env.VENICE_API_KEY !== "local");
-
-    let recommended = "cloud";
-    if (platform.isAppleSilicon && (mlxInference || mlxEmbedding)) recommended = "mlx";
-    else if (ollamaHealth && ollamaModels.some(m => !m.includes("embed"))) recommended = "ollama";
-
-    return NextResponse.json({
-      platform,
-      backends: {
-        mlx: {
-          available: mlxInference || mlxEmbedding,
-          inference: mlxInference,
-          inferenceModel: mlxModel,
-          embedding: mlxEmbedding,
-          embeddingModel: mlxEmbedModel,
-          embeddingDims: mlxEmbedDims,
-        },
-        ollama: {
-          available: ollamaHealth,
-          inferenceModels: ollamaModels.filter(m => !m.includes("embed")),
-          embeddingModels: ollamaModels.filter(m => m.includes("embed")),
-        },
-        cloud: {
-          available: cloudConfigured,
-          configured: cloudConfigured,
-        },
-      },
-      recommended,
-    });
+    const result = await detectPlatform();
+    return NextResponse.json(result);
   }
 
   // ── SAVE: persist config to .env.local ──
@@ -228,6 +151,17 @@ export async function POST(req: NextRequest) {
     if (!config || typeof config !== "object") {
       return apiError("config object required");
     }
+    const required = ["INFERENCE_CHAT_MODEL", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"];
+    for (const key of required) {
+      if (!config[key]) return apiError(`${key} is required`);
+    }
+    // Guard: reject embedding model in inference slot
+    const chatModel = config.INFERENCE_CHAT_MODEL || "";
+    if (chatModel.includes("nomic-embed") || (chatModel.includes("embed") && !chatModel.includes("Instruct"))) {
+      return apiError(`INFERENCE_CHAT_MODEL="${chatModel}" looks like an embedding model. Assign a generative model instead.`);
+    }
+    if (!config.SUPABASE_URL) config.SUPABASE_URL = process.env.SUPABASE_URL || "http://127.0.0.1:54321";
+    if (!config.SUPABASE_SERVICE_KEY) config.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
     config.PRELUDE_SETUP_COMPLETE = "true";
     await persistEnv(config);
     resetCortex();

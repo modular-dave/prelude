@@ -1,12 +1,15 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useMemory } from "@/lib/memory-context";
-import { Brain, Zap, Heart, TrendingUp, Tag, Eye, Moon, Sparkles } from "lucide-react";
+import { Brain, Zap, Heart, TrendingUp, Tag, Eye, Moon, Sparkles, Loader2, Play } from "lucide-react";
 import { TYPE_COLORS, type MemoryType } from "@/lib/types";
 
 export function StatsGrid() {
   const { memories, stats } = useMemory();
+  const [actionLearning, setActionLearning] = useState<{ lessons: string[] } | null>(null);
+  const [learningLoading, setLearningLoading] = useState(false);
 
   const total = stats?.total ?? memories.length;
   const avgImportance = stats?.avgImportance ?? (
@@ -94,6 +97,60 @@ export function StatsGrid() {
             </div>
           );
         })}
+      </div>
+
+      {/* Action Learning */}
+      <div
+        className="rounded-[6px] p-4"
+        style={{ background: "var(--surface-dim)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" style={{ color: "#10b981" }} />
+            <span style={{ color: "var(--text-faint)" }}>Action Learning</span>
+          </div>
+          <button
+            onClick={async () => {
+              setLearningLoading(true);
+              try {
+                const res = await fetch("/api/actions", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ type: "learn" }),
+                });
+                const data = await res.json();
+                setActionLearning({ lessons: data.lessons || [] });
+              } catch {
+                setActionLearning({ lessons: [] });
+              } finally {
+                setLearningLoading(false);
+              }
+            }}
+            disabled={learningLoading}
+            className="flex items-center gap-1 text-btn t-small transition active:scale-95 disabled:opacity-40"
+            style={{ color: "var(--accent)" }}
+          >
+            {learningLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            Learn
+          </button>
+        </div>
+        {actionLearning && (
+          <div className="mt-2">
+            {actionLearning.lessons.length > 0 ? (
+              <div className="space-y-1">
+                {actionLearning.lessons.map((lesson, i) => (
+                  <p key={i} className="t-small" style={{ color: "var(--text-muted)" }}>
+                    {lesson}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="t-small" style={{ color: "var(--text-faint)" }}>
+                No strategies learned yet. Log actions and outcomes first.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Most Accessed Memory */}

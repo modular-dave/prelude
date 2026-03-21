@@ -41,7 +41,7 @@ export function ConfirmDialog({ title, message, confirmLabel = "Delete", onConfi
           <button
             onClick={onConfirm}
             className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
-            style={{ background: "#ef4444" }}
+            style={{ background: "var(--error)" }}
           >
             {confirmLabel}
           </button>

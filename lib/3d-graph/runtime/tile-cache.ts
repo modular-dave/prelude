@@ -23,6 +23,14 @@ export class TileCache {
   private listeners = new Set<TileCacheListener>();
   private evictionFrozen = false;
   private evictionFreezeUntil = 0;
+  private _generation = 0;
+  private _allLocal = false; // true when all tiles were injected locally (no eviction needed)
+
+  /** Monotonic counter — increments on tile load/evict/inject. Cheap dirty check for consumers. */
+  get generation(): number { return this._generation; }
+
+  /** Bump generation to signal consumers that tile data changed in-place. */
+  touch(): void { this._generation++; }
 
   constructor(worldModel: WorldModel, config = DEFAULT_CACHE_CONFIG) {
     this.worldModel = worldModel;
@@ -73,8 +81,8 @@ export class TileCache {
       }
     }
 
-    // Demote: evict tiles below cold threshold (unless frozen)
-    if (!this.isEvictionFrozen(now)) {
+    // Demote: evict tiles below cold threshold (unless frozen or local mode)
+    if (!this._allLocal && !this.isEvictionFrozen(now)) {
       this.evictColdTiles(scored, now);
     }
 
@@ -91,6 +99,7 @@ export class TileCache {
     resident.data = data;
     resident.status = "hot";
     resident.instanceCount = data.entities.length;
+    this._generation++;
     this.emit("tile-loaded", tileId);
   }
 
@@ -114,6 +123,7 @@ export class TileCache {
       } else if (resident.status === "cold") {
         this.loader.cancelTile(id);
         this.spatialTiles.delete(id);
+        this._generation++;
         this.emit("tile-evicted", id);
       }
     }
@@ -174,8 +184,10 @@ export class TileCache {
 
   // ── Direct injection (client-side compilation) ─────────────────
 
-  /** Inject a tile directly into the cache as hot. Skips HTTP fetch. */
+  /** Inject a tile directly into the cache as hot. Skips HTTP fetch.
+   *  Enables local mode (disables eviction) since all data is in-memory. */
   injectTile(tileId: string, data: SpatialTile): void {
+    this._allLocal = true;
     this.spatialTiles.set(tileId, {
       id: tileId,
       status: "hot",
@@ -185,6 +197,7 @@ export class TileCache {
       instanceOffset: 0,
       instanceCount: data.entities.length,
     });
+    this._generation++;
     this.emit("tile-loaded", tileId);
   }
 
@@ -197,6 +210,7 @@ export class TileCache {
       score: 1,
     });
     this.injectedChunkIds.add(chunkId);
+    this._generation++;
     this.emit("chunk-loaded", chunkId);
   }
 
@@ -228,7 +242,11 @@ export class TileCache {
   }
 
   allResidentTiles(): ResidentTile[] {
-    return [...this.spatialTiles.values()];
+    return [...this.spatialTiles.values()].filter(t => t.data != null);
+  }
+
+  allResidentTopologyChunks(): ResidentTopologyChunk[] {
+    return [...this.topologyChunks.values()].filter(c => c.data != null);
   }
 
   hotTopologyChunks(): ResidentTopologyChunk[] {

@@ -239,9 +239,10 @@ export function useGraphData({
     const scores = new Map<string, number>();
     let maxScore = 0;
     for (const node of data.nodes) {
-      if (node.isEntity) continue;
-      const mem = memories.find((m) => m.id === node.numericId);
-      const score = (mem?.access_count ?? 0) || (mem?.importance ?? 0);
+      const mem = node.isEntity ? null : memories.find((m) => m.id === node.numericId);
+      const score = node.isEntity
+        ? (node.importance ?? 0)
+        : ((mem?.access_count ?? 0) || (mem?.importance ?? 0));
       scores.set(node.id, score);
       if (score > maxScore) maxScore = score;
     }
@@ -258,15 +259,13 @@ export function useGraphData({
       let bestId = "";
       let bestCount = -1;
       for (const node of data.nodes) {
-        if (node.isEntity) continue;
-        const mem = memories.find((m) => m.id === node.numericId);
-        const ac = mem?.access_count ?? 0;
+        const mem = node.isEntity ? null : memories.find((m) => m.id === node.numericId);
+        const ac = node.isEntity ? ((node.importance ?? 0) * 10) : (mem?.access_count ?? 0);
         if (ac > bestCount) { bestCount = ac; bestId = node.id; }
       }
       if (bestCount === 0) {
         let bestImp = -1;
         for (const node of data.nodes) {
-          if (node.isEntity) continue;
           const imp = node.importance ?? 0;
           if (imp > bestImp) { bestImp = imp; bestId = node.id; }
         }

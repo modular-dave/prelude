@@ -1,6 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { PORTS } from "@/lib/provider-registry";
+
+// ── Probe cache + dedup — avoid re-probing on every mount (60s TTL) ──
+let probeCache: { data: any; ts: number } | null = null;
+let probeInflight: Promise<any> | null = null;
+const PROBE_TTL = 60_000;
+
+// ── Embedding auto-start — only attempt once per app session ──
+let embAutoStartAttempted = false;
 
 export interface CortexStatus {
   cortexOnline: boolean | null;
@@ -50,12 +59,21 @@ export function useCortexStatus(
         });
 
         // Then probe actual service availability (slower but accurate)
-        const probeRes = await fetch("/api/config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "probe" }),
-        });
-        const probe = await probeRes.json();
+        // Use cached result if fresh enough to avoid 15s+ hangs on every mount
+        let probe: any;
+        if (probeCache && Date.now() - probeCache.ts < PROBE_TTL) {
+          probe = probeCache.data;
+        } else if (probeInflight) {
+          probe = await probeInflight;
+        } else {
+          probeInflight = fetch("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "probe" }),
+          }).then(r => r.json()).then(d => { probeCache = { data: d, ts: Date.now() }; probeInflight = null; return d; })
+            .catch(() => { probeInflight = null; return {}; });
+          probe = await probeInflight;
+        }
         setCortexOnline(probe.supabase?.ok ?? false);
         setInferenceConnected(probe.inference?.ok ?? false);
         setEmbeddingConnected(probe.embedding?.ok ?? false);
@@ -65,6 +83,23 @@ export function useCortexStatus(
         }
         if (probe.embedding?.ok && probe.embedding.model) {
           setEmbeddingModelLabel(`${probe.embedding.provider} · ${probe.embedding.model.split("/").pop()}`);
+        }
+
+        // ── Auto-start embedding server if configured but not running ──
+        if (!embAutoStartAttempted && !probe.embedding?.ok && configData.embedding?.model) {
+          const embProvider = configData.embedding.provider;
+          if (embProvider === "mlx") {
+            embAutoStartAttempted = true;
+            const port = PORTS.mlxEmbedding;
+            fetch("/api/cortex/embedding", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "spawn", model: configData.embedding.model, port }),
+            }).then(async (r) => {
+              const d = await r.json().catch(() => ({}));
+              if (r.ok && d.ok !== false) setEmbeddingConnected(true);
+            }).catch(() => { /* fire-and-forget */ });
+          }
         }
       } catch {
         setCortexOnline(false);

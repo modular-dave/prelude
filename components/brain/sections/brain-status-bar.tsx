@@ -36,13 +36,13 @@ export function BrainStatusBar({
   const activeCount = [modelActive, memActive].filter(Boolean).length;
   const inactiveGrey = "var(--text-faint)";
   const status = cortexOnline === null ? "..." : !cortexOnline ? "inactive" : activeCount === 2 ? "live" : activeCount > 0 ? "partial" : "inactive";
-  const dotColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
-  const textColor = status === "live" ? "#22c55e" : status === "partial" ? "#f59e0b" : inactiveGrey;
-  const modelDot = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
-  const modelText = inferenceActive && embeddingActive ? "#22c55e" : inferenceActive || embeddingActive ? "#f59e0b" : inactiveGrey;
+  const dotColor = status === "live" ? "var(--success)" : status === "partial" ? "var(--warning)" : inactiveGrey;
+  const textColor = status === "live" ? "var(--success)" : status === "partial" ? "var(--warning)" : inactiveGrey;
+  const modelDot = inferenceActive && embeddingActive ? "var(--success)" : inferenceActive || embeddingActive ? "var(--warning)" : inactiveGrey;
+  const modelText = inferenceActive && embeddingActive ? "var(--success)" : inferenceActive || embeddingActive ? "var(--warning)" : inactiveGrey;
   const modelLabel = inferenceActive && embeddingActive ? "active" : inferenceActive || embeddingActive ? "partial" : "inactive";
-  const memDot = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
-  const memText = dreamActive && reflectActive ? "#22c55e" : dreamActive || reflectActive ? "#f59e0b" : inactiveGrey;
+  const memDot = dreamActive && reflectActive ? "var(--success)" : dreamActive || reflectActive ? "var(--warning)" : inactiveGrey;
+  const memText = dreamActive && reflectActive ? "var(--success)" : dreamActive || reflectActive ? "var(--warning)" : inactiveGrey;
   const memLabel = dreamActive && reflectActive ? "active" : dreamActive || reflectActive ? "partial" : "inactive";
 
   return (
@@ -97,9 +97,9 @@ export function BrainStatusBar({
               </span>
               <span
                 className="h-[5px] w-[5px] rounded-full"
-                style={{ background: inferenceActive ? "#22c55e" : "var(--text-faint)" }}
+                style={{ background: inferenceActive ? "var(--success)" : "var(--text-faint)" }}
               />
-              <span className="font-mono" style={{ color: inferenceActive ? "#22c55e" : "var(--text-faint)" }}>
+              <span className="font-mono" style={{ color: inferenceActive ? "var(--success)" : "var(--text-faint)" }}>
                 {inferenceActive ? "live" : "offline"}
               </span>
             </div>
@@ -109,9 +109,9 @@ export function BrainStatusBar({
               </span>
               <span
                 className="h-[5px] w-[5px] rounded-full"
-                style={{ background: embeddingActive ? "#22c55e" : "var(--text-faint)" }}
+                style={{ background: embeddingActive ? "var(--success)" : "var(--text-faint)" }}
               />
-              <span className="font-mono" style={{ color: embeddingActive ? "#22c55e" : "var(--text-faint)" }}>
+              <span className="font-mono" style={{ color: embeddingActive ? "var(--success)" : "var(--text-faint)" }}>
                 {embeddingActive ? "live" : "offline"}
               </span>
             </div>
@@ -152,12 +152,12 @@ export function BrainStatusBar({
             </button>
             <span
               className="h-[5px] w-[5px] rounded-full"
-              style={{ background: dreamActive ? "#22c55e" : "var(--text-faint)" }}
+              style={{ background: dreamActive ? "var(--success)" : "var(--text-faint)" }}
             />
             <span
               className="font-mono cursor-pointer"
               onClick={toggleDreamSchedule}
-              style={{ color: dreamActive ? "#22c55e" : "var(--text-faint)" }}
+              style={{ color: dreamActive ? "var(--success)" : "var(--text-faint)" }}
             >
               {dreamToggling ? "..." : dreamActive ? "active" : "inactive"}
             </span>
@@ -173,12 +173,12 @@ export function BrainStatusBar({
             </button>
             <span
               className="h-[5px] w-[5px] rounded-full"
-              style={{ background: reflectActive ? "#22c55e" : "var(--text-faint)" }}
+              style={{ background: reflectActive ? "var(--success)" : "var(--text-faint)" }}
             />
             <span
               className="font-mono cursor-pointer"
               onClick={toggleReflectSchedule}
-              style={{ color: reflectActive ? "#22c55e" : "var(--text-faint)" }}
+              style={{ color: reflectActive ? "var(--success)" : "var(--text-faint)" }}
             >
               {reflectToggling ? "..." : reflectActive ? "active" : "inactive"}
             </span>

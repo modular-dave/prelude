@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureCortex, swapVeniceModel } from "@/lib/cortex";
+import { ensureCortex, swapVeniceModel, recordMeterEvent } from "@/lib/cortex";
 import { getAssignment } from "@/lib/active-model-store";
 import { supabase } from "@/lib/supabase";
 import { apiError } from "@/lib/api-utils";
@@ -79,6 +79,8 @@ export async function POST() {
 
     // Swap to dream-assigned model if configured
     const dreamAssign = getAssignment("dream");
+    const dreamModel = dreamAssign?.model || null;
+    const dreamProvider = dreamAssign?.provider || process.env.INFERENCE_CHAT_PROVIDER || "auto";
     if (dreamAssign) swapVeniceModel(dreamAssign.model);
 
     const brain = await ensureCortex();
@@ -86,6 +88,8 @@ export async function POST() {
 
     // Record timestamp before dream starts so we can query logs created during this cycle
     const startedAt = new Date().toISOString();
+
+    recordMeterEvent("dream", { provider: dreamProvider, model: dreamModel || undefined });
 
     await brain.dream({
       onEmergence: async (thought: string) => {
@@ -139,6 +143,9 @@ export async function POST() {
         totalNewMemories: newMemoryIds.length,
         totalInputMemories: phases.reduce((s: number, p: any) => s + p.inputCount, 0),
       },
+      // Model provenance
+      model: dreamModel,
+      provider: dreamProvider,
     });
   } catch (err) {
     return apiError(String(err), 500);

@@ -255,7 +255,7 @@ export function MemoryNodeDetail({
               label="Valence"
               value={Math.abs(memory.emotional_valence || 0)}
               color={
-                (memory.emotional_valence || 0) >= 0 ? "#3b82f6" : "#ef4444"
+                (memory.emotional_valence || 0) >= 0 ? "#3b82f6" : "var(--error)"
               }
               detail={`${(memory.emotional_valence || 0) > 0 ? "+" : ""}${(memory.emotional_valence || 0).toFixed(2)}`}
             />
@@ -857,6 +857,12 @@ export function MemoryNodeDetail({
                     style={{ background: "var(--surface-dim)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
                   >
                     {explainAnswer}
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="rounded-[3px] px-1.5 py-0.5 t-micro"
+                        style={{ background: "rgba(139, 92, 246, 0.1)", color: "#8b5cf6" }}>
+                        via inference
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>

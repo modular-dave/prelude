@@ -8,7 +8,7 @@ import type { CanonicalEntity, SpatialTile } from "@/lib/3d-graph/compiler/types
 import type { ResidentTile, ResidentTopologyChunk } from "@/lib/3d-graph/runtime/types";
 import type { Lens } from "@/lib/3d-graph/runtime/types";
 import type { FilterBag } from "@/lib/types";
-import { computeHeroLayout, computeClusterLayout, computeStarburstLayout, computeZeroGLayout } from "./viz-layout";
+import { computeHeroLayout, computeClusterLayout, computeStarburstLayout, computeZeroGLayout, resolveCollisions } from "./viz-layout";
 import type { Vec3 } from "@/lib/3d-graph/compiler/types";
 
 // ── Sizing constants ──────────────────────────────────────────────
@@ -83,6 +83,13 @@ export class NodeInstances {
   private cachedDivMap: Map<string, number> | null = null;
   private cachedDivMapKey = "";
 
+  // Dirty tracking — skip redundant per-frame buffer writes
+  private lastTileGeneration = -1;
+  private syncDirty = true;
+  private lastFilterHash = "";
+  private lastMemoryFingerprint = "";
+  private lastEntityFingerprint = "";
+
   constructor() {
     // Memory nodes: sphere geometry
     const memoryMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
@@ -123,7 +130,11 @@ export class NodeInstances {
 
   // ── Sync from tile cache ──────────────────────────────────────
 
-  syncFromTiles(hotTiles: ResidentTile[]): void {
+  syncFromTiles(hotTiles: ResidentTile[], generation?: number): void {
+    // Skip if tile residency hasn't changed
+    if (generation != null && generation === this.lastTileGeneration) return;
+    if (generation != null) this.lastTileGeneration = generation;
+
     // Collect all entities from hot tiles
     const allMemories: CanonicalEntity[] = [];
     const allEntities: CanonicalEntity[] = [];
@@ -144,19 +155,29 @@ export class NodeInstances {
     this.memoryEntityData = allMemories;
     this.entityEntityData = allEntities;
 
-    // Update memory spheres
-    this.updateInstances(
-      this.memorySpheres, allMemories,
-      this.memoryIndex, this.memoryEntities,
-      (count) => { this.memoryCount = count; },
-    );
+    // Fingerprint check: skip buffer writes if same entities in same order
+    const memFp = `${allMemories.length}:${allMemories[0]?.id ?? ""}:${allMemories[allMemories.length - 1]?.id ?? ""}`;
+    const entFp = `${allEntities.length}:${allEntities[0]?.id ?? ""}:${allEntities[allEntities.length - 1]?.id ?? ""}`;
 
-    // Update entity octahedra
-    this.updateInstances(
-      this.entityOctahedra, allEntities,
-      this.entityIndex, this.entityEntities,
-      (count) => { this.entityCount = count; },
-    );
+    if (memFp !== this.lastMemoryFingerprint) {
+      this.updateInstances(
+        this.memorySpheres, allMemories,
+        this.memoryIndex, this.memoryEntities,
+        (count) => { this.memoryCount = count; },
+      );
+      this.lastMemoryFingerprint = memFp;
+      this.syncDirty = true;
+    }
+
+    if (entFp !== this.lastEntityFingerprint) {
+      this.updateInstances(
+        this.entityOctahedra, allEntities,
+        this.entityIndex, this.entityEntities,
+        (count) => { this.entityCount = count; },
+      );
+      this.lastEntityFingerprint = entFp;
+      this.syncDirty = true;
+    }
 
     // Cluster spheres hidden — they're LOD placeholders for progressive refinement.
     // Only show them when zoomed out so far that individual nodes aren't visible.
@@ -243,9 +264,12 @@ export class NodeInstances {
       if (v > this.maxDegree) this.maxDegree = v;
     }
 
-    // Also compute max access count from memory data
+    // Also compute max access count from all node data
     this.maxAccessCount = 1;
     for (const e of this.memoryEntityData) {
+      if (e.accessCount > this.maxAccessCount) this.maxAccessCount = e.accessCount;
+    }
+    for (const e of this.entityEntityData) {
       if (e.accessCount > this.maxAccessCount) this.maxAccessCount = e.accessCount;
     }
 
@@ -377,28 +401,41 @@ export class NodeInstances {
   // ── Filter application ─────────────────────────────────────────
 
   applyFilters(filterBag: FilterBag, lens: Lens, entityById?: Map<string, CanonicalEntity>, bubbleRadius?: number): void {
-    const { visibleMemoryIds, focus, centerMode, decayCutoff, reorgMode } = filterBag;
-    // Focus filter: show only the focused node type, hide the other
-    const memoryScale = focus === "entities" ? 0 : 1.0;
-    const entityScale = focus === "memories" ? 0 : 1.0;
-    const totalNodes = this.memoryCount + this.entityCount;
-    const df = densityFactor(totalNodes);
-    const minSize = BASE_MIN_SIZE * df;
-    const heroSize = BASE_HERO_SIZE * df;
-    const R = bubbleRadius ?? 400;
+    const { visibleMemoryIds, focus, centerMode, decayCutoff, importanceCutoff, reorgMode } = filterBag;
 
     // Compute viz layout (cached — only recomputes when lens/centerMode/count/identity changes)
     const currentEntityCount = this.memoryEntityData.length + this.entityEntityData.length;
     const cacheKey = `${centerMode}:${reorgMode}`;
     // Fingerprint: detect tile swaps even when total count is unchanged
-    const entityFingerprint = this.memoryEntityData.length > 0
-      ? `${this.memoryEntityData[0].id}:${this.memoryEntityData[this.memoryEntityData.length - 1].id}`
-      : "";
+    const entityFingerprint = [
+      this.memoryEntityData.length > 0
+        ? `${this.memoryEntityData[0].id}:${this.memoryEntityData[this.memoryEntityData.length - 1].id}`
+        : "",
+      this.entityEntityData.length > 0
+        ? `${this.entityEntityData[0].id}:${this.entityEntityData[this.entityEntityData.length - 1].id}`
+        : "",
+    ].join("|");
     const needsRecompute =
       lens !== this.cachedLens ||
       cacheKey !== this.cachedCenterMode ||
       currentEntityCount !== this.cachedEntityCount ||
       entityFingerprint !== this.cachedEntityFingerprint;
+
+    // Early exit: skip full buffer write if nothing changed
+    const focusKey = [...focus].sort().join("+");
+    const filterHash = `${decayCutoff}:${importanceCutoff}:${focusKey}:${centerMode}:${reorgMode}:${visibleMemoryIds?.size ?? "all"}:${this.memoryCount}:${this.entityCount}`;
+    if (!this.syncDirty && !needsRecompute && filterHash === this.lastFilterHash) return;
+    this.lastFilterHash = filterHash;
+    this.syncDirty = false;
+
+    // Focus filter: show node types based on active layers
+    const memoryScale = focus.has("memories") ? 1.0 : 0;
+    const entityScale = focus.has("entities") ? 1.0 : 0;
+    const totalNodes = this.memoryCount + this.entityCount;
+    const df = densityFactor(totalNodes);
+    const minSize = BASE_MIN_SIZE * df;
+    const heroSize = BASE_HERO_SIZE * df;
+    const R = bubbleRadius ?? 400;
 
     let positionMap: Map<string, Vec3> | null = null;
     // Build diversity score map (cached — only rebuild when topology or mode changes)
@@ -436,6 +473,28 @@ export class NodeInstances {
           filterBag, divMap, this.degreeMap, this.maxDegree, this.maxAccessCount,
         );
       }
+      // Post-layout collision resolution — prevent overlap with small node counts
+      // Uses same scoring logic for both memory and entity nodes (nodes are nodes)
+      if (positionMap && positionMap.size > 1 && positionMap.size <= 200) {
+        const sizeMap = new Map<string, number>();
+        const allNodes = [...this.memoryEntityData, ...this.entityEntityData];
+        for (const e of allNodes) {
+          const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
+          const retScore = this.maxAccessCount > 0 ? e.accessCount / this.maxAccessCount : 0;
+          let hs: number;
+          if (reorgMode === "diversity") {
+            hs = this.getDiversityScore(e.id, centerMode);
+          } else {
+            hs = centerMode === "retrieved" ? retScore
+              : centerMode === "combined" ? Math.max(degScore, retScore)
+              : degScore;
+          }
+          if (!isFinite(hs)) hs = 0;
+          sizeMap.set(e.id, minSize + hs * (heroSize - minSize));
+        }
+        resolveCollisions(positionMap, sizeMap);
+      }
+
       this.cachedPositionMap = positionMap;
       this.cachedLens = lens;
       this.cachedCenterMode = cacheKey;
@@ -459,6 +518,7 @@ export class NodeInstances {
         visible = visibleMemoryIds.has(e.numericId);
       }
       if (decayCutoff > 0 && e.decayFactor <= decayCutoff) visible = false;
+      if (importanceCutoff > 0 && e.importance <= importanceCutoff) visible = false;
 
       // Compute normalized scores [0, 1]
       const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
@@ -500,26 +560,43 @@ export class NodeInstances {
     this.memorySpheres.boundingSphere = null; // invalidate for raycasting
     if (this.memorySpheres.instanceColor) this.memorySpheres.instanceColor.needsUpdate = true;
 
-    // Apply to entity octahedra
+    // Apply to entity octahedra — identical logic to memory spheres
     for (let i = 0; i < this.entityEntityData.length && i < this.entityCount; i++) {
       const e = this.entityEntityData[i];
-      const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
-      let entScore: number;
-      if (reorgMode === "diversity") {
-        entScore = this.getDiversityScore(e.id, centerMode);
-      } else {
-        entScore = degScore;
-      }
-      let s = minSize + entScore * (heroSize - minSize) * 0.6;
-      s *= entityScale;
-      if (entityScale > 0) visibleScored.push({ id: e.id, score: entScore });
 
-      // Luminance: same triple-channel encoding for entities
-      const brightness = 0.2 + entScore * 0.8;
+      // Visibility: same filters as memory nodes
+      let visible = true;
+      if (visibleMemoryIds && e.numericId != null) {
+        visible = visibleMemoryIds.has(e.numericId);
+      }
+      if (decayCutoff > 0 && e.decayFactor <= decayCutoff) visible = false;
+      if (importanceCutoff > 0 && e.importance <= importanceCutoff) visible = false;
+
+      // Scoring: same centerMode + reorgMode logic as memory nodes
+      const degScore = (this.degreeMap.get(e.id) || 0) / this.maxDegree;
+      const retScore = e.accessCount / this.maxAccessCount;
+      let heroScore: number;
+      if (reorgMode === "diversity") {
+        heroScore = this.getDiversityScore(e.id, centerMode);
+      } else {
+        heroScore = centerMode === "retrieved" ? retScore
+          : centerMode === "combined" ? Math.max(degScore, retScore)
+          : degScore;
+      }
+      if (!isFinite(heroScore)) heroScore = 0;
+
+      // Sizing: same formula as memory nodes
+      let s = Math.min(minSize + heroScore * (heroSize - minSize), heroSize);
+      s *= entityScale;
+      if (!visible) s = 0;
+      else visibleScored.push({ id: e.id, score: heroScore });
+
+      // Luminance: same triple-channel encoding
+      const brightness = 0.2 + heroScore * 0.8;
       _color.set(e.color).multiplyScalar(brightness);
       this.entityOctahedra.setColorAt(i, _color);
 
-      // Position from viz layout — hide nodes with no layout position instead of stacking at origin
+      // Position from viz layout
       const pos = positionMap?.get(e.id);
       if (!pos) s = 0;
       _position.set(pos?.x ?? 0, pos?.y ?? 0, pos?.z ?? 0);
@@ -543,19 +620,29 @@ export class NodeInstances {
 
   /** Returns the set of currently visible entity IDs (for edge filtering) */
   getVisibleEntityIds(filterBag: FilterBag): Set<string> {
-    const { visibleMemoryIds } = filterBag;
+    const { visibleMemoryIds, decayCutoff, importanceCutoff, focus } = filterBag;
     const visible = new Set<string>();
 
-    // All entities are always visible
-    for (const id of this.entityEntities) {
-      if (id) visible.add(id);
+    // Memory nodes: only if "memories" layer is active
+    if (focus.has("memories")) {
+      for (let i = 0; i < this.memoryEntityData.length && i < this.memoryCount; i++) {
+        const e = this.memoryEntityData[i];
+        let vis = true;
+        if (visibleMemoryIds && e.numericId != null) vis = visibleMemoryIds.has(e.numericId);
+        if (decayCutoff > 0 && e.decayFactor <= decayCutoff) vis = false;
+        if (importanceCutoff > 0 && e.importance <= importanceCutoff) vis = false;
+        if (vis) visible.add(e.id);
+      }
     }
 
-    // Memories: check filter
-    for (let i = 0; i < this.memoryEntityData.length && i < this.memoryCount; i++) {
-      const e = this.memoryEntityData[i];
-      if (!visibleMemoryIds || e.numericId == null || visibleMemoryIds.has(e.numericId)) {
-        visible.add(e.id);
+    // Entity nodes: only if "entities" layer is active
+    if (focus.has("entities")) {
+      for (let i = 0; i < this.entityEntityData.length && i < this.entityCount; i++) {
+        const e = this.entityEntityData[i];
+        let vis = true;
+        if (decayCutoff > 0 && e.decayFactor <= decayCutoff) vis = false;
+        if (importanceCutoff > 0 && e.importance <= importanceCutoff) vis = false;
+        if (vis) visible.add(e.id);
       }
     }
 

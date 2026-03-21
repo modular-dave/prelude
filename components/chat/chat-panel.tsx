@@ -13,9 +13,16 @@ import {
   clearAllConversations,
   generateTitle,
 } from "@/lib/chat-store";
-import { getActiveModel } from "@/lib/model-settings";
-import { loadSystemPrompt } from "@/lib/system-prompt";
+import { loadPromptConfig, assembleSystemPrompt } from "@/lib/prompt-builder";
+import { loadChatSettings } from "@/lib/chat-settings";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
+
+interface ChatMeta {
+  recalled?: number;
+  clinamen?: number;
+  guardrail?: boolean;
+  citations?: string[];
+}
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -24,6 +31,8 @@ export function ChatPanel() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [lastMeta, setLastMeta] = useState<ChatMeta | null>(null);
+  const [metaExpanded, setMetaExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { refresh, retrievalSettings } = useMemory();
 
@@ -80,12 +89,14 @@ export function ChatPanel() {
     setActiveId(null);
     setInput("");
     setHistoryOpen(false);
+    setLastMeta(null);
   };
 
   const handleLoadConversation = (conv: Conversation) => {
     setMessages(conv.messages);
     setActiveId(conv.id);
     setHistoryOpen(false);
+    setLastMeta(null);
   };
 
   const handleDeleteConversation = async (id: string) => {
@@ -119,6 +130,7 @@ export function ChatPanel() {
     setActiveId(null);
     setMessages([]);
     setHistoryOpen(false);
+    setLastMeta(null);
   };
 
   const sendMessage = async () => {
@@ -130,6 +142,7 @@ export function ChatPanel() {
     setMessages(newMessages);
     setInput("");
     setStreaming(true);
+    setLastMeta(null);
 
     // Persist immediately on first message to create the conversation
     const convId = await persistConversation(newMessages, activeId);
@@ -137,6 +150,10 @@ export function ChatPanel() {
 
     const assistantMsg: ChatMessage = { role: "assistant", content: "" };
     setMessages([...newMessages, assistantMsg]);
+
+    // Build prompt config
+    const promptConfig = loadPromptConfig();
+    const systemPrompt = assembleSystemPrompt(promptConfig);
 
     try {
       const res = await fetch("/api/chat", {
@@ -149,10 +166,11 @@ export function ChatPanel() {
           minImportance: retrievalSettings.minImportance || undefined,
           minDecay: retrievalSettings.minDecay || undefined,
           types: retrievalSettings.enabledTypes,
-          systemPrompt: loadSystemPrompt(),
+          systemPrompt: systemPrompt || undefined,
           clinamenLimit: retrievalSettings.clinamenLimit,
           clinamenMinImportance: retrievalSettings.clinamenMinImportance,
           clinamenMaxRelevance: retrievalSettings.clinamenMaxRelevance,
+          webSearchEnabled: loadChatSettings().webSearchEnabled,
         }),
       });
 
@@ -178,6 +196,11 @@ export function ChatPanel() {
           if (data === "[DONE]") break;
           try {
             const json = JSON.parse(data);
+            // Check for meta event
+            if (json.meta) {
+              setLastMeta(json.meta);
+              continue;
+            }
             if (json.content) {
               fullContent += json.content;
               setMessages((prev) => {
@@ -284,6 +307,32 @@ export function ChatPanel() {
               </div>
             </div>
           ))}
+
+          {/* Meta info (recall trace + citations) */}
+          {lastMeta && !streaming && messages.length > 0 && (
+            <div className="flex flex-col items-start">
+              <button
+                onClick={() => setMetaExpanded((v) => !v)}
+                className="font-mono flex items-center gap-1.5 transition active:scale-95"
+                style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}
+              >
+                {metaExpanded ? "−" : "▸"}
+                {lastMeta.recalled ? ` ${lastMeta.recalled} memories recalled` : ""}
+                {lastMeta.clinamen ? ` · ${lastMeta.clinamen} clinamen` : ""}
+                {lastMeta.guardrail ? " · filtered" : ""}
+                {lastMeta.citations && lastMeta.citations.length > 0 ? ` · ${lastMeta.citations.length} citations` : ""}
+              </button>
+              {metaExpanded && lastMeta.citations && lastMeta.citations.length > 0 && (
+                <div className="mt-1 pl-3 space-y-0.5 animate-fade-slide-up">
+                  {lastMeta.citations.map((url, i) => (
+                    <div key={i} className="font-mono" style={{ fontSize: 9, color: "var(--text-faint)" }}>
+                      [{i + 1}] {url}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -180,7 +180,7 @@ export function computeHeroLayout(
 
   // 5. Per-spoke minimum distance — space nodes along each line
   // Keeps nodes exactly on their spoke, just pushes them outward if too close.
-  const minDist = R * 0.035;
+  const minDist = Math.max(R * 0.035, 250);
 
   for (const [branch, dir] of branchVec) {
     const [dx, dy, dz] = dir;
@@ -675,4 +675,38 @@ export function computeZeroGLayout(
   }
 
   return result;
+}
+
+// ── Post-Layout Collision Resolution ────────────────────────────────
+// Iterative pairwise repulsion: pushes overlapping nodes apart based on
+// their visual radii. Runs after any layout function. O(N²) per iteration
+// but guarded to N≤200 at the call site — sub-millisecond for small graphs.
+
+export function resolveCollisions(
+  positions: Map<string, Vec3>,
+  sizes: Map<string, number>,
+  iterations = 3,
+): void {
+  const ids = [...positions.keys()];
+  const N = ids.length;
+  if (N < 2) return;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < N; i++) {
+      const a = positions.get(ids[i])!;
+      const sa = sizes.get(ids[i]) || 30;
+      for (let j = i + 1; j < N; j++) {
+        const b = positions.get(ids[j])!;
+        const sb = sizes.get(ids[j]) || 30;
+        const minDist = (sa + sb) * 1.5;
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist >= minDist || dist < 0.001) continue;
+        const push = (minDist - dist) * 0.5;
+        const nx = dx / dist, ny = dy / dist, nz = dz / dist;
+        a.x -= nx * push; a.y -= ny * push; a.z -= nz * push;
+        b.x += nx * push; b.y += ny * push; b.z += nz * push;
+      }
+    }
+  }
 }

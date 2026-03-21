@@ -5,8 +5,9 @@
  */
 
 import { execSync, spawn } from "child_process";
+import { PORTS } from "@/lib/provider-registry";
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+const OLLAMA_HOST = process.env.OLLAMA_HOST || `http://127.0.0.1:${PORTS.ollama}`;
 const OLLAMA_API = `${OLLAMA_HOST}/api`;
 
 /** Check if the ollama binary is installed on this machine */

@@ -4,7 +4,7 @@
     {
       "name": "prelude-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "prelude"],
       "port": 3000,
       "autoPort": true
     },
