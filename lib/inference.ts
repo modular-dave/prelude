@@ -5,6 +5,28 @@ import { resolveBaseUrl, PROVIDER_URLS } from "@/lib/provider-registry";
 
 const DEFAULT_MODEL = process.env.VENICE_MODEL || process.env.LLM_MODEL || "phi3:mini";
 
+/** One-time config validation — runs at module load on the server */
+function validateInferenceConfig(): void {
+  const provider = process.env.INFERENCE_CHAT_PROVIDER;
+  const model = process.env.INFERENCE_CHAT_MODEL;
+
+  if (model && (model.includes("nomic-embed") || (model.includes("embed") && !model.includes("Instruct")))) {
+    console.warn(
+      `[inference] WARNING: INFERENCE_CHAT_MODEL="${model}" looks like an embedding model. ` +
+      `Chat inference will likely fail. Set it to a generative model.`
+    );
+  }
+
+  if (provider === "ollama" && process.env.VENICE_BASE_URL && !process.env.VENICE_BASE_URL.includes(":11434")) {
+    console.warn(
+      `[inference] WARNING: INFERENCE_CHAT_PROVIDER="ollama" (port 11434) but ` +
+      `VENICE_BASE_URL="${process.env.VENICE_BASE_URL}" points elsewhere. Config may be stale.`
+    );
+  }
+}
+
+if (typeof window === "undefined") validateInferenceConfig();
+
 export type CogFunc = "chat" | "dream" | "reflect" | "importance" | "entity" | "summarize" | "search";
 
 export interface ChatMessage {
@@ -98,6 +120,7 @@ export async function streamChat(
     },
     body: JSON.stringify({ model: resolvedModel, messages: normalized, stream: true, max_tokens: maxTokens }),
     cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok || !res.body) {

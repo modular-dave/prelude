@@ -24,7 +24,7 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <span className="font-mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>Import</span>
+          <span className="t-heading" style={{ color: "var(--text)" }}>Import</span>
           {phase !== "importing" && (
             <button onClick={onClose} className="p-1 rounded-md hover:opacity-70">
               <X className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
@@ -43,10 +43,10 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
               style={{ border: "2px dashed var(--border)" }}
             >
               <div className="text-center">
-                <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
+                <p className="t-body" style={{ color: "var(--text)" }}>
                   Drop your ChatGPT export here
                 </p>
-                <p className="font-mono mt-1" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                <p className="t-tiny mt-1" style={{ color: "var(--text-faint)" }}>
                   ZIP or conversations.json from Settings / Data Controls / Export
                 </p>
               </div>
@@ -64,7 +64,7 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
           {phase === "parsing" && (
             <div className="flex flex-col items-center gap-3 py-8">
               <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--accent)" }} />
-              <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>Extracting chats...</p>
+              <p className="t-body" style={{ color: "var(--text-muted)" }}>Extracting chats...</p>
             </div>
           )}
 
@@ -72,15 +72,15 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
           {phase === "confirming" && (
             <div className="space-y-4">
               <div className="rounded-lg px-4 py-3" style={{ border: "1px solid var(--border)" }}>
-                <p className="font-mono" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+                <p className="t-body font-medium" style={{ color: "var(--text)" }}>
                   Found {parsed.length} chats
                 </p>
                 {dateRange && (
-                  <p className="font-mono mt-1" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+                  <p className="t-body mt-1" style={{ color: "var(--text-muted)" }}>
                     {dateRange.from} — {dateRange.to}
                   </p>
                 )}
-                <p className="font-mono mt-2" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                <p className="t-tiny mt-2" style={{ color: "var(--text-faint)" }}>
                   Chats will be imported chronologically with dream and introspection cycles
                   simulated during idle periods.
                 </p>
@@ -88,15 +88,15 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
               <div className="flex gap-2">
                 <button
                   onClick={reset}
-                  className="flex-1 rounded-md px-3 py-2 font-mono"
-                  style={{ fontSize: 11, fontWeight: 500, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                  className="flex-1 rounded-md px-3 py-2 t-btn"
+                  style={{ background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={startImport}
-                  className="flex-1 rounded-md px-3 py-2 font-mono"
-                  style={{ fontSize: 11, fontWeight: 500, background: "var(--accent)", color: "var(--bg)" }}
+                  className="flex-1 rounded-md px-3 py-2 t-btn"
+                  style={{ background: "var(--accent)", color: "var(--bg)" }}
                 >
                   Import
                 </button>
@@ -109,11 +109,11 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
             <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+                  <span className="t-body" style={{ color: "var(--text-muted)" }}>
                     {progress.total ? Math.round((progress.current / progress.total) * 100) : 0}% — {progress.current} / {progress.total} chats
                   </span>
                   {currentDate && (
-                    <span className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                    <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                       {currentDate}
                     </span>
                   )}
@@ -137,8 +137,8 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
                   { label: "idle days", value: stats.idleDays },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-md px-2 py-1.5 text-center" style={{ border: "1px solid var(--border)" }}>
-                    <div className="font-mono" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{value}</div>
-                    <div className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</div>
+                    <div className="t-btn" style={{ color: "var(--text)" }}>{value}</div>
+                    <div className="t-tiny" style={{ color: "var(--text-faint)" }}>{label}</div>
                   </div>
                 ))}
               </div>
@@ -149,7 +149,7 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
                 style={{ border: "1px solid var(--border)" }}
               >
                 {log.map((entry, i) => (
-                  <div key={i} className="flex items-start gap-1.5 font-mono" style={{ fontSize: 11, fontWeight: 400, color: entry.type === "error" ? "var(--error)" : "var(--text-muted)" }}>
+                  <div key={i} className="flex items-start gap-1.5 t-body" style={{ color: entry.type === "error" ? "var(--error)" : "var(--text-muted)" }}>
                     <span style={{ color: "var(--text-faint)", flexShrink: 0 }}>
                       {LOG_PREFIX[entry.type] || entry.type}
                     </span>
@@ -157,7 +157,7 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ))}
                 {log.length === 0 && (
-                  <div className="flex items-center gap-2 font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
+                  <div className="flex items-center gap-2 t-body" style={{ color: "var(--text-faint)" }}>
                     <Loader2 className="h-3 w-3 animate-spin" /> Starting import...
                   </div>
                 )}
@@ -170,8 +170,8 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
             <div className="space-y-4">
               <div className="flex flex-col items-center gap-2 py-4">
                 <Check className="h-4 w-4" style={{ color: "var(--success)" }} />
-                <p className="font-mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--success)" }}>Import complete</p>
-                <p className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                <p className="t-heading" style={{ color: "var(--success)" }}>Import complete</p>
+                <p className="t-tiny" style={{ color: "var(--text-faint)" }}>
                   {formatDuration(elapsed)}
                 </p>
               </div>
@@ -184,16 +184,16 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
                   { label: "reflections", value: stats.reflections },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-md px-3 py-2" style={{ border: "1px solid var(--border)" }}>
-                    <div className="font-mono" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{value}</div>
-                    <div className="font-mono" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</div>
+                    <div className="t-btn" style={{ color: "var(--text)" }}>{value}</div>
+                    <div className="t-tiny" style={{ color: "var(--text-faint)" }}>{label}</div>
                   </div>
                 ))}
               </div>
 
               <button
                 onClick={onClose}
-                className="w-full rounded-md px-3 py-2 font-mono"
-                style={{ fontSize: 11, fontWeight: 500, background: "var(--accent)", color: "var(--bg)" }}
+                className="w-full rounded-md px-3 py-2 t-btn"
+                style={{ background: "var(--accent)", color: "var(--bg)" }}
               >
                 Done
               </button>
@@ -204,13 +204,13 @@ export function ImportOverlay({ onClose }: { onClose: () => void }) {
           {phase === "error" && (
             <div className="space-y-4">
               <div className="flex flex-col items-center gap-2 py-4">
-                <p className="font-mono" style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}>Error</p>
-                <p className="font-mono text-center" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>{errorMsg}</p>
+                <p className="t-btn" style={{ color: "var(--error)" }}>Error</p>
+                <p className="t-body text-center" style={{ color: "var(--text-muted)" }}>{errorMsg}</p>
               </div>
               <button
                 onClick={reset}
-                className="w-full rounded-md px-3 py-2 font-mono"
-                style={{ fontSize: 11, fontWeight: 500, border: "1px solid var(--border)", background: "transparent", color: "var(--text)" }}
+                className="w-full rounded-md px-3 py-2 t-btn"
+                style={{ border: "1px solid var(--border)", background: "transparent", color: "var(--text)" }}
               >
                 Try again
               </button>

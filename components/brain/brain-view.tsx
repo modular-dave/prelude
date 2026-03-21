@@ -15,10 +15,6 @@ import type { Conversation } from "@/lib/chat-store";
 import { useCortexStatus } from "@/components/brain/hooks/use-cortex-status";
 import { useBrainChat } from "@/components/brain/hooks/use-brain-chat";
 import { usePathTracing } from "@/components/brain/hooks/use-path-tracing";
-import { SettingsPanel } from "@/components/brain/panels/settings-panel";
-import { ModelsPanel } from "@/components/brain/panels/models-panel";
-import { CortexPanel } from "@/components/brain/panels/cortex-panel";
-import { ImportPanel } from "@/components/brain/panels/import-panel";
 import { FloatNav } from "@/components/shell/float-nav";
 import { BrainStatusBar } from "@/components/brain/sections/brain-status-bar";
 
@@ -83,9 +79,10 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   const [timelineCutoff, setTimelineCutoff] = useState(Infinity); // Infinity = "now", no cutoff
   const [timelineDragging, setTimelineDragging] = useState(false);
   const [decayCutoff, setDecayCutoff] = useState(0); // 0 = show all, 1 = only fresh
+  const [importanceCutoff, setImportanceCutoff] = useState(0); // 0 = show all, 1 = only important
   const [statusCardCollapsed, setStatusCardCollapsed] = useState(false);
   const [vizMode, setVizMode] = useState<"hero" | "cluster" | "starburst" | "zero">("zero");
-  const [focus, setFocus] = useState<FocusMode>("memories");
+  const [focus, setFocus] = useState<FocusMode>(new Set(["memories"]));
   const [showClock, setShowClock] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -98,7 +95,6 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     handleDeleteConversation, handleClearAll, sendBrainChat,
   } = useBrainChat(retrievalSettings, refresh, setChatOpen, setDetailsOpen);
 
-  const [rightPanel, setRightPanel] = useState<"settings" | "models" | "cortex" | "import" | null>(null);
   const [graphReady, setGraphReady] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [pinnedContent, setPinnedContent] = useState<{ content: any; position: { x: number; y: number } } | null>(null);
@@ -135,7 +131,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
 
   const filterBagRef = useRef<FilterBag>({
     memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, decayCutoff, visibleMemoryIds: globalVisibleIds, reorgMode,
+    timelineCutoff, decayCutoff, importanceCutoff, visibleMemoryIds: globalVisibleIds, reorgMode,
   });
   // ── Path tracing (extracted hook) ──
   const {
@@ -149,7 +145,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
   // Update filterBag ref with combined visibility
   filterBagRef.current = {
     memoryFilter, typeFilter: enabledTypes, centerMode, focus, linkTypeFilter: enabledLinkTypes,
-    timelineCutoff, decayCutoff, visibleMemoryIds, reorgMode,
+    timelineCutoff, decayCutoff, importanceCutoff, visibleMemoryIds, reorgMode,
   };
 
   // Zoom camera to fit reachable nodes (single source of camera control)
@@ -214,6 +210,9 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
     const timestamps = memories.map(m => new Date(m.created_at).getTime());
     return { min: Math.min(...timestamps), max: Date.now() };
   }, [memories]);
+
+  // Single source of truth: gates zoom, play/pause, filter sliders, timeline
+  const hasMemories = memories.length > 0;
 
   // Fetch dream logs to build memory→session mapping
   useEffect(() => {
@@ -419,7 +418,15 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
       {chatOpen && (
         <div className="w-[33vw] relative z-10 shrink-0 flex flex-col transition-all duration-300" style={{ borderRight: "2px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)", background: "var(--bg)" }}>
           {/* Chat header */}
-          <div className="flex items-center justify-end px-4 pt-3 pb-1">
+          <div className="flex items-center justify-between px-4 pt-3 pb-1">
+            <button
+              onClick={() => setHistoryOpen(!historyOpen)}
+              className="font-mono transition active:scale-95"
+              style={{ color: historyOpen ? "var(--accent)" : "var(--text-faint)", fontSize: 9 }}
+              title="Chat history"
+            >
+              {historyOpen ? "back" : "history"}
+            </button>
             <button
               onClick={() => { setChatMessages([]); setChatConvId(null); setHistoryOpen(false); }}
               className="font-mono transition active:scale-95"
@@ -512,7 +519,7 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
             )}
           </div>
           {/* Chat input — hidden when history is open */}
-          {!historyOpen && <div className="absolute left-0 right-0 px-4" style={{ bottom: 42 }}>
+          {!historyOpen && <div className="shrink-0 px-4 pb-2" style={{ marginBottom: 42 }}>
             <div className="mb-2" style={{ borderTop: "1px solid var(--border)" }} />
             <div className="flex items-center gap-1.5">
               <span className="font-mono shrink-0" style={{ color: "var(--accent)", fontSize: "11px" }}>&gt;</span>
@@ -568,11 +575,10 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
         </div>
       )}
 
-      {/* Graph area — click to close chat panel */}
+      {/* Graph area */}
       <div
         ref={graphContainerRef}
         className="flex-1 min-h-0 min-w-0 transition-all duration-300 relative"
-        onClick={() => { if (chatOpen) setChatOpen(false); if (rightPanel) setRightPanel(null); }}
       >
         {/* Loading indicator — pulsing dot morphs into hero node */}
         <div
@@ -689,15 +695,20 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
                   </button>
                 ))}
               </div>
-              {/* Focus — horizontal, always visible */}
+              {/* Focus — horizontal checkboxes, always visible */}
               <div className="flex flex-row gap-2 font-mono">
                 <span style={{ color: "var(--text-faint)" }}>focus︱</span>
                 {(["memories", "edges", "entities"] as const).map(m => (
                   <button
                     key={m}
-                    onClick={() => setFocus(m)}
+                    onClick={() => setFocus(prev => {
+                      const next = new Set(prev);
+                      if (next.has(m)) { if (next.size > 1) next.delete(m); }
+                      else next.add(m);
+                      return next;
+                    })}
                     className="transition active:scale-95"
-                    style={{ color: focus === m ? "var(--accent)" : "var(--text-faint)" }}
+                    style={{ color: focus.has(m) ? "var(--accent)" : "var(--text-faint)" }}
                   >
                     {m}
                   </button>
@@ -831,11 +842,14 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
           />
         </div>
 
-        {/* Zoom buttons */}
-        {graphReady && (
+        {/* ── Controls overlay — always visible, independent of graph loading ── */}
+        <div className="absolute left-0 right-0 bottom-0 z-20 pointer-events-none" style={{ top: 64 }}>
+
+          {/* Zoom — right center (only with memories) */}
+          {hasMemories && (
           <div
-            className="absolute z-10 flex flex-col gap-1.5 select-none"
-            style={{ top: "50%", right: "16px", transform: "translateY(-50%)" }}
+            className="absolute flex flex-col gap-1.5 pointer-events-auto select-none"
+            style={{ top: "50%", right: 16, transform: "translateY(-50%)" }}
           >
             <button
               onClick={() => neuralGraphRef.current?.zoomIn()}
@@ -854,251 +868,262 @@ export function BrainView({ initialEdge = null }: BrainViewProps = {}) {
               <Minus className="h-4 w-4" />
             </button>
           </div>
-        )}
+          )}
 
-        {/* Floating path controls card — visible when any node or edge selected */}
-        {graphReady && (selectedEdge || selectedMemoryId) && (
-          <div
-            className="absolute z-10 select-none"
-            style={{ bottom: 80, left: 16 }}
-          >
+          {/* Path controls — bottom left (only when selected) */}
+          {(selectedEdge || selectedMemoryId) && (
             <div
-              className="overflow-hidden"
-              style={{
-                background: "rgba(245, 245, 240, 0.65)",
-                backdropFilter: "blur(24px) saturate(1.2)",
-                WebkitBackdropFilter: "blur(24px) saturate(1.2)",
-                border: "1px solid rgba(0, 0, 0, 0.06)",
-                borderRadius: 12,
-                fontFamily: "inherit",
-                boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03)",
-                width: 200,
-              }}
+              className="absolute pointer-events-auto select-none"
+              style={{ bottom: timeRange.min < timeRange.max ? 120 : 80, left: 16 }}
             >
-              {/* Header strip */}
               <div
-                className="flex items-center justify-between px-3 py-1.5"
-                style={{ borderBottom: "1px solid rgba(0, 0, 0, 0.04)" }}
+                className="overflow-hidden"
+                style={{
+                  background: "rgba(245, 245, 240, 0.65)",
+                  backdropFilter: "blur(24px) saturate(1.2)",
+                  WebkitBackdropFilter: "blur(24px) saturate(1.2)",
+                  border: "1px solid rgba(0, 0, 0, 0.06)",
+                  borderRadius: 12,
+                  fontFamily: "inherit",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03)",
+                  width: 200,
+                }}
               >
-                <span className="t-micro font-mono tracking-widest uppercase" style={{ color: "var(--accent)", opacity: 0.7, fontSize: 9 }}>Path</span>
-                {reachableCount > 1 && (
-                  <span className="t-micro font-mono" style={{ color: "var(--accent)", opacity: 0.6, fontSize: 9 }}>
-                    {reachableCount} nodes
-                  </span>
+                <div
+                  className="flex items-center justify-between px-3 py-1.5"
+                  style={{ borderBottom: "1px solid rgba(0, 0, 0, 0.04)" }}
+                >
+                  <span className="t-micro font-mono tracking-widest uppercase" style={{ color: "var(--accent)", opacity: 0.7, fontSize: 9 }}>Path</span>
+                  {reachableCount > 1 && (
+                    <span className="t-micro font-mono" style={{ color: "var(--accent)", opacity: 0.6, fontSize: 9 }}>
+                      {reachableCount} nodes
+                    </span>
+                  )}
+                </div>
+                <div className="px-3 py-2 space-y-2.5">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Depth</span>
+                      <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{pathDepth}/{traceMaxDepth}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, traceMaxDepth)}
+                      value={Math.min(pathDepth, Math.max(0, traceMaxDepth))}
+                      onChange={(e) => setPathDepth(Number(e.target.value))}
+                      className="neuro-range w-full h-0.5"
+                    />
+                  </div>
+                  <div>
+                    <span className="t-micro block mb-1" style={{ color: "var(--text-faint)", fontSize: 9 }}>Direction</span>
+                    <div className="flex gap-1">
+                      {(["both", "upstream", "downstream"] as const).map((dir) => {
+                        const active = pathDirection === dir;
+                        return (
+                          <button
+                            key={dir}
+                            onClick={() => setPathDirection(dir)}
+                            className="flex-1 py-0.5 rounded-md transition-all duration-200 cursor-pointer"
+                            style={{
+                              background: active ? "var(--accent)" : "rgba(0, 0, 0, 0.03)",
+                              color: active ? "#fff" : "var(--text-faint)",
+                              fontSize: 9,
+                              fontWeight: active ? 500 : 400,
+                              border: "none",
+                              letterSpacing: "0.02em",
+                            }}
+                          >
+                            {dir === "both" ? "All" : dir === "upstream" ? "↑ Up" : "↓ Dn"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Min Strength</span>
+                      <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{Math.round(pathMinStrength * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(pathMinStrength * 100)}
+                      onChange={(e) => setPathMinStrength(Number(e.target.value) / 100)}
+                      className="neuro-range w-full h-0.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Bottom dock: controls row + timeline (pinned to bottom) ── */}
+          <div className="absolute bottom-0 left-0 right-0 flex flex-col items-stretch pointer-events-none">
+
+            {/* Controls row: decay (left) · play/pause (center) · chat (right) */}
+            <div className="grid items-end px-6 mb-2 pointer-events-none" style={{ gridTemplateColumns: "1fr auto 1fr" }}>
+              {/* Left: filter sliders (only with memories) */}
+              <div className="flex items-end pointer-events-auto">
+                {hasMemories && (compact ? (
+                    /* Compact: vertical sliders side by side */
+                    <div className="flex gap-2">
+                      {/* Importance */}
+                      <div className="flex flex-col items-center gap-0.5" style={{ width: 24 }}>
+                        <span className="t-micro font-mono" style={{ color: "var(--text-faint)", fontSize: 8 }}>
+                          {Math.round(importanceCutoff * 100)}%
+                        </span>
+                        <div className="relative flex items-center justify-center" style={{ width: 24, height: 60 }}>
+                          <div className="absolute h-full w-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                          <div className="absolute bottom-0 w-[2px] rounded-full" style={{ height: `${importanceCutoff * 100}%`, background: "var(--accent)" }} />
+                          <input type="range" min={0} max={100} step={1} value={importanceCutoff * 100}
+                            onChange={(e) => setImportanceCutoff(Number(e.target.value) / 100)}
+                            className="neuro-range absolute cursor-pointer"
+                            style={{ width: 60, transform: "rotate(-90deg)", transformOrigin: "center" }}
+                          />
+                        </div>
+                        <span className="t-micro" style={{ color: importanceCutoff > 0 ? "var(--accent)" : "var(--text-faint)", fontSize: 8 }}>imp</span>
+                      </div>
+                      {/* Decay */}
+                      <div className="flex flex-col items-center gap-0.5" style={{ width: 24 }}>
+                        <span className="t-micro font-mono" style={{ color: "var(--text-faint)", fontSize: 8 }}>
+                          {Math.round(decayCutoff * 100)}%
+                        </span>
+                        <div className="relative flex items-center justify-center" style={{ width: 24, height: 60 }}>
+                          <div className="absolute h-full w-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                          <div className="absolute bottom-0 w-[2px] rounded-full" style={{ height: `${decayCutoff * 100}%`, background: "var(--accent)" }} />
+                          <input type="range" min={0} max={100} step={1} value={decayCutoff * 100}
+                            onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                            className="neuro-range absolute cursor-pointer"
+                            style={{ width: 60, transform: "rotate(-90deg)", transformOrigin: "center" }}
+                          />
+                        </div>
+                        <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", fontSize: 8 }}>decay</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Desktop: horizontal sliders stacked */
+                    <div className="flex flex-col gap-1 w-full">
+                      <div className="flex items-center gap-2" style={{ width: "25vw", maxWidth: 260 }}>
+                        <span className="t-micro" style={{ color: importanceCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap", minWidth: 32 }}>imp</span>
+                        <div className="relative h-4 flex items-center flex-1">
+                          <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                          <div className="absolute left-0 h-[2px] rounded-full" style={{ width: `${importanceCutoff * 100}%`, background: "var(--accent)" }} />
+                          <input type="range" min={0} max={100} step={1} value={importanceCutoff * 100}
+                            onChange={(e) => setImportanceCutoff(Number(e.target.value) / 100)}
+                            className="neuro-range absolute inset-0 w-full cursor-pointer"
+                          />
+                        </div>
+                        <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
+                          {Math.round(importanceCutoff * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2" style={{ width: "25vw", maxWidth: 260 }}>
+                        <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap", minWidth: 32 }}>decay</span>
+                        <div className="relative h-4 flex items-center flex-1">
+                          <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+                          <div className="absolute left-0 h-[2px] rounded-full" style={{ width: `${decayCutoff * 100}%`, background: "var(--accent)" }} />
+                          <input type="range" min={0} max={100} step={1} value={decayCutoff * 100}
+                            onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
+                            className="neuro-range absolute inset-0 w-full cursor-pointer"
+                          />
+                        </div>
+                        <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
+                          {Math.round(decayCutoff * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  )
                 )}
               </div>
 
-              <div className="px-3 py-2 space-y-2.5">
-                {/* Depth */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Depth</span>
-                    <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{pathDepth}/{traceMaxDepth}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, traceMaxDepth)}
-                    value={Math.min(pathDepth, Math.max(0, traceMaxDepth))}
-                    onChange={(e) => setPathDepth(Number(e.target.value))}
-                    className="neuro-range w-full h-0.5"
-                  />
-                </div>
+              {/* Center: play/pause (only with memories) */}
+              {hasMemories ? (
+              <button
+                onClick={() => setAutoRotate((v) => !v)}
+                className="flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none pointer-events-auto"
+                style={{
+                  color: "var(--accent)",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  backdropFilter: "blur(20px)",
+                  WebkitBackdropFilter: "blur(20px)",
+                }}
+                title={autoRotate ? "Pause rotation" : "Resume rotation"}
+              >
+                {autoRotate ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </button>
+              ) : <div />}
 
-                {/* Direction */}
-                <div>
-                  <span className="t-micro block mb-1" style={{ color: "var(--text-faint)", fontSize: 9 }}>Direction</span>
-                  <div className="flex gap-1">
-                    {(["both", "upstream", "downstream"] as const).map((dir) => {
-                      const active = pathDirection === dir;
-                      return (
-                        <button
-                          key={dir}
-                          onClick={() => setPathDirection(dir)}
-                          className="flex-1 py-0.5 rounded-md transition-all duration-200 cursor-pointer"
-                          style={{
-                            background: active ? "var(--accent)" : "rgba(0, 0, 0, 0.03)",
-                            color: active ? "#fff" : "var(--text-faint)",
-                            fontSize: 9,
-                            fontWeight: active ? 500 : 400,
-                            border: "none",
-                            letterSpacing: "0.02em",
-                          }}
-                        >
-                          {dir === "both" ? "All" : dir === "upstream" ? "↑ Up" : "↓ Dn"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Min Strength */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="t-micro" style={{ color: "var(--text-faint)", fontSize: 9 }}>Min Strength</span>
-                    <span className="t-micro font-mono" style={{ color: "var(--text-muted)", fontSize: 9 }}>{Math.round(pathMinStrength * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round(pathMinStrength * 100)}
-                    onChange={(e) => setPathMinStrength(Number(e.target.value) / 100)}
-                    className="neuro-range w-full h-0.5"
-                  />
-                </div>
+              {/* Right: chat toggle */}
+              <div className="flex items-center justify-end">
+                <button
+                  onClick={() => setChatOpen((v) => !v)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none pointer-events-auto"
+                  style={{
+                    color: chatOpen ? "#fff" : "var(--text-faint)",
+                    background: chatOpen ? "var(--accent)" : "transparent",
+                    border: chatOpen ? "none" : "1px solid var(--border)",
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    transition: "all 0.2s",
+                  }}
+                  title={chatOpen ? "Close chat" : "Open chat"}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </button>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* Play/pause (center) · Chat (right) — above timeline */}
-        {graphReady && (
-          <div className="absolute z-20" style={{ bottom: timeRange.min < timeRange.max ? 100 : 16, left: 0, right: 0 }}>
-            {/* Play/pause — center */}
-            <button
-              onClick={() => setAutoRotate((v) => !v)}
-              className="absolute flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none"
-              style={{
-                left: "50%",
-                transform: "translateX(-50%)",
-                color: "var(--accent)",
-                background: "transparent",
-                border: "1px solid var(--border)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-              }}
-              title={autoRotate ? "Pause rotation" : "Resume rotation"}
-            >
-              {autoRotate ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </button>
-
-            {/* Chat toggle — right */}
-            <button
-              onClick={() => setChatOpen((v) => !v)}
-              className="absolute flex h-10 w-10 items-center justify-center rounded-full active:scale-95 cursor-pointer select-none"
-              style={{
-                right: 24,
-                color: chatOpen ? "#fff" : "var(--text-faint)",
-                background: chatOpen ? "var(--accent)" : "transparent",
-                border: chatOpen ? "none" : "1px solid var(--border)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                transition: "all 0.2s",
-              }}
-              title={chatOpen ? "Close chat" : "Open chat"}
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Timeline bar + decay — bottom */}
-        {graphReady && timeRange.min < timeRange.max && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 px-6 pb-4 pt-6" style={{ background: "linear-gradient(transparent, var(--bg))" }}>
-            {/* Decay filter — vertical in compact mode */}
-            {compact ? (
-              <div className="absolute z-20 flex flex-col items-center gap-1" style={{ left: 8, bottom: 80, width: 24 }}>
-                <span className="t-micro font-mono" style={{ color: "var(--text-faint)", fontSize: 8 }}>
-                  {Math.round(decayCutoff * 100)}%
-                </span>
-                <div className="relative flex items-center justify-center" style={{ width: 24, height: 80 }}>
-                  <div className="absolute h-full w-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
+            {/* Timeline track (only when memories provide time data) */}
+            {timeRange.min < timeRange.max ? (
+              <div className="relative px-6 pb-4 pointer-events-auto" style={{ background: "linear-gradient(transparent, var(--bg))" }}>
+                <div className="relative h-5 flex items-center">
+                  <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />
                   <div
-                    className="absolute bottom-0 w-[2px] rounded-full"
-                    style={{ height: `${decayCutoff * 100}%`, background: "var(--accent)" }}
+                    className="absolute left-0 h-[3px] rounded-full"
+                    style={{
+                      width: `${(((timelineCutoff === Infinity ? timeRange.max : timelineCutoff) - timeRange.min) / (timeRange.max - timeRange.min)) * 100}%`,
+                      background: "var(--accent)",
+                    }}
                   />
                   <input
                     type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={decayCutoff * 100}
-                    onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
-                    className="neuro-range absolute cursor-pointer"
-                    style={{ width: 80, transform: "rotate(-90deg)", transformOrigin: "center" }}
+                    min={timeRange.min}
+                    max={timeRange.max}
+                    step={Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500))}
+                    value={timelineCutoff === Infinity ? timeRange.max : timelineCutoff}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      const step = Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500));
+                      setTimelineCutoff(v >= timeRange.max - step ? Infinity : v);
+                    }}
+                    onPointerDown={() => setTimelineDragging(true)}
+                    onPointerUp={() => setTimelineDragging(false)}
+                    className="neuro-range absolute inset-0 w-full cursor-pointer"
                   />
                 </div>
-                <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", fontSize: 8 }}>decay</span>
+                <div className="flex justify-between mt-0.5">
+                  {Array.from({ length: 4 }, (_, i) => {
+                    const ts = timeRange.min + ((timeRange.max - timeRange.min) * i) / 3;
+                    return (
+                      <span key={i} className="t-micro" style={{ color: "var(--text-faint)" }}>
+                        {formatTimelineTick(ts, timeRange.max - timeRange.min, false)}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
-            <div className="flex items-center gap-2 mb-2" style={{ width: "25%" }}>
-              <span className="t-micro" style={{ color: decayCutoff > 0 ? "var(--accent)" : "var(--text-faint)", whiteSpace: "nowrap" }}>decay</span>
-              <div className="relative h-4 flex items-center flex-1">
-                <div className="absolute left-0 right-0 h-[2px] rounded-full" style={{ background: "var(--bar-track)" }} />
-                <div
-                  className="absolute left-0 h-[2px] rounded-full"
-                  style={{ width: `${decayCutoff * 100}%`, background: "var(--accent)" }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={decayCutoff * 100}
-                  onChange={(e) => setDecayCutoff(Number(e.target.value) / 100)}
-                  className="neuro-range absolute inset-0 w-full cursor-pointer"
-                />
-              </div>
-              <span className="t-micro font-mono" style={{ color: "var(--text-faint)", minWidth: 28, textAlign: "right" }}>
-                {Math.round(decayCutoff * 100)}%
-              </span>
-            </div>
+              <div className="pb-4" />
             )}
-            {/* Timeline track */}
-            <div className="relative h-5 flex items-center">
-              <div className="absolute left-0 right-0 h-[3px] rounded-full" style={{ background: "var(--bar-track)" }} />
-              <div
-                className="absolute left-0 h-[3px] rounded-full"
-                style={{
-                  width: `${(((timelineCutoff === Infinity ? timeRange.max : timelineCutoff) - timeRange.min) / (timeRange.max - timeRange.min)) * 100}%`,
-                  background: "var(--accent)",
-                }}
-              />
-              <input
-                type="range"
-                min={timeRange.min}
-                max={timeRange.max}
-                step={Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500))}
-                value={timelineCutoff === Infinity ? timeRange.max : timelineCutoff}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  const step = Math.max(1, Math.floor((timeRange.max - timeRange.min) / 500));
-                  setTimelineCutoff(v >= timeRange.max - step ? Infinity : v);
-                }}
-                onPointerDown={() => setTimelineDragging(true)}
-                onPointerUp={() => setTimelineDragging(false)}
-                className="neuro-range absolute inset-0 w-full cursor-pointer"
-              />
-            </div>
-            {/* Tick labels */}
-            <div className="flex justify-between mt-0.5">
-              {Array.from({ length: 4 }, (_, i) => {
-                const ts = timeRange.min + ((timeRange.max - timeRange.min) * i) / 3;
-                return (
-                  <span key={i} className="t-micro" style={{ color: "var(--text-faint)" }}>
-                    {formatTimelineTick(ts, timeRange.max - timeRange.min, false)}
-                  </span>
-                );
-              })}
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Right panel: settings / models / cortex / import */}
-      {rightPanel && (
-        <div className="w-[33vw] relative z-10 shrink-0 flex flex-col overflow-y-auto transition-all duration-300 font-mono"
-          style={{ borderLeft: "2px solid var(--border)", marginTop: "64px", height: "calc(100% - 64px)", background: "var(--bg)" }}>
-          {rightPanel === "settings" && <SettingsPanel onNavigate={(v) => setRightPanel(v as typeof rightPanel)} />}
-          {rightPanel === "models" && <ModelsPanel onBack={() => setRightPanel("settings")} />}
-          {rightPanel === "cortex" && <CortexPanel onBack={() => setRightPanel("settings")} />}
-          {rightPanel === "import" && <ImportPanel onBack={() => setRightPanel("settings")} />}
-        </div>
-      )}
-
       {/* Navigation overlay */}
-      <FloatNav route="brain" onSettingsClick={() => setRightPanel((v) => v ? null : "settings")} />
+      <FloatNav route="brain" />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import {
   HOSTED_PROVIDERS,
   EMB_LOCAL,
   EMB_HOSTED,
-} from "@/app/(app)/models/_types";
+} from "@/lib/model-types";
 import { resolveBaseUrl } from "@/lib/provider-registry";
 import { useConnectionTest } from "@/lib/hooks/use-connection-test";
 import { useServerControl } from "@/lib/hooks/use-server-control";

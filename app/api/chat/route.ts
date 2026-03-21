@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { streamChat, type ChatMessage } from "@/lib/inference";
+import { streamChat, searchChat, type ChatMessage } from "@/lib/inference";
 import {
   recallMemories,
   formatContext,
@@ -23,11 +23,14 @@ try {
   // Guardrails not available — proceed without them
 }
 
-function createSafeSSEStream(message: string): ReadableStream<Uint8Array> {
+function createSafeSSEStream(message: string, meta?: Record<string, unknown>): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: message })}\n\n`));
+      if (meta) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ meta })}\n\n`));
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -137,6 +140,38 @@ export async function POST(req: NextRequest) {
       recordMeterEvent("store");
     }
 
+    // ── Web search path (non-streaming, Venice only) ──
+    if (webSearchEnabled) {
+      const query = lastUserMsg?.content;
+      const { content, citations } = await searchChat(llmMessages, { query });
+
+      // Store assistant memory
+      if (content.trim().length > 50) {
+        await processConversationMessage({
+          role: "assistant",
+          content,
+          conversationId,
+          linkToIds: userMemId ? [userMemId] : undefined,
+        }).catch(() => {});
+      }
+
+      // Return as SSE with citations in meta
+      return new Response(
+        createSafeSSEStream(content, {
+          recalled: recalledCount,
+          clinamen: clinamenCount,
+          citations,
+        }),
+        {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        }
+      );
+    }
+
     // ── Stream LLM response ──
     const stream = await streamChat(llmMessages);
 
@@ -206,9 +241,11 @@ export async function POST(req: NextRequest) {
     // Top-level catch — classify the error for the client
     const msg = err instanceof Error ? err.message : String(err);
 
-    if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed")) {
+    if (msg.includes("ECONNREFUSED") || msg.includes("fetch failed") || msg.includes("LLM error")) {
+      const provider = process.env.INFERENCE_CHAT_PROVIDER || "unknown";
+      const model = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL || "unknown";
       return Response.json(
-        { error: "inference_unavailable", message: "Cannot reach inference backend. Check that your LLM server is running." },
+        { error: "inference_unavailable", message: `Cannot reach ${provider} inference (model: ${model}). Check that your server is running.` },
         { status: 503 }
       );
     }

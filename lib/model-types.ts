@@ -194,10 +194,8 @@ export const EMB_LOCAL: EmbProvider[] = [
     baseUrl: PROVIDER_URLS.mlx.embedding,
     models: [
       { id: "sentence-transformers/all-MiniLM-L6-v2", name: "all-MiniLM-L6-v2", dims: 384, size: "91 MB", desc: "Fast, best for general use ︱ 0.1 GB RAM" },
-      { id: "nomic-ai/nomic-embed-text-v1.5", name: "nomic-embed-text-v1.5", dims: 768, size: "548 MB", desc: "High quality, Matryoshka ︱ 0.5 GB RAM" },
       { id: "BAAI/bge-small-en-v1.5", name: "bge-small-en-v1.5", dims: 384, size: "133 MB", desc: "Compact, strong benchmarks ︱ 0.2 GB RAM" },
       { id: "BAAI/bge-base-en-v1.5", name: "bge-base-en-v1.5", dims: 768, size: "438 MB", desc: "Balanced ︱ 0.5 GB RAM" },
-      { id: "sentence-transformers/all-mpnet-base-v2", name: "all-mpnet-base-v2", dims: 768, size: "438 MB", desc: "Highest quality, slower ︱ 0.5 GB RAM" },
     ],
   },
 ];

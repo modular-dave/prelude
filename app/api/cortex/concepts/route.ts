@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadEngineConfig, updateEngineConfig } from "@/lib/engine-config";
+import { inferConcepts } from "@/lib/clude";
 import { apiError } from "@/lib/api-utils";
 
 export async function GET() {
@@ -14,6 +15,16 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // ── Infer: auto-detect concepts via LLM ──
+    if (body.action === "infer") {
+      const { summary, source, tags } = body as { action: string; summary: string; source: string; tags: string[] };
+      if (!summary) return apiError("summary is required");
+      const concepts = await inferConcepts(summary, source || "user", tags || []);
+      return NextResponse.json({ concepts });
+    }
+
+    // ── Add/Remove: manual concept management ──
     const { add, remove } = body as { add?: string[]; remove?: string[] };
     const config = loadEngineConfig();
     let concepts = [...config.memoryConcepts];

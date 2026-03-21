@@ -179,26 +179,28 @@ const NeuralGraphInner = forwardRef<NeuralGraphHandle, NeuralGraphProps>(functio
       // 2. Run residency engine
       s.tileCache.update(s.viewState.current);
 
-      // 3. Sync renderers from cache
-      const hotTiles = s.tileCache.hotTiles();
-      nodeInstances.syncFromTiles(hotTiles);
+      // 3. Sync renderers from all loaded tiles (not just hot — prevents
+      //    nodes vanishing during camera drag when residency demotes tiles)
+      const hotTiles = s.tileCache.allResidentTiles();
+      nodeInstances.syncFromTiles(hotTiles, s.tileCache.generation);
 
       // 4. Compute degree centrality + apply node filters
-      const hotChunks = s.tileCache.hotTopologyChunks();
+      const hotChunks = s.tileCache.allResidentTopologyChunks();
       nodeInstances.updateDegree(hotChunks);
-      const focusMode = filters?.focus ?? "memories";
+      const focusSet = filters?.focus ?? new Set(["memories"]);
 
       if (filters) {
         nodeInstances.applyFilters(filters, s.viewState.current.lens, s.entityById, s.bubbleRadius);
       }
 
-      // All focus modes show nodes (scaling handles emphasis)
-      nodeInstances.setVisible(true);
+      // Show nodes only when memories or entities layer is active
+      const showNodes = focusSet.has("memories") || focusSet.has("entities");
+      nodeInstances.setVisible(showNodes);
 
       // Show edges in edge-focus mode, or when path has multiple nodes (depth > 0)
       const hp = highlightedPathRef.current;
       const pathActive = hp && hp.size > 1;
-      if ((focusMode === "edges" || pathActive) && !hideEdgesRef.current) {
+      if ((focusSet.has("edges") || pathActive) && !hideEdgesRef.current) {
         const linkTypeFilter = filters?.linkTypeFilter;
         const visibleEntityIds = filters ? nodeInstances.getVisibleEntityIds(filters) : undefined;
         edgeClassifier.classify(s.viewState.current, hotTiles, hotChunks, hp, linkTypeFilter, visibleEntityIds);

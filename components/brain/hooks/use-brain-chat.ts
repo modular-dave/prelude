@@ -11,6 +11,7 @@ import {
 } from "@/lib/chat-store";
 import { loadSystemPrompt } from "@/lib/system-prompt";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
+import type { RetrievalSettings } from "@/lib/retrieval-settings";
 
 export interface BrainChatState {
   chatInput: string;
@@ -30,16 +31,6 @@ export interface BrainChatState {
   handleDeleteConversation: (id: string) => Promise<void>;
   handleClearAll: () => Promise<void>;
   sendBrainChat: () => Promise<void>;
-}
-
-interface RetrievalSettings {
-  recallLimit: number;
-  minImportance: number;
-  minDecay: number;
-  enabledTypes: string[];
-  clinamenLimit: number;
-  clinamenMinImportance: number;
-  clinamenMaxRelevance: number;
 }
 
 /**
@@ -141,9 +132,6 @@ export function useBrainChat(
       setChatConvId(convId);
     }
 
-    // Refresh graph — user memory node appears
-    refresh();
-
     const assistantMsg: ChatMessage = { role: "assistant", content: "" };
     setChatMessages([...newMessages, assistantMsg]);
 
@@ -165,7 +153,12 @@ export function useBrainChat(
         }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Failed to connect");
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => "");
+        let msg = "Failed to connect";
+        try { msg = JSON.parse(text).message || msg; } catch { /* non-JSON */ }
+        throw new Error(msg);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -198,10 +191,15 @@ export function useBrainChat(
       await updateConversation(convId!, { title: generateTitle(finalMessages), messages: finalMessages });
       refreshConversations();
 
-      // Refresh graph — assistant memory node appears
-      refresh();
+      // Rapid refresh cascade: memory processing takes ~1-3s
+      // Poll at 500ms, 1.5s, 3s to catch it ASAP
+      setTimeout(() => refresh(), 500);
+      setTimeout(() => refresh(), 1500);
+      setTimeout(() => refresh(), 3000);
     } catch (err) {
-      const errorMsg = `Error: ${err instanceof Error ? err.message : "Connection failed"}`;
+      const rawMsg = err instanceof Error ? err.message : "Connection failed";
+      const isServiceError = rawMsg.includes("inference") || rawMsg.includes("Supabase") || rawMsg.includes("Model");
+      const errorMsg = isServiceError ? rawMsg : `Error: ${rawMsg}`;
       const finalMessages = [...newMessages, { role: "assistant" as const, content: errorMsg }];
       setChatMessages(finalMessages);
       if (convId) await updateConversation(convId, { title: generateTitle(finalMessages), messages: finalMessages });

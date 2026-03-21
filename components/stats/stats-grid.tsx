@@ -127,8 +127,8 @@ export function StatsGrid() {
               }
             }}
             disabled={learningLoading}
-            className="flex items-center gap-1 text-btn transition active:scale-95 disabled:opacity-40"
-            style={{ fontSize: 10, color: "var(--accent)" }}
+            className="flex items-center gap-1 text-btn t-small transition active:scale-95 disabled:opacity-40"
+            style={{ color: "var(--accent)" }}
           >
             {learningLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
             Learn

@@ -67,6 +67,20 @@ export interface EngineConfig {
 
   // Memory concepts (ontology)
   memoryConcepts: string[];
+
+  // Retrieval settings (absorbed from prelude:retrieval-settings)
+  recallLimit: number;
+  minImportance: number;
+  minDecay: number;
+  enabledTypes: string[];
+  clinamenLimit: number;
+  clinamenMinImportance: number;
+  clinamenMaxRelevance: number;
+  dreamScheduleEnabled: boolean;
+  reflectionScheduleEnabled: boolean;
+
+  // Chat settings (absorbed from prelude:chat-settings)
+  webSearchEnabled: boolean;
 }
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
@@ -147,6 +161,20 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
     "relationship_dynamic",
     "creative_idea",
   ],
+
+  // Retrieval defaults
+  recallLimit: 5,
+  minImportance: 0,
+  minDecay: 0,
+  enabledTypes: ["episodic", "semantic", "procedural", "self_model", "introspective"],
+  clinamenLimit: 3,
+  clinamenMinImportance: 0.6,
+  clinamenMaxRelevance: 0.35,
+  dreamScheduleEnabled: false,
+  reflectionScheduleEnabled: false,
+
+  // Chat defaults
+  webSearchEnabled: false,
 };
 
 const STORAGE_KEY = "prelude:engine-config";
@@ -164,12 +192,48 @@ export function loadEngineConfig(): EngineConfig {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      cachedConfig = { ...DEFAULT_ENGINE_CONFIG };
-      return cachedConfig;
-    }
-    const parsed = JSON.parse(raw);
+    const parsed = raw ? JSON.parse(raw) : {};
     cachedConfig = deepMerge(DEFAULT_ENGINE_CONFIG, parsed);
+
+    // ── One-time migration: absorb legacy stores ──
+    let migrated = false;
+
+    const oldRetrieval = localStorage.getItem("prelude:retrieval-settings");
+    if (oldRetrieval) {
+      try {
+        const rs = JSON.parse(oldRetrieval);
+        cachedConfig = deepMerge(cachedConfig, {
+          recallLimit: rs.recallLimit,
+          minImportance: rs.minImportance,
+          minDecay: rs.minDecay,
+          enabledTypes: rs.enabledTypes,
+          clinamenLimit: rs.clinamenLimit,
+          clinamenMinImportance: rs.clinamenMinImportance,
+          clinamenMaxRelevance: rs.clinamenMaxRelevance,
+          dreamScheduleEnabled: rs.dreamScheduleEnabled,
+          reflectionScheduleEnabled: rs.reflectionScheduleEnabled,
+        });
+        localStorage.removeItem("prelude:retrieval-settings");
+        migrated = true;
+      } catch { /* ignore corrupt data */ }
+    }
+
+    const oldChat = localStorage.getItem("prelude:chat-settings");
+    if (oldChat) {
+      try {
+        const cs = JSON.parse(oldChat);
+        cachedConfig = deepMerge(cachedConfig, {
+          webSearchEnabled: cs.webSearchEnabled,
+        });
+        localStorage.removeItem("prelude:chat-settings");
+        migrated = true;
+      } catch { /* ignore corrupt data */ }
+    }
+
+    if (migrated) {
+      saveEngineConfig(cachedConfig!);
+    }
+
     return cachedConfig!;
   } catch {
     cachedConfig = { ...DEFAULT_ENGINE_CONFIG };

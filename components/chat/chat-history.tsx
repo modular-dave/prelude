@@ -59,7 +59,7 @@ function DeleteConfirm({
           <button
             onClick={onConfirm}
             className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
-            style={{ background: "#ef4444" }}
+            style={{ background: "var(--error)" }}
           >
             Delete
           </button>
@@ -218,7 +218,7 @@ export function ChatHistory({
             <button
               onClick={() => setPendingClearAll(true)}
               className="flex w-full items-center justify-center gap-1.5 rounded-[6px] py-2 t-small transition active:scale-95"
-              style={{ color: "#ef4444" }}
+              style={{ color: "var(--error)" }}
             >
               <Trash2 className="h-3 w-3" />
               Clear all chats & memories
@@ -273,7 +273,7 @@ export function ChatHistory({
                   setPendingClearAll(false);
                 }}
                 className="rounded-[6px] px-3 py-1.5 t-btn text-white transition active:scale-95"
-                style={{ background: "#ef4444" }}
+                style={{ background: "var(--error)" }}
               >
                 Clear All
               </button>

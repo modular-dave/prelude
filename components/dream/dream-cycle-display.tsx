@@ -42,10 +42,10 @@ export function DreamCycleDisplay() {
       {/* Header + actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+          <h2 className="t-heading" style={{ color: "var(--text)" }}>
             Dream Cycle
           </h2>
-          <p className="font-mono mt-0.5" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
+          <p className="t-body mt-0.5" style={{ color: "var(--text-faint)" }}>
             5-phase LLM-powered memory consolidation via Cortex
           </p>
         </div>
@@ -54,8 +54,8 @@ export function DreamCycleDisplay() {
             <button
               onClick={() => dream.setConfirmClearAll(true)}
               disabled={dream.clearing}
-              className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
-              style={{ fontSize: 11, fontWeight: 500, color: "var(--error)" }}
+              className="text-btn t-btn transition active:scale-95 disabled:opacity-40"
+              style={{ color: "var(--error)" }}
             >
               {dream.clearing ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -70,10 +70,8 @@ export function DreamCycleDisplay() {
           <button
             onClick={dream.toggleDreamSchedule}
             disabled={dream.scheduleLoading}
-            className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
+            className="text-btn t-btn transition active:scale-95 disabled:opacity-40"
             style={{
-              fontSize: 11,
-              fontWeight: 500,
               color: dream.dreamScheduleActive ? "var(--success)" : "var(--text)",
               borderWidth: 1,
               borderStyle: "solid",
@@ -91,8 +89,8 @@ export function DreamCycleDisplay() {
           <button
             onClick={dream.runDream}
             disabled={dream.running || memories.length === 0}
-            className="font-mono text-btn transition active:scale-95 disabled:opacity-40"
-            style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}
+            className="text-btn t-btn transition active:scale-95 disabled:opacity-40"
+            style={{ color: "var(--text)" }}
           >
             {dream.running ? (
               <span className="flex items-center gap-1.5">
@@ -126,27 +124,27 @@ export function DreamCycleDisplay() {
               }}
             >
               <div className="flex items-center gap-2">
-                <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
+                <span className="t-body" style={{ color: "var(--text-faint)" }}>
                   {phase.roman}
                 </span>
                 {dream.running && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--accent)" }} />}
                 {!dream.running && isComplete && (
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--success)" }}>done</span>
+                  <span className="t-tiny" style={{ color: "var(--success)" }}>done</span>
                 )}
               </div>
-              <p className="mt-2" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+              <p className="mt-2 t-btn" style={{ color: "var(--text)" }}>
                 {phase.name}
               </p>
-              <p className="mt-1 leading-relaxed" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <p className="mt-1 leading-relaxed t-tiny" style={{ color: "var(--text-faint)" }}>
                 {phase.desc}
               </p>
               {phaseResult && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
+                  <span className="t-tiny" style={{ color: "var(--text-muted)" }}>
                     {phaseResult.inputCount} in
                   </span>
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>&rarr;</span>
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
+                  <span className="t-tiny" style={{ color: "var(--text-faint)" }}>&rarr;</span>
+                  <span className="t-tiny" style={{ color: "var(--text-muted)" }}>
                     {phaseResult.newMemoryIds.length} out
                   </span>
                 </div>
@@ -175,15 +173,15 @@ export function DreamCycleDisplay() {
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{meta.name}</h3>
-              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <h3 className="t-btn" style={{ color: "var(--text)" }}>{meta.name}</h3>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 {phaseResult.inputCount} memories analyzed
               </span>
             </div>
 
             {/* Phase output */}
             <div className="mb-3" style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
-              <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+              <p className="leading-relaxed whitespace-pre-wrap t-body" style={{ color: "var(--text-muted)" }}>
                 {phaseResult.output}
               </p>
             </div>
@@ -191,21 +189,21 @@ export function DreamCycleDisplay() {
             {/* New memories created */}
             {phaseMemories.length > 0 && (
               <div>
-                <p className="mb-2" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                <p className="mb-2 t-tiny" style={{ color: "var(--text-faint)" }}>
                   {phaseMemories.length} memories created
                 </p>
                 <div className="space-y-1.5">
                   {phaseMemories.map((m) => (
                     <div key={m.id} className="flex items-start gap-2 py-1">
                       <div className="min-w-0 flex-1">
-                        <p style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
+                        <p className="t-body" style={{ color: "var(--text)" }}>
                           {m.summary}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>{m.type}</span>
-                          <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>imp: {m.importance.toFixed(2)}</span>
+                          <span className="t-tiny" style={{ color: "var(--text-muted)" }}>{m.type}</span>
+                          <span className="t-tiny" style={{ color: "var(--text-faint)" }}>imp: {m.importance.toFixed(2)}</span>
                           {m.tags.slice(0, 3).map((t) => (
-                            <span key={t} style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>#{t}</span>
+                            <span key={t} className="t-tiny" style={{ color: "var(--text-faint)" }}>#{t}</span>
                           ))}
                         </div>
                       </div>
@@ -221,7 +219,7 @@ export function DreamCycleDisplay() {
       {/* Error */}
       {dream.error && (
         <div className="mt-4">
-          <p className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--error)" }}>{dream.error}</p>
+          <p className="t-body" style={{ color: "var(--error)" }}>{dream.error}</p>
         </div>
       )}
 
@@ -239,9 +237,9 @@ export function DreamCycleDisplay() {
           }}
         >
           <div className="flex items-center gap-2 mb-3">
-            <h3 style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>Emergence</h3>
+            <h3 className="t-btn" style={{ color: "var(--text)" }}>Emergence</h3>
           </div>
-          <p className="leading-relaxed" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-muted)" }}>
+          <p className="leading-relaxed t-body" style={{ color: "var(--text-muted)" }}>
             {dream.result.emergence}
           </p>
         </div>
@@ -255,7 +253,7 @@ export function DreamCycleDisplay() {
           <Stat label="Memories created" value={dream.result.stats.totalNewMemories} />
           {(dream.result as any).model && (
             <div>
-              <p style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <p className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 Model: {(dream.result as any).model}
                 {(dream.result as any).provider && ` (${(dream.result as any).provider})`}
               </p>
@@ -266,7 +264,7 @@ export function DreamCycleDisplay() {
 
       {/* Dream history */}
       <div>
-        <h3 className="font-mono mb-3" style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>
+        <h3 className="font-mono mb-3 t-btn" style={{ color: "var(--text)" }}>
           Dream History{" "}
           {dream.dreamSessions.length > 0 && (
             <span style={{ color: "var(--text-faint)" }}>({dream.dreamSessions.length})</span>
@@ -275,10 +273,10 @@ export function DreamCycleDisplay() {
         {dream.historyLoading ? (
           <div className="flex items-center gap-2 py-4">
             <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--text-faint)" }} />
-            <span className="font-mono" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>Loading...</span>
+            <span className="t-body" style={{ color: "var(--text-faint)" }}>Loading...</span>
           </div>
         ) : dream.dreamSessions.length === 0 ? (
-          <p className="font-mono py-4" style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>
+          <p className="t-body py-4" style={{ color: "var(--text-faint)" }}>
             No dream cycles recorded yet. Run your first dream cycle above.
           </p>
         ) : (
@@ -322,8 +320,8 @@ export function DreamCycleDisplay() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{value}</p>
-      <p style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>{label}</p>
+      <p className="t-heading" style={{ color: "var(--text)" }}>{value}</p>
+      <p className="t-tiny" style={{ color: "var(--text-faint)" }}>{label}</p>
     </div>
   );
 }
@@ -348,23 +346,23 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
           onClick={() => setOpen(!open)}
           className="flex-1 flex items-center gap-2 py-1 text-left transition-colors duration-150"
         >
-          <span className="font-mono shrink-0" style={{ color: "var(--text-faint)", fontSize: 11 }}>
+          <span className="t-body shrink-0" style={{ color: "var(--text-faint)" }}>
             {open ? "−" : "+"}
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text)" }}>
+              <span className="t-body" style={{ color: "var(--text)" }}>
                 {new Date(session.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
-              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 {timeAgo(session.timestamp)}
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1">
-              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 {session.logs.length} phases
               </span>
-              <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+              <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                 {totalIn} in &rarr; {totalOut} out
               </span>
             </div>
@@ -387,12 +385,12 @@ function DreamSessionCard({ session, onDelete }: { session: DreamSession; onDele
             return (
               <div key={log.id} className="pt-2">
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text)" }}>{meta.name}</span>
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "var(--text-faint)" }}>
+                  <span className="t-btn" style={{ color: "var(--text)" }}>{meta.name}</span>
+                  <span className="t-tiny" style={{ color: "var(--text-faint)" }}>
                     {(log.input_memory_ids?.length || 0)} in &rarr; {(log.new_memories_created?.length || 0)} out
                   </span>
                 </div>
-                <p className="leading-relaxed whitespace-pre-wrap pl-3" style={{ fontSize: 9, fontWeight: 400, color: "var(--text-muted)" }}>
+                <p className="leading-relaxed whitespace-pre-wrap pl-3 t-tiny" style={{ color: "var(--text-muted)" }}>
                   {log.output.length > 400 ? log.output.slice(0, 400) + "\u2026" : log.output}
                 </p>
               </div>

@@ -5,9 +5,9 @@ import {
   EMB_LOCAL,
   EMB_HOSTED,
   EMB_TYPES,
-} from "./_types";
+} from "@/lib/model-types";
 import { PORTS } from "@/lib/provider-registry";
-import type { EmbType, EmbeddingConfig } from "./_types";
+import type { EmbType, EmbeddingConfig } from "@/lib/model-types";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -30,8 +30,6 @@ export interface EmbLoadingProgress {
 
 export interface EmbeddingSetupState {
   embConfig: EmbeddingConfig | null;
-  embeddingOpen: boolean;
-  setEmbeddingOpen: (v: boolean | ((p: boolean) => boolean)) => void;
   embOpenProviders: Set<string>;
   embApiKeys: Record<string, string>;
   setEmbApiKeys: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -45,14 +43,16 @@ export interface EmbeddingSetupState {
   embSaving: boolean;
   embResult: EmbResult | null;
   embTypeAssignments: Record<EmbType, { provider: string; model: string } | null>;
-  embPickerModel: string | null;
-  setEmbPickerModel: (v: string | null) => void;
+  handleEmbeddingSwitch: (providerId: string, modelId: string) => Promise<void>;
   slotHealth: Record<EmbType, SlotHealth | null>;
   activeEmbProvider: string | null;
   activeEmbModelId: string | null;
   resolveProvider: (baseUrl: string | null) => string | null;
+  embStarting: boolean;
+  embStopping: boolean;
   refreshEmbeddingConfig: () => Promise<void>;
   refreshEmbeddingStatus: () => Promise<void>;
+  handleEmbeddingStart: (providerId: string) => Promise<void>;
   handleEmbeddingStop: () => Promise<void>;
   handleEmbeddingTest: () => Promise<void>;
   handleEmbeddingSave: () => Promise<void>;
@@ -71,14 +71,6 @@ export interface EmbeddingSetupState {
   getEmbTypeTags: (providerId: string, modelId: string) => EmbType[];
   embMigrating: boolean;
   embMigrationProgress: { phase: string; done?: number; total?: number; percent?: number } | null;
-  handleEmbTypeSelect: (
-    providerId: string,
-    modelId: string,
-    dims: number,
-    baseUrl: string,
-    apiKey: string,
-    embType: EmbType,
-  ) => Promise<void>;
 }
 
 // ── Hook ───────────────────────────────────────────────────────
@@ -86,7 +78,6 @@ export interface EmbeddingSetupState {
 export function useEmbeddingSetup(): EmbeddingSetupState {
   // ── State ──
   const [embConfig, setEmbConfig] = useState<EmbeddingConfig | null>(null);
-  const [embeddingOpen, setEmbeddingOpen] = useState(true);
   const [embOpenProviders, setEmbOpenProviders] = useState<Set<string>>(new Set());
   const [embApiKeys, setEmbApiKeys] = useState<Record<string, string>>({});
   const [embKeySaving, setEmbKeySaving] = useState<string | null>(null);
@@ -94,6 +85,8 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
   const [embPort, setEmbPort] = useState(String(PORTS.mlxEmbedding));
   const [embRunning, setEmbRunning] = useState(false);
   const [embDims, setEmbDims] = useState<number | null>(null);
+  const [embStarting, setEmbStarting] = useState(false);
+  const [embStopping, setEmbStopping] = useState(false);
   const [embLoadingModels, setEmbLoadingModels] = useState<Set<string>>(new Set());
   const [embLoadingProgress, setEmbLoadingProgress] = useState<Record<string, EmbLoadingProgress>>({});
   const embAbortRef = useRef<Record<string, AbortController>>({});
@@ -103,7 +96,6 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
   const [embTypeAssignments, setEmbTypeAssignments] = useState<
     Record<EmbType, { provider: string; model: string } | null>
   >({ test: null, publish: null });
-  const [embPickerModel, setEmbPickerModel] = useState<string | null>(null);
   const [slotHealth, setSlotHealth] = useState<
     Record<EmbType, SlotHealth | null>
   >({ test: null, publish: null });
@@ -191,6 +183,7 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
   }, []);
 
   const handleEmbeddingStop = async () => {
+    setEmbStopping(true);
     try {
       await fetch("/api/cortex/embedding", {
         method: "POST",
@@ -202,6 +195,41 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
     } catch (e) {
       console.warn("[embedding] Failed to stop server:", e);
     }
+    setEmbStopping(false);
+  };
+
+  const handleEmbeddingStart = async (providerId: string) => {
+    setEmbStarting(true);
+    try {
+      // Find the last-used model for this provider from slot config, or use default
+      const slots = embConfig?.embeddingSlots;
+      let modelId = embModel;
+      let dims = 384;
+      const allProviders = [...EMB_LOCAL, ...EMB_HOSTED];
+      const prov = allProviders.find((p) => p.id === providerId);
+
+      if (slots) {
+        for (const t of ["publish", "test"] as EmbType[]) {
+          const s = slots[t];
+          if (s?.model && resolveProvider(s.baseUrl) === providerId) {
+            modelId = s.model;
+            dims = s.dimensions ?? dims;
+            break;
+          }
+        }
+      }
+      // Resolve dims from model catalog if not from config
+      if (prov) {
+        const catalogModel = prov.models.find((m) => m.id === modelId);
+        if (catalogModel) dims = catalogModel.dims;
+      }
+
+      const baseUrl = prov?.baseUrl || `http://127.0.0.1:${embPort}/v1`;
+      await handleEmbeddingUse(providerId, modelId, dims, baseUrl, "local");
+    } catch (e) {
+      console.warn("[embedding] Failed to start server:", e);
+    }
+    setEmbStarting(false);
   };
 
   const handleEmbeddingTest = async () => {
@@ -515,9 +543,37 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
       (t) => embTypeAssignments[t]?.provider === providerId && embTypeAssignments[t]?.model === modelId && slotHealth[t]?.ok
     );
 
-  const handleEmbTypeSelect = async (providerId: string, modelId: string, dims: number, baseUrl: string, apiKey: string, embType: EmbType) => {
-    setEmbPickerModel(null);
-    await handleEmbeddingUse(providerId, modelId, dims, baseUrl, apiKey, embType);
+  const handleEmbeddingSwitch = async (providerId: string, modelId: string) => {
+    const allProviders = [...EMB_LOCAL, ...EMB_HOSTED];
+    const prov = allProviders.find((p) => p.id === providerId);
+    const catalogModel = prov?.models.find((m) => m.id === modelId);
+    const dims = catalogModel?.dims ?? 384;
+    const baseUrl = prov?.baseUrl || `http://127.0.0.1:${embPort}/v1`;
+    const isLocal = prov?.baseUrl.includes("127.0.0.1");
+    const apiKey = isLocal ? "local" : embApiKeys[providerId] || "";
+
+    // Assign to "publish" slot first (starts server + verifies + saves)
+    await handleEmbeddingUse(providerId, modelId, dims, baseUrl, apiKey, "publish");
+
+    // Also assign to "test" slot (server already running, just save config)
+    await fetch("/api/cortex/embedding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save",
+        provider: providerId,
+        baseUrl,
+        apiKey: apiKey || undefined,
+        model: modelId,
+        dimensions: dims,
+        slot: "test",
+      }),
+    });
+    setEmbTypeAssignments((prev) => ({
+      ...prev,
+      test: { provider: providerId, model: modelId },
+    }));
+    await refreshEmbeddingConfig();
   };
 
   // ── Effects ──
@@ -533,14 +589,14 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
 
   return {
     embConfig,
-    embeddingOpen,
-    setEmbeddingOpen,
     embOpenProviders,
     embApiKeys,
     setEmbApiKeys,
     embModel,
     embPort,
     embRunning,
+    embStarting,
+    embStopping,
     embDims,
     embLoadingModels,
     embLoadingProgress,
@@ -548,14 +604,14 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
     embSaving,
     embResult,
     embTypeAssignments,
-    embPickerModel,
-    setEmbPickerModel,
+    handleEmbeddingSwitch,
     slotHealth,
     activeEmbProvider,
     activeEmbModelId,
     resolveProvider,
     refreshEmbeddingConfig,
     refreshEmbeddingStatus,
+    handleEmbeddingStart,
     handleEmbeddingStop,
     handleEmbeddingTest,
     handleEmbeddingSave,
@@ -565,7 +621,6 @@ export function useEmbeddingSetup(): EmbeddingSetupState {
     handleEmbCancel,
     handleEmbSaveKey,
     getEmbTypeTags,
-    handleEmbTypeSelect,
     embMigrating,
     embMigrationProgress,
   };

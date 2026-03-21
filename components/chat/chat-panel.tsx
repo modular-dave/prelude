@@ -14,6 +14,7 @@ import {
   generateTitle,
 } from "@/lib/chat-store";
 import { loadPromptConfig, assembleSystemPrompt } from "@/lib/prompt-builder";
+import { loadChatSettings } from "@/lib/chat-settings";
 import type { Conversation, ChatMessage } from "@/lib/chat-store";
 
 interface ChatMeta {
@@ -169,7 +170,7 @@ export function ChatPanel() {
           clinamenLimit: retrievalSettings.clinamenLimit,
           clinamenMinImportance: retrievalSettings.clinamenMinImportance,
           clinamenMaxRelevance: retrievalSettings.clinamenMaxRelevance,
-          webSearchEnabled: promptConfig.webSearchEnabled,
+          webSearchEnabled: loadChatSettings().webSearchEnabled,
         }),
       });
 

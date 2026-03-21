@@ -1,5 +1,8 @@
 // ── Per-function model assignment store ─────────────────────────
 // Persists to .env.local via INFERENCE_{CHAT|DREAM|REFLECT}_{MODEL|PROVIDER}.
+// NOTE: Intentionally separate from EngineConfig (localStorage). Model assignments
+// must persist to .env.local because server-side API routes read them at startup
+// via process.env — they cannot rely on browser localStorage.
 
 import { persistEnv, removeEnv } from "@/lib/env-persist";
 

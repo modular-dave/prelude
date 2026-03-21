@@ -1,4 +1,4 @@
-export type { ProviderDef, EmbProvider, EmbModel } from "@/app/(app)/models/_types";
+export type { ProviderDef, EmbProvider, EmbModel } from "@/lib/model-types";
 export type { CogFunc } from "@/lib/active-model-store";
 
 // ── Detection ────────────────────────────────────────────────────

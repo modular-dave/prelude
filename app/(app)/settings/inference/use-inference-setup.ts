@@ -4,12 +4,43 @@ import { useEffect, useState, useCallback } from "react";
 import type { CogFunc, Assignment } from "@/lib/active-model-store";
 import { useServerControl } from "@/lib/hooks/use-server-control";
 import { useModelInstall } from "@/lib/hooks/use-model-install";
-import { ProviderSection } from "./_provider-section";
-import { COG_FUNCS, LOCAL_PROVIDERS, HOSTED_PROVIDERS } from "./_types";
+import { COG_FUNCS, LOCAL_PROVIDERS, HOSTED_PROVIDERS } from "@/lib/model-types";
+import type { ProviderDef } from "@/lib/model-types";
 import { usePlatform } from "@/lib/hooks/use-platform";
 
-export function InferenceSection() {
-  // ── Inference state ──
+// ── Types ──────────────────────────────────────────────────────
+
+export interface InferenceSetupState {
+  installedByProvider: Record<string, string[]>;
+  runningByProvider: Record<string, boolean>;
+  binaryInstalledByProvider: Record<string, boolean>;
+  activeModel: string | null;
+  assignments: Record<CogFunc, Assignment | null>;
+  modelsLoading: Set<string>;
+  modelError: string | null;
+  backendOnline: boolean | null;
+  provider: string | null;
+  hostedConnected: Record<string, boolean>;
+  combinedError: string | null;
+  statusLevel: "active" | "partial" | "inactive";
+  statusConfig: { color: string; label: string };
+  localProviders: ProviderDef[];
+  hostedProviders: ProviderDef[];
+  servers: ReturnType<typeof useServerControl>;
+  installs: ReturnType<typeof useModelInstall>;
+  handleStartProvider: (providerId: string) => Promise<void>;
+  handleStopProvider: (providerId: string) => Promise<void>;
+  handleConnectProvider: (providerId: string, config: Record<string, string>) => Promise<void>;
+  handleSwitchModel: (model: string, providerId: string, fn?: CogFunc | "all") => Promise<void>;
+  handleInstallModel: (model: string, providerId: string) => Promise<void>;
+  handleCancelInstall: (model: string) => void;
+  handleUninstallModel: (model: string, providerId: string) => Promise<void>;
+}
+
+// ── Hook ───────────────────────────────────────────────────────
+
+export function useInferenceSetup(): InferenceSetupState {
+  // ── State ──
   const [installedByProvider, setInstalledByProvider] = useState<Record<string, string[]>>({});
   const [runningByProvider, setRunningByProvider] = useState<Record<string, boolean>>({});
   const [binaryInstalledByProvider, setBinaryInstalledByProvider] = useState<Record<string, boolean>>({});
@@ -19,7 +50,6 @@ export function InferenceSection() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
-  const [inferenceOpen, setInferenceOpen] = useState(true);
   const [hostedConnected, setHostedConnected] = useState<Record<string, boolean>>({});
 
   // ── Platform filtering ──
@@ -31,7 +61,7 @@ export function InferenceSection() {
     ? HOSTED_PROVIDERS.filter((p) => !p.guard || p.guard(capabilities))
     : HOSTED_PROVIDERS;
 
-  // ── Shared hooks ──
+  // ── Refresh ──
 
   const refreshModels = useCallback(async () => {
     try {
@@ -50,9 +80,11 @@ export function InferenceSection() {
         fetch("/api/models?provider=ollama").then(r => r.json()).catch(() => ({ installed: [] })),
         fetch("/api/models?provider=mlx").then(r => r.json()).catch(() => ({ installed: [] })),
       ]);
+      // Filter out embedding models from inference lists
+      const isEmbeddingModel = (name: string) => /embed/i.test(name);
       setInstalledByProvider({
-        ollama: ollamaRes.installed || [],
-        mlx: mlxRes.installed || [],
+        ollama: (ollamaRes.installed || []).filter((m: string) => !isEmbeddingModel(m)),
+        mlx: (mlxRes.installed || []).filter((m: string) => !isEmbeddingModel(m)),
       });
       setRunningByProvider({
         ollama: ollamaRes.running ?? false,
@@ -90,7 +122,7 @@ export function InferenceSection() {
   const addLoading = (m: string) => setModelsLoading(s => new Set(s).add(m));
   const removeLoading = (m: string) => setModelsLoading(s => { const n = new Set(s); n.delete(m); return n; });
 
-  // ── Handlers using shared hooks ──
+  // ── Handlers ──
 
   const handleStartProvider = async (providerId: string) => {
     const installed = installedByProvider[providerId] || [];
@@ -173,132 +205,35 @@ export function InferenceSection() {
         ? "active"
         : "partial";
   const statusConfig = {
-    active:  { color: "var(--success)", label: "Model status: active" },
-    partial: { color: "var(--warning)", label: `Model status: partial (${assignedCount}/3)` },
-    inactive: { color: "var(--error)", label: "Model status: inactive" },
+    active:  { color: "var(--success)", label: "active" },
+    partial: { color: "var(--warning)", label: `partial (${assignedCount}/3)` },
+    inactive: { color: "var(--error)", label: "inactive" },
   }[statusLevel];
 
-  return (
-    <>
-      {/* Status — inference assignments */}
-      <div className="mt-6">
-        <div className="flex items-center gap-1.5">
-          <span
-            className="h-[5px] w-[5px] rounded-full shrink-0"
-            style={{ background: backendOnline === null ? "var(--text-faint)" : statusConfig.color }}
-          />
-          <span className="font-mono" style={{ color: backendOnline === null ? "var(--text-faint)" : statusConfig.color, fontSize: 11, fontWeight: 400 }}>
-            {backendOnline === null ? "checking..." : statusConfig.label}
-          </span>
-        </div>
-        <div className="mt-2 space-y-0.5">
-          {COG_FUNCS.map(({ key, label, color }) => {
-            const assign = assignments[key];
-            return (
-              <div key={key} className="flex items-center gap-2">
-                <span className="font-mono" style={{ color, fontSize: 9, fontWeight: 400, width: 44 }}>
-                  {label.toLowerCase()}
-                </span>
-                <span className="font-mono truncate" style={{ color: assign?.model ? "var(--text)" : "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-                  {assign?.model || "unassigned"}
-                </span>
-                {assign?.provider && assign.provider !== "unknown" && (
-                  <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-                    ︱{assign.provider}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Error */}
-      {combinedError && (
-        <p className="mt-3 font-mono" style={{ color: "var(--error)", fontSize: 11, fontWeight: 400 }}>{combinedError}</p>
-      )}
-
-      {/* Inference section */}
-      <div className="mt-8">
-        <div style={{ borderTop: "1px solid var(--border)", margin: "16px 0 8px" }} />
-        <button
-          onClick={() => setInferenceOpen(v => !v)}
-          className="flex w-full items-center gap-1.5 mb-3 text-left transition active:scale-[0.99]"
-        >
-          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 11, fontWeight: 400 }}>
-            {inferenceOpen ? "−" : "+"} inference︱
-          </span>
-          <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 400 }}>
-            chat, dream, reflect
-          </span>
-        </button>
-        {inferenceOpen && (
-          <div className="space-y-6 animate-fade-slide-up">
-            {/* Local */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 px-1">
-                <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Local</span>
-              </div>
-              {localProviders.map(prov => (
-                <ProviderSection
-                  key={prov.id}
-                  provider={prov}
-                  isActive={provider === prov.id}
-                  isLocal={true}
-                  providerRunning={runningByProvider[prov.id] ?? false}
-                  binaryInstalled={binaryInstalledByProvider[prov.id] ?? false}
-                  activeModel={activeModel}
-                  assignments={assignments}
-                  installedModels={installedByProvider[prov.id] || []}
-                  modelsLoading={modelsLoading}
-                  downloadProgress={installs.downloadPercent}
-                  startingProvider={servers.starting === prov.id}
-                  stoppingProvider={servers.stopping === prov.id}
-                  onSwitch={(m, fn) => handleSwitchModel(m, prov.id, fn)}
-                  onInstall={m => handleInstallModel(m, prov.id)}
-                  onCancelInstall={handleCancelInstall}
-                  onUninstall={m => handleUninstallModel(m, prov.id)}
-                  onStartProvider={() => handleStartProvider(prov.id)}
-                  onStopProvider={() => handleStopProvider(prov.id)}
-                  hostedConnected={false}
-                />
-              ))}
-            </div>
-
-            {/* Hosted */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 px-1">
-                <span className="font-mono" style={{ color: "var(--text-faint)", fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>Hosted</span>
-              </div>
-              {hostedProviders.map(prov => (
-                <ProviderSection
-                  key={prov.id}
-                  provider={prov}
-                  isActive={provider === prov.id}
-                  isLocal={false}
-                  providerRunning={null}
-                  binaryInstalled={null}
-                  activeModel={activeModel}
-                  assignments={assignments}
-                  installedModels={installedByProvider[prov.id] || []}
-                  modelsLoading={modelsLoading}
-                  downloadProgress={installs.downloadPercent}
-                  startingProvider={false}
-                  stoppingProvider={false}
-                  onSwitch={(m, fn) => handleSwitchModel(m, prov.id, fn)}
-                  onInstall={m => handleInstallModel(m, prov.id)}
-                  onCancelInstall={handleCancelInstall}
-                  onUninstall={m => handleUninstallModel(m, prov.id)}
-                  onStartProvider={() => {}}
-                  onStopProvider={() => {}}
-                  hostedConnected={hostedConnected[prov.id] ?? false}
-                  onConnect={config => handleConnectProvider(prov.id, config)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
+  return {
+    installedByProvider,
+    runningByProvider,
+    binaryInstalledByProvider,
+    activeModel,
+    assignments,
+    modelsLoading,
+    modelError,
+    backendOnline,
+    provider,
+    hostedConnected,
+    combinedError,
+    statusLevel,
+    statusConfig,
+    localProviders,
+    hostedProviders,
+    servers,
+    installs,
+    handleStartProvider,
+    handleStopProvider,
+    handleConnectProvider,
+    handleSwitchModel,
+    handleInstallModel,
+    handleCancelInstall,
+    handleUninstallModel,
+  };
 }

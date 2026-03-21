@@ -120,12 +120,16 @@ function patchEmbeddingsForCustomEndpoint(baseUrl: string): void {
           body: JSON.stringify({ model, input: text.slice(0, 8000) }),
           signal: AbortSignal.timeout(15_000),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          console.warn(`[cortex] Embedding failed: ${res.status} ${res.statusText}`);
+          return null;
+        }
         const data = await res.json();
         const embedding: number[] | null = data.data?.[0]?.embedding || null;
         if (embedding) emb.setCachedEmbedding(text, embedding);
         return embedding;
-      } catch {
+      } catch (err) {
+        console.warn(`[cortex] Embedding error:`, err instanceof Error ? err.message : err);
         return null;
       }
     };
@@ -143,14 +147,18 @@ function patchEmbeddingsForCustomEndpoint(baseUrl: string): void {
           body: JSON.stringify({ model, input: texts.map(t => t.slice(0, 8000)) }),
           signal: AbortSignal.timeout(30_000),
         });
-        if (!res.ok) return texts.map(() => null);
+        if (!res.ok) {
+          console.warn(`[cortex] Batch embedding failed: ${res.status} ${res.statusText}`);
+          return texts.map(() => null);
+        }
         const data = await res.json();
         const result: (number[] | null)[] = texts.map(() => null);
         for (const item of data.data || []) {
           result[item.index] = item.embedding;
         }
         return result;
-      } catch {
+      } catch (err) {
+        console.warn(`[cortex] Batch embedding error:`, err instanceof Error ? err.message : err);
         return texts.map(() => null);
       }
     };

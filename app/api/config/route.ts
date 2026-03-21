@@ -3,6 +3,7 @@ import { persistEnv } from "@/lib/env-persist";
 import { resetCortex } from "@/lib/cortex";
 import { apiError } from "@/lib/api-utils";
 import { detectPlatform } from "@/lib/detect-platform";
+import { resolveBaseUrl } from "@/lib/provider-registry";
 
 /** Expose current Cortex configuration (read-only, no secrets). */
 export async function GET() {
@@ -105,14 +106,19 @@ export async function POST(req: NextRequest) {
       results.supabase = { ok: false, error: "not configured" };
     }
 
-    // Inference
-    const infUrl = process.env.VENICE_BASE_URL;
-    const infModel = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL;
+    // Inference — resolve URL using same chain as lib/inference.ts resolveLLMBase()
     const infProvider = process.env.INFERENCE_CHAT_PROVIDER || "unknown";
+    const infModel = process.env.INFERENCE_CHAT_MODEL || process.env.VENICE_MODEL;
+    let infUrl: string | null = null;
+    if (process.env.INFERENCE_CHAT_PROVIDER) {
+      const resolved = resolveBaseUrl(process.env.INFERENCE_CHAT_PROVIDER, "inference");
+      if (resolved) infUrl = resolved;
+    }
+    if (!infUrl) infUrl = process.env.VENICE_BASE_URL || null;
     if (infUrl && infModel) {
       const r = await probeEndpoint(`${infUrl}/chat/completions`, {
         model: infModel, messages: [{ role: "user", content: "hi" }], max_tokens: 1, stream: false,
-      }, 15000);
+      }, 5000);
       results.inference = { ok: r.ok && !!r.data?.choices, provider: infProvider, model: infModel, ms: r.ms };
       if (!r.ok) results.inference.error = r.data?.error?.message || r.error || "failed";
     } else {
@@ -148,6 +154,11 @@ export async function POST(req: NextRequest) {
     const required = ["INFERENCE_CHAT_MODEL", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"];
     for (const key of required) {
       if (!config[key]) return apiError(`${key} is required`);
+    }
+    // Guard: reject embedding model in inference slot
+    const chatModel = config.INFERENCE_CHAT_MODEL || "";
+    if (chatModel.includes("nomic-embed") || (chatModel.includes("embed") && !chatModel.includes("Instruct"))) {
+      return apiError(`INFERENCE_CHAT_MODEL="${chatModel}" looks like an embedding model. Assign a generative model instead.`);
     }
     if (!config.SUPABASE_URL) config.SUPABASE_URL = process.env.SUPABASE_URL || "http://127.0.0.1:54321";
     if (!config.SUPABASE_SERVICE_KEY) config.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";

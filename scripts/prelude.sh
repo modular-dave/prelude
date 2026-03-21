@@ -70,7 +70,7 @@ if [ "$IS_APPLE_SILICON" = true ]; then
     ok "mlx inference · :8899"
   elif [ -f server/mlx_server.py ] && python3 -c "import mlx_lm" 2>/dev/null; then
     info "starting mlx inference on :8899..."
-    python3 server/mlx_server.py 8899 &
+    python3 server/mlx_server.py 8899 "${INFERENCE_CHAT_MODEL:-mlx-community/Qwen2.5-1.5B-Instruct-4bit}" &
     for i in $(seq 1 30); do
       curl -sf http://127.0.0.1:8899/ -o /dev/null 2>/dev/null && break
       sleep 1

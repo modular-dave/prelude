@@ -2,7 +2,7 @@
 
 import { Dot, Line, Section } from "./_shared";
 import type { SetupWizardState } from "./_types";
-import { EMB_LOCAL, EMB_HOSTED } from "@/app/(app)/models/_types";
+import { EMB_LOCAL, EMB_HOSTED } from "@/lib/model-types";
 
 export function EmbeddingStep({ wiz }: { wiz: SetupWizardState }) {
   const mlxAvail = wiz.detection?.backends.mlx.available || wiz.detection?.platform.isAppleSilicon;

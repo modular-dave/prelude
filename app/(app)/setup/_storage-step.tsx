@@ -1,7 +1,7 @@
 "use client";
 
 import { Dot, Line, KV } from "./_shared";
-import { COG_FUNCS } from "@/app/(app)/models/_types";
+import { COG_FUNCS } from "@/lib/model-types";
 import type { SetupWizardState } from "./_types";
 
 export function StorageStep({ wiz }: { wiz: SetupWizardState }) {

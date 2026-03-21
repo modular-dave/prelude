@@ -255,7 +255,7 @@ export function MemoryNodeDetail({
               label="Valence"
               value={Math.abs(memory.emotional_valence || 0)}
               color={
-                (memory.emotional_valence || 0) >= 0 ? "#3b82f6" : "#ef4444"
+                (memory.emotional_valence || 0) >= 0 ? "#3b82f6" : "var(--error)"
               }
               detail={`${(memory.emotional_valence || 0) > 0 ? "+" : ""}${(memory.emotional_valence || 0).toFixed(2)}`}
             />

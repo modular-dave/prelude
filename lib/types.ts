@@ -86,7 +86,8 @@ export interface GraphStats {
 
 export type ViewMode = "hebbian" | "retrieved";
 
-export type FocusMode = "memories" | "edges" | "entities";
+export type FocusLayer = "memories" | "edges" | "entities";
+export type FocusMode = Set<FocusLayer>;
 
 /** Filter state passed to NeuralGraph via a stable ref — avoids React re-renders on filter changes */
 export interface FilterBag {
@@ -97,6 +98,7 @@ export interface FilterBag {
   linkTypeFilter: string[];
   timelineCutoff: number;
   decayCutoff: number; // 0–1, hide nodes with decayFactor below this
+  importanceCutoff: number; // 0–1, hide nodes with importance below this
   visibleMemoryIds: Set<number> | null; // null = show all
   reorgMode: "count" | "diversity"; // count = access/degree, diversity = link type + neighbor type variety
 }

@@ -6,7 +6,7 @@ import {
   LOCAL_PROVIDERS,
   HOSTED_PROVIDERS,
   COG_FUNCS,
-} from "@/app/(app)/models/_types";
+} from "@/lib/model-types";
 
 export function InferenceStep({ wiz }: { wiz: SetupWizardState }) {
   const mlxAvail = wiz.detection?.backends.mlx.available || wiz.detection?.platform.isAppleSilicon;
